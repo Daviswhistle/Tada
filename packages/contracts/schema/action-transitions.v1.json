@@ -1,0 +1,37 @@
+{
+  "PROPOSED": [
+    "AUTHORIZED",
+    "REJECTED"
+  ],
+  "AUTHORIZED": [
+    "PREPARED",
+    "REJECTED"
+  ],
+  "PREPARED": [
+    "DISPATCHING",
+    "REJECTED"
+  ],
+  "DISPATCHING": [
+    "ACKNOWLEDGED",
+    "UNCERTAIN"
+  ],
+  "ACKNOWLEDGED": [
+    "VERIFIED",
+    "FAILED",
+    "UNCERTAIN",
+    "COMPENSATED"
+  ],
+  "VERIFIED": [
+    "COMPENSATED"
+  ],
+  "REJECTED": [],
+  "FAILED": [
+    "AUTHORIZED"
+  ],
+  "UNCERTAIN": [
+    "ACKNOWLEDGED",
+    "VERIFIED",
+    "FAILED"
+  ],
+  "COMPENSATED": []
+}
