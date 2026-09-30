@@ -1,0 +1,69 @@
+name: Bootstrap contract foundation
+on:
+  push:
+    branches: [codex/core-01-contract-foundation]
+    paths: ['.bootstrap/**', '.github/workflows/bootstrap.yml']
+permissions:
+  contents: write
+jobs:
+  assemble:
+    if: github.repository == 'Daviswhistle/Tada'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify and unpack reviewed source
+        id: unpack
+        shell: python
+        run: |
+          import hashlib, json, lzma
+          from pathlib import Path, PurePosixPath
+          parts = [Path(f'.bootstrap/part-{i:02d}') for i in range(4)]
+          raw = b''.join(p.read_bytes() for p in parts)
+          assert hashlib.sha256(raw).hexdigest() == '125dde97b6a27c4635e42ba45296f5414350bb3afb181686d29aa267231c0039'
+          files = json.loads(lzma.decompress(raw))
+          assert len(files) == 30
+          for name, text in files.items():
+              path = PurePosixPath(name)
+              assert not path.is_absolute() and '..' not in path.parts
+              assert path.parts[0] not in ('.git', '.github', '.bootstrap')
+              assert isinstance(text, str)
+              dest = Path(name)
+              assert not dest.exists()
+              dest.parent.mkdir(parents=True, exist_ok=True)
+              dest.write_bytes(text.encode('utf-8'))
+          for part in parts:
+              part.unlink()
+          Path('.bootstrap').rmdir()
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Resolve locked dependencies
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund
+          cargo generate-lockfile
+      - name: Format handwritten Rust
+        run: cargo fmt --all
+      - name: Check contracts
+        run: |
+          npm run check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked -- --nocapture
+      - name: Commit assembled source on this branch only
+        if: always() && steps.unpack.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/codex/core-01-contract-foundation
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all -- . ':!.github'
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat(contracts): add CORE-01 contracts, shared fixtures and design baseline'
+            AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push origin HEAD:refs/heads/codex/core-01-contract-foundation
+          fi
