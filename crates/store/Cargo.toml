@@ -1,0 +1,13 @@
+[package]
+name = "tada-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+tada-contracts = { path = "../contracts" }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled", "backup"] }
+sha2 = "=0.10.9"

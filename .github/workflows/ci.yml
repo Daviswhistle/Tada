@@ -35,7 +35,9 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Lint Rust
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Test Rust shared fixtures and typed round trips
+      - name: Test contracts, durable store and process-kill recovery
         run: cargo test --workspace --locked -- --nocapture
+      - name: Run disposable mock recovery example
+        run: cargo run --locked -p tada-store --example recover_mock -- "${{ runner.temp }}/tada-core02-demo"
       - name: Reject uncommitted generated changes
         run: git diff --exit-code

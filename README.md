@@ -4,11 +4,11 @@
 
 An open-source, local-first desktop agent being built to execute work on your computer and return verified results. The intended architecture is a Rust daemon and authority broker, a TypeScript engine, and a Tauri desktop UI. Remote inference uses explicitly connected accounts; “local-first” does not mean all inference stays on-device.
 
-## Current status: contract foundation, not a working agent
+## Current status: contracts and a durable mock core, not a working agent
 
-This repository currently contains versioned contracts, generated Rust/TypeScript types, cross-language conformance fixtures, and CI. **There is no desktop application, running daemon, model login, browser control, or crash-safe execution yet.** Passing contract tests does not establish those capabilities or satisfy the release gates in the design.
+This repository contains versioned contracts, generated Rust/TypeScript types, cross-language conformance fixtures, and a Rust store that exercises durable state, cancellation and recovery against an independent mock effect ledger. **There is no desktop application, installed daemon, authenticated IPC, model login or browser control yet.** Mock recovery tests do not establish real-provider safety or satisfy the design's release gates.
 
-The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. [Implementation decisions](docs/contracts-v1.md) distinguish executable contracts from illustrative design snippets and from guarantees that still require runtime evidence.
+The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. [Contract decisions](docs/contracts-v1.md) and [CORE-02 implementation boundaries](docs/core-02.md) distinguish executable code from illustrative design snippets and guarantees that still require runtime evidence.
 
 ## Check the foundation
 
@@ -23,6 +23,14 @@ cargo test --workspace --locked
 ```
 
 No provider credentials or model calls are used by these tests. Dependencies are downloaded during initial installation; schema validation itself does not fetch external references. These are **developer prerequisites**, not a plan to require end users to install Node or Rust.
+
+Run a disposable demonstration in a new directory:
+
+```sh
+cargo run --locked -p tada-store --example recover_mock -- ./new-mock-demo
+```
+
+The mock saves one effect and loses its response. Execution is cancelled, the store is reopened, and the existing effect is verified without sending the mutation again. The task is not declared successful. The destination must not already exist; only mock data is written.
 
 Change the source schema, regenerate, and rerun the full suite:
 
@@ -41,15 +49,16 @@ Do not hand-edit generated files. JSON Schema checks and typed decoding are sepa
 | `packages/contracts/schema/` | Authoritative v1 JSON Schema and action transition graph |
 | `packages/contracts/src/` | JavaScript runtime validator with TypeScript declarations and generated types |
 | `crates/contracts/` | Rust validation and validate-before-decode/encode helpers |
+| `crates/store/` | SQLite state/event transactions, restore witness, mock admission/reconciliation, budget reservations, outbox and fault tests |
 | `fixtures/contracts/v1/` | The same valid and invalid cases consumed by both runtimes |
 | `scripts/` | Deterministic generation and source-fidelity checks |
 | `docs/` | Supplied design, implementation decisions, threat boundaries, and next gates |
 
-The action graph only describes possible transitions. It does **not** grant permission, establish safe retry, check cancellation, or perform a state transaction. `APPLIED_MISMATCH` records a confirmed effect and failed acceptance; it is neither verified success nor an unknown effect. A cancelled task may still have an unknown external outcome.
+The action graph only describes possible transitions; it is not permission or replay safety. The mock store adds transactional checks within its explicitly limited trusted-host boundary, not a general security broker. `APPLIED_MISMATCH` preserves a confirmed effect and failed acceptance. Cancellation does not erase an unknown outcome. No action success manufactures whole-task completion.
 
-## Next gate
+## Next gates
 
-[CORE 02](docs/roadmap.md): SQLite state and event transactions, cancellation tombstones, fenced dispatch admission, and mock-side-effect crash recovery. Real provider authentication remains a separate unproven gate. Do not connect real external writes until the broker and recovery tests exist.
+[CORE-02 follow-through and SEC-01](docs/roadmap.md): authenticated local IPC, scheduled work, general resource leases, production recovery controls, reviewed policies, encrypted real-user data and provider-aware budgets. ART-01 must verify and publish results before successful-result notifications exist. Real provider authentication remains a separate unproven gate. Do not enable live external writes merely because the mock tests pass.
 
 ## Contributing and security
 
