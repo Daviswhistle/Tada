@@ -4,11 +4,11 @@
 
 An open-source, local-first desktop agent being built to execute work on your computer and return verified results. The intended architecture is a Rust daemon and authority broker, a TypeScript engine, and a Tauri desktop UI. Remote inference uses explicitly connected accounts; “local-first” does not mean all inference stays on-device.
 
-## Current status: contracts and a durable mock core, not a working agent
+## Current status: contracts, durable mock core and control protocol, not a working agent
 
-This repository contains versioned contracts, generated Rust/TypeScript types, cross-language conformance fixtures, and a Rust store that exercises durable state, cancellation and recovery against an independent mock effect ledger. **There is no desktop application, installed daemon, authenticated IPC, model login or browser control yet.** Mock recovery tests do not establish real-provider safety or satisfy the design's release gates.
+This repository contains versioned contracts, generated Rust/TypeScript types, cross-language conformance fixtures, and a Rust store that exercises durable state, cancellation and recovery against an independent mock effect ledger. A transport-neutral control protocol adds authenticated sessions and durable request replay. **There is no desktop application, installed daemon, native IPC listener, model login or browser control yet.** Protocol and mock recovery tests do not establish native IPC protection, real-provider safety or the design's release gates.
 
-The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. [Contract decisions](docs/contracts-v1.md) and [CORE-02 implementation boundaries](docs/core-02.md) distinguish executable code from illustrative design snippets and guarantees that still require runtime evidence.
+The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. [Contract decisions](docs/contracts-v1.md), [CORE-02 implementation boundaries](docs/core-02.md), and [control protocol decisions](docs/control-protocol.md) distinguish executable code from illustrative design snippets and guarantees that still require runtime evidence.
 
 ## Check the foundation
 
@@ -24,13 +24,14 @@ cargo test --workspace --locked
 
 No provider credentials or model calls are used by these tests. Dependencies are downloaded during initial installation; schema validation itself does not fetch external references. These are **developer prerequisites**, not a plan to require end users to install Node or Rust.
 
-Run a disposable demonstration in a new directory:
+Run disposable demonstrations in new directories:
 
 ```sh
 cargo run --locked -p tada-store --example recover_mock -- ./new-mock-demo
+cargo run --locked -p tada-store --example control_replay -- ./new-control-demo
 ```
 
-The mock saves one effect and loses its response. Execution is cancelled, the store is reopened, and the existing effect is verified without sending the mutation again. The task is not declared successful. The destination must not already exist; only mock data is written.
+The first mock saves one effect and loses its response. Execution is cancelled, the store is reopened, and the existing effect is verified without sending the mutation again. The task is not declared successful. The second example authenticates in-process, discards a submit reply, reopens the store and replays submit/cancel without reviving cancelled work. It uses an ephemeral in-memory fixture key, not a real IPC endpoint or installed secret store. Both destinations must not already exist; only mock data is written.
 
 Change the source schema, regenerate, and rerun the full suite:
 
@@ -50,6 +51,7 @@ Do not hand-edit generated files. JSON Schema checks and typed decoding are sepa
 | `packages/contracts/src/` | JavaScript runtime validator with TypeScript declarations and generated types |
 | `crates/contracts/` | Rust validation and validate-before-decode/encode helpers |
 | `crates/store/` | SQLite state/event transactions, restore witness, mock admission/reconciliation, budget reservations, outbox and fault tests |
+| `crates/store/src/control/` | Bounded authenticated frames, strict JSON-RPC commands, atomic request replay and task-event reads; no listener |
 | `fixtures/contracts/v1/` | The same valid and invalid cases consumed by both runtimes |
 | `scripts/` | Deterministic generation and source-fidelity checks |
 | `docs/` | Supplied design, implementation decisions, threat boundaries, and next gates |
@@ -58,7 +60,7 @@ The action graph only describes possible transitions; it is not permission or re
 
 ## Next gates
 
-[CORE-02 follow-through and SEC-01](docs/roadmap.md): authenticated local IPC, scheduled work, general resource leases, production recovery controls, reviewed policies, encrypted real-user data and provider-aware budgets. ART-01 must verify and publish results before successful-result notifications exist. Real provider authentication remains a separate unproven gate. Do not enable live external writes merely because the mock tests pass.
+[CORE-02 follow-through and SEC-01](docs/roadmap.md): native local IPC with OS peer checks and protected credential bootstrap, scheduled work, general resource leases, production recovery controls, reviewed policies, encrypted real-user data and provider-aware budgets. The control protocol is not an OS sandbox or a completed IPC-security gate. ART-01 must verify and publish results before successful-result notifications exist. Real provider authentication remains a separate unproven gate. Do not enable live external writes merely because the mock tests pass.
 
 ## Contributing and security
 

@@ -1370,6 +1370,212 @@
           }
         }
       ]
+    },
+    "ControlSubmitParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "contract": {
+          "$ref": "#/$defs/TaskContract"
+        },
+        "budget_micro_usd": {
+          "$ref": "#/$defs/Counter"
+        }
+      },
+      "required": [
+        "request_id",
+        "contract",
+        "budget_micro_usd"
+      ]
+    },
+    "ControlCancelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "request_id",
+        "task_id"
+      ]
+    },
+    "ControlGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "task_id"
+      ]
+    },
+    "ControlEventsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "after_seq": {
+          "$ref": "#/$defs/Counter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
+      "required": [
+        "task_id",
+        "after_seq",
+        "limit"
+      ]
+    },
+    "ControlParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "contract": {
+          "$ref": "#/$defs/TaskContract"
+        },
+        "budget_micro_usd": {
+          "$ref": "#/$defs/Counter"
+        },
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "after_seq": {
+          "$ref": "#/$defs/Counter"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
+      "required": []
+    },
+    "ControlRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jsonrpc": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "task.submit",
+            "task.cancel",
+            "task.get",
+            "task.events"
+          ]
+        },
+        "params": {
+          "$ref": "#/$defs/ControlParams"
+        }
+      },
+      "required": [
+        "jsonrpc",
+        "id",
+        "method",
+        "params"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "task.submit"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ControlSubmitParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "task.cancel"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ControlCancelParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "task.get"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ControlGetParams"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "task.events"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "then": {
+            "properties": {
+              "params": {
+                "$ref": "#/$defs/ControlEventsParams"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

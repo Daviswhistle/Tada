@@ -39,5 +39,7 @@ jobs:
         run: cargo test --workspace --locked -- --nocapture
       - name: Run disposable mock recovery example
         run: cargo run --locked -p tada-store --example recover_mock -- "${{ runner.temp }}/tada-core02-demo"
+      - name: Run authenticated control replay example
+        run: cargo run --locked -p tada-store --example control_replay -- "${{ runner.temp }}/tada-core03-demo"
       - name: Reject uncommitted generated changes
         run: git diff --exit-code
