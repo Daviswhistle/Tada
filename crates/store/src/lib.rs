@@ -201,10 +201,11 @@ fn refresh_task(tx: &Transaction<'_>, id: &str, stop: bool) -> Result<Value> {
     } else if value["execution_status"] == "WAITING" {
         value["execution_status"] = json!("READY");
     }
-    if value == before {
-        return Ok(value);
-    }
-    let value = save_task(tx, value, "task.effect_observed")?;
+    let value = if value == before {
+        value
+    } else {
+        save_task(tx, value, "task.effect_observed")?
+    };
     if stop {
         let kind = if !unresolved.is_empty() {
             "decision_required"
@@ -758,7 +759,7 @@ impl Store {
         committed_budget(&self.conn, id)
     }
     pub fn pending_notifications(&self) -> Result<Vec<Notification>> {
-        let mut s = self.conn.prepare("SELECT key,task_id,task_version,kind FROM outbox WHERE delivered=0 ORDER BY task_id,task_version")?;
+        let mut s = self.conn.prepare("SELECT o.key,o.task_id,o.task_version,o.kind FROM outbox o JOIN tasks t ON t.id=o.task_id WHERE o.delivered=0 AND o.task_version=t.version ORDER BY o.task_id,o.task_version,o.kind")?;
         let values = s
             .query_map([], |r| {
                 Ok(Notification {

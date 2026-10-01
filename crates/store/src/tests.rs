@@ -669,3 +669,60 @@ fn negative_budget_and_reservation_cannot_create_credit() {
     assert_eq!(attempts(&store), 0);
     assert_eq!(service.effect_count().unwrap(), 0);
 }
+
+#[test]
+fn resolved_outcome_suppresses_superseded_decision_without_fake_ack() {
+    let temp = Temp::new();
+    let (mut store, mut service, lease) = setup(&temp.0);
+    store
+        .dispatch_mock("action-a", &lease, &mut service, MockMode::DropResponse, 10)
+        .unwrap();
+    let old = store.pending_notifications().unwrap();
+    assert_eq!(old.len(), 1);
+    assert_eq!(old[0].kind, "decision_required");
+    store.reconcile_mock("action-a", &service).unwrap();
+    let current = store.pending_notifications().unwrap();
+    assert_eq!(current.len(), 1);
+    assert_eq!(current[0].kind, "stopped");
+    assert_ne!(current[0].key, old[0].key);
+    let acknowledged: bool = store
+        .conn
+        .query_row(
+            "SELECT delivered FROM outbox WHERE key=?1",
+            [&old[0].key],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        !acknowledged,
+        "supersession must not pretend transport delivery"
+    );
+    drop(store);
+    assert_eq!(
+        Store::open(&temp.0)
+            .unwrap()
+            .pending_notifications()
+            .unwrap(),
+        current
+    );
+}
+#[test]
+fn cancelled_reconciliation_enqueues_current_version_when_execution_is_unchanged() {
+    let temp = Temp::new();
+    let (mut store, mut service, lease) = setup(&temp.0);
+    store
+        .dispatch_mock("action-a", &lease, &mut service, MockMode::DropResponse, 10)
+        .unwrap();
+    store.cancel("task-a").unwrap();
+    store.reconcile_mock("action-a", &service).unwrap();
+    let notes = store.pending_notifications().unwrap();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].kind, "stopped");
+    assert_eq!(
+        notes[0].task_version,
+        number(&state(&store), "version").unwrap()
+    );
+    assert_eq!(state(&store)["execution_status"], "CANCELLED");
+    store.reconcile_mock("action-a", &service).unwrap();
+    assert_eq!(store.pending_notifications().unwrap(), notes);
+}

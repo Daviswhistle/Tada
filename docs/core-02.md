@@ -57,7 +57,7 @@ A VERIFIED action is not a SUCCEEDED task. Required task acceptance criteria rem
 
 ## Notification delivery
 
-Stopped/decision entries are committed in the same state transaction as their relevant task state. They contain only stable keys, IDs, versions and kinds; no body, secret or document text. Repeated identical unknown observations and reopen do not create a fresh user decision. An acknowledgement is idempotent, and unacknowledged entries survive reopening.
+Stopped/decision entries are committed in the same state transaction as their relevant task state. They contain only stable keys, IDs, versions and kinds; no body, secret or document text. Repeated identical unknown observations and reopen do not create a fresh user decision. An acknowledgement is idempotent, and unacknowledged entries survive reopening. Pending enumeration returns only the current task version: a resolved decision is not offered again as an obsolete question, and superseding an entry does not falsely mark it delivered. The eventual delivery sink must still revalidate the version at delivery time.
 
 Delivery is at-least-once with a stable deduplication key. This PR has no OS notification sender and does not claim exactly-once physical notification delivery: a sink can receive a notification before the sender crashes recording its acknowledgement. A later sink must honor the key. Successful-result notifications remain blocked on ART-01 publication, not simulated by the mock's success.
 
