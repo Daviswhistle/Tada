@@ -9,6 +9,18 @@ const defs = schema.$defs;
 const names = Object.keys(defs);
 const allowed = new Set(['type', '$ref', 'const', 'enum', 'properties', 'required', 'additionalProperties', 'items', 'minItems', 'maxItems', 'uniqueItems', 'minLength', 'maxLength', 'pattern', 'format', 'minimum', 'maximum', 'allOf', 'anyOf', 'oneOf', 'not', 'if', 'then', 'else', 'description']);
 
+// Rust strict/reserved keywords across supported editions. Raw identifiers retain
+// the original JSON field name; do not rename the wire contract to fix Rust syntax.
+// Reference: https://doc.rust-lang.org/reference/identifiers.html#raw-identifiers
+const rustKeywords = new Set(('as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self static struct super trait true type unsafe use where while abstract become box do final gen macro override priv try typeof unsized virtual yield').split(' '));
+export function rustFieldName(key) {
+  if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`Bad field ${key}`);
+  // These cannot be raw identifiers. A future explicit serde rename mapping must
+  // be reviewed rather than silently generating invalid or colliding names.
+  if (['self', 'super', 'crate'].includes(key)) throw new Error(`Unsupported Rust field ${key}`);
+  return rustKeywords.has(key) ? `r#${key}` : key;
+}
+
 // This intentionally small generator handles only the checked-in vocabulary.
 // Validation constraints stay in JSON Schema; types are never authority/proof.
 export function lint(node, path = '#') {
@@ -42,11 +54,11 @@ function typeOf(node, lang) {
 
 export function generate() {
   for (const [name, node] of Object.entries(defs)) {
-    if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) throw new Error(`Bad type name ${name}`);
+    if (!/^[A-Z][A-Za-z0-9]*$/.test(name) || name === 'Self') throw new Error(`Bad type name ${name}`);
     lint(node, `#/$defs/${name}`);
     if (node.type === 'object') {
       if (node.additionalProperties !== false) throw new Error(`${name} must reject unknown fields`);
-      for (const key of Object.keys(node.properties)) if (!/^[a-z][a-z0-9_]*$/.test(key)) throw new Error(`Bad field ${key}`);
+      for (const key of Object.keys(node.properties)) rustFieldName(key);
       for (const key of node.required ?? []) if (!(key in node.properties)) throw new Error(`Unknown required field ${name}.${key}`);
     }
   }
@@ -65,13 +77,14 @@ export function generate() {
         const optional = !node.required.includes(key);
         ts += `  ${key}${optional ? '?' : ''}: ${typeOf(child, 'ts')};\n`;
         if (optional) rs += '    #[serde(default, skip_serializing_if = "Option::is_none")]\n';
-        rs += `    pub ${key}: ${optional ? `Option<${typeOf(child, 'rs')}>` : typeOf(child, 'rs')},\n`;
+        rs += `    pub ${rustFieldName(key)}: ${optional ? `Option<${typeOf(child, 'rs')}>` : typeOf(child, 'rs')},\n`;
       }
       ts += '}\n\n'; rs += '}\n\n';
     } else {
       ts += `export type ${name} = ${typeOf(node, 'ts')};\n\n`;
       if (node.enum) {
         const variants = node.enum.map(pascal);
+        if (variants.includes('Self')) throw new Error(`Unsupported Rust enum variant in ${name}`);
         if (new Set(variants).size !== variants.length) throw new Error(`Enum collision in ${name}`);
         rs += `#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]\npub enum ${name} {\n`;
         node.enum.forEach((value, i) => { rs += `    #[serde(rename = ${JSON.stringify(value)})]\n    ${variants[i]},\n`; });
