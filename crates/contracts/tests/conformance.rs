@@ -51,18 +51,15 @@ fn shared_fixtures_and_typed_roundtrips() {
             case["name"],
             result
         );
-        if result.is_ok() {
+        if let Err(error) = result {
+            assert!(!error.to_string().contains("DO_NOT_LOG_THIS_SECRET"));
+        } else {
             let roundtrip = typed_roundtrip(name, value);
             assert!(
                 semantic_equal(value, &roundtrip),
                 "roundtrip changed {}",
                 case["name"]
             );
-        } else {
-            assert!(!result
-                .unwrap_err()
-                .to_string()
-                .contains("DO_NOT_LOG_THIS_SECRET"));
         }
         println!("fixture {}: passed", case["name"]);
     }
