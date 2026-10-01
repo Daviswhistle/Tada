@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": false
+  },
+  "include": [
+    "packages/contracts/src/**/*.ts",
+    "packages/contracts/src/**/*.mts",
+    "packages/contracts/tests/**/*.ts"
+  ]
+}

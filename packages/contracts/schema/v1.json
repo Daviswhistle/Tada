@@ -1,0 +1,1375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Daviswhistle/Tada/contracts/v1",
+  "$comment": "Offline registry identifier, not a network resource. Wire shape plus runtime cross-field checks; not proof of authority or completed effects.",
+  "$defs": {
+    "NonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16384
+    },
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "Counter": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "PositiveCounter": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "SnapshotHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "ContentRef": {
+      "type": "string",
+      "pattern": "^blob://sha256/[a-f0-9]{64}$"
+    },
+    "UtcTimestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "Effect": {
+      "type": "string",
+      "enum": [
+        "read",
+        "local_write",
+        "external_write"
+      ]
+    },
+    "ExecutionStatus": {
+      "type": "string",
+      "enum": [
+        "RECEIVED",
+        "READY",
+        "RUNNING",
+        "WAITING",
+        "VERIFYING",
+        "PUBLISHING",
+        "CANCELLING",
+        "CANCELLED",
+        "STOPPED"
+      ]
+    },
+    "CompletionStatus": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "SUCCEEDED",
+        "PARTIAL",
+        "OUTCOME_UNKNOWN",
+        "FAILED"
+      ]
+    },
+    "ActionState": {
+      "type": "string",
+      "enum": [
+        "PROPOSED",
+        "AUTHORIZED",
+        "PREPARED",
+        "DISPATCHING",
+        "ACKNOWLEDGED",
+        "VERIFIED",
+        "REJECTED",
+        "FAILED",
+        "UNCERTAIN",
+        "COMPENSATED"
+      ]
+    },
+    "ReconciliationVerdict": {
+      "type": "string",
+      "enum": [
+        "NOT_OBSERVED",
+        "CONFIRMED_APPLIED",
+        "CONFIRMED_NOT_APPLIED",
+        "APPLIED_MISMATCH",
+        "UNCERTAIN"
+      ]
+    },
+    "SideEffectState": {
+      "type": "string",
+      "enum": [
+        "none",
+        "confirmed",
+        "uncertain"
+      ]
+    },
+    "VerificationResult": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "fail",
+        "inconclusive"
+      ]
+    },
+    "PolicyDecision": {
+      "type": "string",
+      "enum": [
+        "DENY",
+        "ALLOW",
+        "REQUIRE_DECISION",
+        "HANDOFF"
+      ]
+    },
+    "InputSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/SnapshotHash"
+        }
+      },
+      "required": [
+        "ref",
+        "snapshot"
+      ]
+    },
+    "Deliverable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "name": {
+          "$ref": "#/$defs/NonEmptyString"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ]
+    },
+    "Budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_usd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max_model_turns": {
+          "$ref": "#/$defs/PositiveCounter"
+        }
+      },
+      "required": [
+        "max_model_turns"
+      ]
+    },
+    "ExternalEffectScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "account_ref": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "target": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyString"
+        }
+      },
+      "required": [
+        "capability",
+        "account_ref",
+        "target",
+        "purpose"
+      ]
+    },
+    "TaskContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "contract_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "goal": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputSnapshot"
+          },
+          "minItems": 0
+        },
+        "deliverables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Deliverable"
+          },
+          "minItems": 0
+        },
+        "acceptance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "external_effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExternalEffectScope"
+          },
+          "minItems": 0
+        },
+        "budget": {
+          "$ref": "#/$defs/Budget"
+        },
+        "policy_profile_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "on_budget_exhaustion": {
+          "type": "string",
+          "const": "save_and_request_decision"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 0
+        },
+        "deadline": {
+          "$ref": "#/$defs/UtcTimestamp"
+        }
+      },
+      "required": [
+        "task_id",
+        "contract_version",
+        "goal",
+        "inputs",
+        "deliverables",
+        "acceptance",
+        "external_effects",
+        "budget",
+        "policy_profile_id",
+        "on_budget_exhaustion",
+        "assumptions"
+      ]
+    },
+    "WaitCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string",
+          "enum": [
+            "USER_DECISION",
+            "AUTH",
+            "NETWORK",
+            "PROVIDER_CAPACITY",
+            "DEVICE_LOCKED",
+            "DEVICE_SLEEP",
+            "EXTERNAL_RESULT",
+            "BUDGET",
+            "RESOURCE_CONFLICT"
+          ]
+        },
+        "next_observation_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "wake_event": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "next_observation_at"
+          ]
+        },
+        {
+          "required": [
+            "wake_event"
+          ]
+        },
+        {
+          "required": [
+            "expires_at"
+          ]
+        }
+      ]
+    },
+    "TaskSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "version": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "execution_status": {
+          "$ref": "#/$defs/ExecutionStatus"
+        },
+        "completion_status": {
+          "$ref": "#/$defs/CompletionStatus"
+        },
+        "cancel_epoch": {
+          "$ref": "#/$defs/Counter"
+        },
+        "unresolved_effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "unmet_required_criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "wait": {
+          "$ref": "#/$defs/WaitCondition"
+        },
+        "result_manifest_ref": {
+          "$ref": "#/$defs/ContentRef"
+        }
+      },
+      "required": [
+        "schema_version",
+        "task_id",
+        "version",
+        "execution_status",
+        "completion_status",
+        "cancel_epoch",
+        "unresolved_effects",
+        "unmet_required_criteria"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "execution_status": {
+                "const": "WAITING"
+              }
+            },
+            "required": [
+              "execution_status"
+            ]
+          },
+          "then": {
+            "required": [
+              "wait"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "wait"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "execution_status": {
+                "const": "CANCELLED"
+              }
+            },
+            "required": [
+              "execution_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "cancel_epoch": {
+                "minimum": 1
+              },
+              "completion_status": {
+                "not": {
+                  "const": "SUCCEEDED"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "completion_status": {
+                "const": "SUCCEEDED"
+              }
+            },
+            "required": [
+              "completion_status"
+            ]
+          },
+          "then": {
+            "required": [
+              "result_manifest_ref"
+            ],
+            "properties": {
+              "execution_status": {
+                "const": "STOPPED"
+              },
+              "unresolved_effects": {
+                "maxItems": 0
+              },
+              "unmet_required_criteria": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "completion_status": {
+                "const": "OUTCOME_UNKNOWN"
+              }
+            },
+            "required": [
+              "completion_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "unresolved_effects": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "unresolved_effects": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "unresolved_effects"
+            ]
+          },
+          "then": {
+            "properties": {
+              "completion_status": {
+                "const": "OUTCOME_UNKNOWN"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ActionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "action_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "version": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "state": {
+          "$ref": "#/$defs/ActionState"
+        },
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
+        "intent_hash": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "payload_ref": {
+          "$ref": "#/$defs/ContentRef"
+        },
+        "method": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "endpoint": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "account_ref": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "target": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "cancel_epoch": {
+          "$ref": "#/$defs/Counter"
+        },
+        "fencing_token": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "precondition_version": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "verifier_version": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "idempotency_key": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "idempotency_expires_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "side_effect_state": {
+          "$ref": "#/$defs/SideEffectState"
+        },
+        "reconciliation_verdict": {
+          "$ref": "#/$defs/ReconciliationVerdict"
+        },
+        "acceptance_status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pass",
+            "fail",
+            "inconclusive"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "receipt_ref": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "compensation_action_ref": {
+          "$ref": "#/$defs/Identifier"
+        }
+      },
+      "required": [
+        "schema_version",
+        "action_id",
+        "task_id",
+        "version",
+        "state",
+        "effect",
+        "intent_hash",
+        "payload_ref",
+        "method",
+        "endpoint",
+        "account_ref",
+        "target",
+        "policy_revision",
+        "cancel_epoch",
+        "precondition_version",
+        "verifier_version",
+        "side_effect_state",
+        "reconciliation_verdict",
+        "acceptance_status",
+        "evidence_refs"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "idempotency_expires_at"
+            ]
+          },
+          "then": {
+            "required": [
+              "idempotency_key"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "DISPATCHING",
+                  "ACKNOWLEDGED",
+                  "VERIFIED",
+                  "UNCERTAIN",
+                  "COMPENSATED"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "fencing_token"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "VERIFIED"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "receipt_ref"
+            ],
+            "properties": {
+              "reconciliation_verdict": {
+                "const": "CONFIRMED_APPLIED"
+              },
+              "acceptance_status": {
+                "const": "pass"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "VERIFIED"
+              },
+              "effect": {
+                "enum": [
+                  "local_write",
+                  "external_write"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "effect"
+            ]
+          },
+          "then": {
+            "properties": {
+              "side_effect_state": {
+                "const": "confirmed"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "effect": {
+                "const": "read"
+              }
+            },
+            "required": [
+              "effect"
+            ]
+          },
+          "then": {
+            "properties": {
+              "side_effect_state": {
+                "const": "none"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reconciliation_verdict": {
+                "const": "APPLIED_MISMATCH"
+              }
+            },
+            "required": [
+              "reconciliation_verdict"
+            ]
+          },
+          "then": {
+            "required": [
+              "receipt_ref"
+            ],
+            "properties": {
+              "state": {
+                "const": "ACKNOWLEDGED"
+              },
+              "effect": {
+                "enum": [
+                  "local_write",
+                  "external_write"
+                ]
+              },
+              "side_effect_state": {
+                "const": "confirmed"
+              },
+              "acceptance_status": {
+                "const": "fail"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "UNCERTAIN"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reconciliation_verdict": {
+                "const": "UNCERTAIN"
+              },
+              "acceptance_status": {
+                "const": "inconclusive"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "UNCERTAIN"
+              },
+              "effect": {
+                "enum": [
+                  "local_write",
+                  "external_write"
+                ]
+              }
+            },
+            "required": [
+              "state",
+              "effect"
+            ]
+          },
+          "then": {
+            "properties": {
+              "side_effect_state": {
+                "const": "uncertain"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "PROPOSED",
+                  "AUTHORIZED",
+                  "PREPARED",
+                  "REJECTED"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "side_effect_state": {
+                "const": "none"
+              },
+              "reconciliation_verdict": {
+                "const": "NOT_OBSERVED"
+              },
+              "acceptance_status": {
+                "const": "pending"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reconciliation_verdict": {
+                "const": "CONFIRMED_NOT_APPLIED"
+              }
+            },
+            "required": [
+              "reconciliation_verdict"
+            ]
+          },
+          "then": {
+            "properties": {
+              "state": {
+                "const": "FAILED"
+              },
+              "side_effect_state": {
+                "const": "none"
+              },
+              "acceptance_status": {
+                "const": "fail"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "COMPENSATED"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "compensation_action_ref",
+              "receipt_ref"
+            ],
+            "properties": {
+              "side_effect_state": {
+                "const": "confirmed"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PermissionGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "grant_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "subject": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "capability": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "effect": {
+          "$ref": "#/$defs/Effect"
+        },
+        "destinations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "amount_limit_usd": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "user_request",
+            "user_decision",
+            "local_policy"
+          ]
+        },
+        "policy_revision": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "cancel_epoch": {
+          "$ref": "#/$defs/Counter"
+        },
+        "fencing_token": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "payload_hash": {
+          "$ref": "#/$defs/Sha256"
+        }
+      },
+      "required": [
+        "schema_version",
+        "grant_id",
+        "task_id",
+        "subject",
+        "capability",
+        "resources",
+        "effect",
+        "destinations",
+        "purpose",
+        "expires_at",
+        "origin",
+        "policy_revision",
+        "cancel_epoch",
+        "fencing_token"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "effect": {
+                "const": "external_write"
+              }
+            },
+            "required": [
+              "effect"
+            ]
+          },
+          "then": {
+            "required": [
+              "payload_hash"
+            ],
+            "properties": {
+              "destinations": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ProviderCapabilityManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "adapter_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "adapter_version": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "provider": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "model": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "auth_kind": {
+          "type": "string",
+          "enum": [
+            "api_key",
+            "official_subscription",
+            "local_model",
+            "official_cli"
+          ]
+        },
+        "support_level": {
+          "type": "string",
+          "enum": [
+            "unverified",
+            "experimental",
+            "verified"
+          ]
+        },
+        "input_modalities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "text",
+              "image",
+              "file"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "structured_output": {
+          "type": "boolean"
+        },
+        "tool_calls": {
+          "type": "boolean"
+        },
+        "parallel_tool_calls": {
+          "type": "boolean"
+        },
+        "reasoning_continuation": {
+          "type": "boolean"
+        },
+        "context_limit": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "max_tool_result_bytes": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "usage_reporting": {
+          "type": "string",
+          "enum": [
+            "exact",
+            "observed",
+            "estimated",
+            "unavailable"
+          ]
+        },
+        "cancellation": {
+          "type": "string",
+          "enum": [
+            "best_effort",
+            "unsupported"
+          ]
+        },
+        "native_computer_use": {
+          "type": "boolean"
+        },
+        "output_budget_enforcement": {
+          "type": "string",
+          "enum": [
+            "provider_hard",
+            "client_soft",
+            "unsupported"
+          ]
+        },
+        "verified_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "adapter_id",
+        "adapter_version",
+        "provider",
+        "model",
+        "auth_kind",
+        "support_level",
+        "input_modalities",
+        "structured_output",
+        "tool_calls",
+        "parallel_tool_calls",
+        "reasoning_continuation",
+        "context_limit",
+        "max_tool_result_bytes",
+        "usage_reporting",
+        "cancellation",
+        "native_computer_use",
+        "output_budget_enforcement",
+        "evidence_refs"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "support_level": {
+                "const": "verified"
+              }
+            },
+            "required": [
+              "support_level"
+            ]
+          },
+          "then": {
+            "required": [
+              "verified_at"
+            ],
+            "properties": {
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "parallel_tool_calls": {
+                "const": true
+              }
+            },
+            "required": [
+              "parallel_tool_calls"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tool_calls": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha256"
+        },
+        "mime": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "size_bytes": {
+          "$ref": "#/$defs/Counter"
+        },
+        "source_snapshot": {
+          "$ref": "#/$defs/SnapshotHash"
+        }
+      },
+      "required": [
+        "name",
+        "sha256",
+        "mime",
+        "size_bytes",
+        "source_snapshot"
+      ]
+    },
+    "Verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "criterion_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "method": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "tool_version": {
+          "$ref": "#/$defs/NonEmptyString"
+        },
+        "input_hash": {
+          "$ref": "#/$defs/SnapshotHash"
+        },
+        "result": {
+          "$ref": "#/$defs/VerificationResult"
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "timestamp": {
+          "$ref": "#/$defs/UtcTimestamp"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "method",
+        "tool_version",
+        "input_hash",
+        "result",
+        "evidence_refs",
+        "timestamp"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ArtifactManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "manifest_version": {
+          "type": "integer",
+          "const": 1
+        },
+        "task_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "result_version": {
+          "$ref": "#/$defs/PositiveCounter"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "partial"
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Artifact"
+          },
+          "minItems": 0
+        },
+        "required_criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Verification"
+          },
+          "minItems": 0
+        },
+        "external_effect_receipts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NonEmptyString"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "unresolved_effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "unmet_required_criteria": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Identifier"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "created_at": {
+          "$ref": "#/$defs/UtcTimestamp"
+        }
+      },
+      "required": [
+        "manifest_version",
+        "task_id",
+        "result_version",
+        "status",
+        "artifacts",
+        "required_criteria",
+        "verification",
+        "external_effect_receipts",
+        "unresolved_effects",
+        "unmet_required_criteria",
+        "created_at"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "complete"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "unresolved_effects": {
+                "maxItems": 0
+              },
+              "unmet_required_criteria": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

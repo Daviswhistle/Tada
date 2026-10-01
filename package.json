@@ -1,0 +1,22 @@
+{
+  "name": "tada",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22.16.0 <25"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-contracts.mjs",
+    "generate:check": "node scripts/generate-contracts.mjs --check",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test packages/contracts/tests/*.test.mjs scripts/*.test.mjs",
+    "check": "npm run generate:check && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1",
+    "typescript": "5.8.3"
+  }
+}

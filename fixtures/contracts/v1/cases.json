@@ -1,0 +1,2195 @@
+[
+  {
+    "name": "task-valid",
+    "contract": "TaskContract",
+    "valid": true,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-unknown-field",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": [],
+      "api_key": "DO_NOT_LOG_THIS_SECRET"
+    }
+  },
+  {
+    "name": "task-version-future",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 2,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-empty-goal",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-missing-acceptance",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-duplicate-criterion",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "opens"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-input-needs-snapshot",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-budget-negative",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": -1,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-budget-excessive-turns",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_model_turns": 9007199254740992
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-budget-counter-fraction",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_model_turns": 1.5
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-budget-counter-integral-float",
+    "contract": "TaskContract",
+    "valid": true,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_model_turns": 1.0
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "task-optional-null-is-not-absent",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": [],
+      "deadline": null
+    }
+  },
+  {
+    "name": "task-invalid-calendar-date",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": [],
+      "deadline": "2026-02-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "task-date-must-be-utc",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_usd": 3,
+        "max_model_turns": 80
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": [],
+      "deadline": "2026-09-30T12:00:00+09:00"
+    }
+  },
+  {
+    "name": "task-string-number-not-coerced",
+    "contract": "TaskContract",
+    "valid": false,
+    "instance": {
+      "task_id": "task_example",
+      "contract_version": 1,
+      "goal": "자료로 한국어 보고서 만들기",
+      "inputs": [
+        {
+          "ref": "fs://grant/quarterly",
+          "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "deliverables": [
+        {
+          "kind": "docx",
+          "name": "보고서.docx"
+        }
+      ],
+      "acceptance": [
+        "opens",
+        "render_clean"
+      ],
+      "external_effects": [],
+      "budget": {
+        "max_model_turns": "80"
+      },
+      "policy_profile_id": "profile_local_autonomous",
+      "on_budget_exhaustion": "save_and_request_decision",
+      "assumptions": []
+    }
+  },
+  {
+    "name": "snapshot-ready",
+    "contract": "TaskSnapshot",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "READY",
+      "completion_status": "PENDING",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "cancelled-but-effect-unknown",
+    "contract": "TaskSnapshot",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "CANCELLED",
+      "completion_status": "OUTCOME_UNKNOWN",
+      "cancel_epoch": 1,
+      "unresolved_effects": [
+        "action_example"
+      ],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "cancelled-tombstone-required",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "CANCELLED",
+      "completion_status": "OUTCOME_UNKNOWN",
+      "cancel_epoch": 0,
+      "unresolved_effects": [
+        "action_example"
+      ],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "unresolved-effect-cannot-hide-as-pending",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "CANCELLED",
+      "completion_status": "PENDING",
+      "cancel_epoch": 1,
+      "unresolved_effects": [
+        "action_example"
+      ],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "unknown-outcome-needs-unresolved-action",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "CANCELLED",
+      "completion_status": "OUTCOME_UNKNOWN",
+      "cancel_epoch": 1,
+      "unresolved_effects": [],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "waiting-needs-reason",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "WAITING",
+      "completion_status": "PENDING",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "waiting-needs-wakeup-condition",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "WAITING",
+      "completion_status": "PENDING",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "wait": {
+        "reason": "NETWORK"
+      }
+    }
+  },
+  {
+    "name": "waiting-with-event",
+    "contract": "TaskSnapshot",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "WAITING",
+      "completion_status": "PENDING",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "wait": {
+        "reason": "NETWORK",
+        "wake_event": "network.reconnected"
+      }
+    }
+  },
+  {
+    "name": "ready-cannot-retain-stale-wait",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "READY",
+      "completion_status": "PENDING",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "wait": {
+        "reason": "AUTH",
+        "wake_event": "auth.connected"
+      }
+    }
+  },
+  {
+    "name": "succeeded-with-manifest-ref",
+    "contract": "TaskSnapshot",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "STOPPED",
+      "completion_status": "SUCCEEDED",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "result_manifest_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "succeeded-needs-manifest",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "STOPPED",
+      "completion_status": "SUCCEEDED",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": []
+    }
+  },
+  {
+    "name": "succeeded-cannot-still-run",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "RUNNING",
+      "completion_status": "SUCCEEDED",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "result_manifest_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "succeeded-cannot-have-unmet-criteria",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "STOPPED",
+      "completion_status": "SUCCEEDED",
+      "cancel_epoch": 0,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [
+        "render_clean"
+      ],
+      "result_manifest_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "cancelled-cannot-be-success",
+    "contract": "TaskSnapshot",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "task_id": "task_example",
+      "version": 1,
+      "execution_status": "CANCELLED",
+      "completion_status": "SUCCEEDED",
+      "cancel_epoch": 1,
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "result_manifest_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "action-proposed",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "PROPOSED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "none",
+      "reconciliation_verdict": "NOT_OBSERVED",
+      "acceptance_status": "pending",
+      "evidence_refs": []
+    }
+  },
+  {
+    "name": "action-verified",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "action-verified-needs-proof",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "action-verified-needs-receipt",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1
+    }
+  },
+  {
+    "name": "action-verified-cannot-have-no-effect",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "none",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "action-verified-cannot-have-failed-acceptance",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "fail",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "applied-mismatch-preserves-confirmed-effect",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "ACKNOWLEDGED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "APPLIED_MISMATCH",
+      "acceptance_status": "fail",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "mismatch-is-not-verified",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "APPLIED_MISMATCH",
+      "acceptance_status": "fail",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "mismatch-is-not-uncertain",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "ACKNOWLEDGED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "uncertain",
+      "reconciliation_verdict": "APPLIED_MISMATCH",
+      "acceptance_status": "fail",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "mismatch-is-not-acceptance-pass",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "ACKNOWLEDGED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "APPLIED_MISMATCH",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "response-lost-stays-uncertain",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "UNCERTAIN",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "uncertain",
+      "reconciliation_verdict": "UNCERTAIN",
+      "acceptance_status": "inconclusive",
+      "evidence_refs": [],
+      "fencing_token": 1
+    }
+  },
+  {
+    "name": "uncertain-cannot-claim-confirmed-effect",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "UNCERTAIN",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "UNCERTAIN",
+      "acceptance_status": "inconclusive",
+      "evidence_refs": [],
+      "fencing_token": 1
+    }
+  },
+  {
+    "name": "dispatch-needs-fence",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "DISPATCHING",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "none",
+      "reconciliation_verdict": "NOT_OBSERVED",
+      "acceptance_status": "pending",
+      "evidence_refs": []
+    }
+  },
+  {
+    "name": "payload-reference-cannot-be-live-path",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "PROPOSED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "/tmp/mutable.json",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "none",
+      "reconciliation_verdict": "NOT_OBSERVED",
+      "acceptance_status": "pending",
+      "evidence_refs": []
+    }
+  },
+  {
+    "name": "idempotency-expiry-needs-key",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "PROPOSED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "none",
+      "reconciliation_verdict": "NOT_OBSERVED",
+      "acceptance_status": "pending",
+      "evidence_refs": [],
+      "idempotency_expires_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "prepared-cannot-already-have-an-effect",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "PREPARED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "NOT_OBSERVED",
+      "acceptance_status": "pending",
+      "evidence_refs": []
+    }
+  },
+  {
+    "name": "compensation-needs-independent-action",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "COMPENSATED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "compensated-links-separate-action",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "COMPENSATED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "POST",
+      "endpoint": "https://service.example/messages",
+      "account_ref": "account_example",
+      "target": "recipient@example.invalid",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "mock-1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1",
+      "compensation_action_ref": "action_fix"
+    }
+  },
+  {
+    "name": "grant-local-write",
+    "contract": "PermissionGrant",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "grant_id": "grant_1",
+      "task_id": "task_example",
+      "subject": "worker_1",
+      "capability": "file.write_atomic",
+      "resources": [
+        "grant://results"
+      ],
+      "effect": "local_write",
+      "destinations": [],
+      "purpose": "Create report",
+      "expires_at": "2026-09-30T12:00:00Z",
+      "origin": "user_request",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "fencing_token": 1
+    }
+  },
+  {
+    "name": "document-cannot-issue-authority",
+    "contract": "PermissionGrant",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "grant_id": "grant_1",
+      "task_id": "task_example",
+      "subject": "worker_1",
+      "capability": "file.write_atomic",
+      "resources": [
+        "grant://results"
+      ],
+      "effect": "local_write",
+      "destinations": [],
+      "purpose": "Create report",
+      "expires_at": "2026-09-30T12:00:00Z",
+      "origin": "web_document",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "fencing_token": 1
+    }
+  },
+  {
+    "name": "grant-not-plaintext-credential-store",
+    "contract": "PermissionGrant",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "grant_id": "grant_1",
+      "task_id": "task_example",
+      "subject": "worker_1",
+      "capability": "file.write_atomic",
+      "resources": [
+        "grant://results"
+      ],
+      "effect": "local_write",
+      "destinations": [],
+      "purpose": "Create report",
+      "expires_at": "2026-09-30T12:00:00Z",
+      "origin": "user_request",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "fencing_token": 1,
+      "credential": "DO_NOT_LOG_THIS_SECRET"
+    }
+  },
+  {
+    "name": "grant-fence-not-zero",
+    "contract": "PermissionGrant",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "grant_id": "grant_1",
+      "task_id": "task_example",
+      "subject": "worker_1",
+      "capability": "file.write_atomic",
+      "resources": [
+        "grant://results"
+      ],
+      "effect": "local_write",
+      "destinations": [],
+      "purpose": "Create report",
+      "expires_at": "2026-09-30T12:00:00Z",
+      "origin": "user_request",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "fencing_token": 0
+    }
+  },
+  {
+    "name": "grant-external-write-needs-destination-and-payload",
+    "contract": "PermissionGrant",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "grant_id": "grant_1",
+      "task_id": "task_example",
+      "subject": "worker_1",
+      "capability": "file.write_atomic",
+      "resources": [
+        "grant://results"
+      ],
+      "effect": "external_write",
+      "destinations": [],
+      "purpose": "Create report",
+      "expires_at": "2026-09-30T12:00:00Z",
+      "origin": "user_request",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "fencing_token": 1
+    }
+  },
+  {
+    "name": "grant-payload-bound-external-write",
+    "contract": "PermissionGrant",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "grant_id": "grant_1",
+      "task_id": "task_example",
+      "subject": "worker_1",
+      "capability": "file.write_atomic",
+      "resources": [
+        "grant://results"
+      ],
+      "effect": "external_write",
+      "destinations": [
+        "https://service.example"
+      ],
+      "purpose": "Create report",
+      "expires_at": "2026-09-30T12:00:00Z",
+      "origin": "user_request",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "fencing_token": 1,
+      "payload_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "provider-capabilities-are-not-inferred",
+    "contract": "ProviderCapabilityManifest",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "adapter_id": "mock_provider",
+      "adapter_version": "0.1.0",
+      "provider": "mock",
+      "model": "fixture-model",
+      "auth_kind": "official_subscription",
+      "support_level": "unverified",
+      "input_modalities": [
+        "text"
+      ],
+      "structured_output": false,
+      "tool_calls": true,
+      "parallel_tool_calls": false,
+      "reasoning_continuation": false,
+      "context_limit": 262144,
+      "max_tool_result_bytes": 65536,
+      "usage_reporting": "unavailable",
+      "cancellation": "best_effort",
+      "native_computer_use": false,
+      "output_budget_enforcement": "client_soft",
+      "evidence_refs": []
+    }
+  },
+  {
+    "name": "provider-verified-needs-evidence",
+    "contract": "ProviderCapabilityManifest",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "adapter_id": "mock_provider",
+      "adapter_version": "0.1.0",
+      "provider": "mock",
+      "model": "fixture-model",
+      "auth_kind": "official_subscription",
+      "support_level": "verified",
+      "input_modalities": [
+        "text"
+      ],
+      "structured_output": false,
+      "tool_calls": true,
+      "parallel_tool_calls": false,
+      "reasoning_continuation": false,
+      "context_limit": 262144,
+      "max_tool_result_bytes": 65536,
+      "usage_reporting": "unavailable",
+      "cancellation": "best_effort",
+      "native_computer_use": false,
+      "output_budget_enforcement": "client_soft",
+      "evidence_refs": [],
+      "verified_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "provider-verified-needs-date",
+    "contract": "ProviderCapabilityManifest",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "adapter_id": "mock_provider",
+      "adapter_version": "0.1.0",
+      "provider": "mock",
+      "model": "fixture-model",
+      "auth_kind": "official_subscription",
+      "support_level": "verified",
+      "input_modalities": [
+        "text"
+      ],
+      "structured_output": false,
+      "tool_calls": true,
+      "parallel_tool_calls": false,
+      "reasoning_continuation": false,
+      "context_limit": 262144,
+      "max_tool_result_bytes": 65536,
+      "usage_reporting": "unavailable",
+      "cancellation": "best_effort",
+      "native_computer_use": false,
+      "output_budget_enforcement": "client_soft",
+      "evidence_refs": [
+        "mock_ev"
+      ]
+    }
+  },
+  {
+    "name": "provider-verified-fixture-only",
+    "contract": "ProviderCapabilityManifest",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "adapter_id": "mock_provider",
+      "adapter_version": "0.1.0",
+      "provider": "mock",
+      "model": "fixture-model",
+      "auth_kind": "official_subscription",
+      "support_level": "verified",
+      "input_modalities": [
+        "text"
+      ],
+      "structured_output": false,
+      "tool_calls": true,
+      "parallel_tool_calls": false,
+      "reasoning_continuation": false,
+      "context_limit": 262144,
+      "max_tool_result_bytes": 65536,
+      "usage_reporting": "unavailable",
+      "cancellation": "best_effort",
+      "native_computer_use": false,
+      "output_budget_enforcement": "client_soft",
+      "evidence_refs": [
+        "mock_ev"
+      ],
+      "verified_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "provider-parallel-needs-tool-calls",
+    "contract": "ProviderCapabilityManifest",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "adapter_id": "mock_provider",
+      "adapter_version": "0.1.0",
+      "provider": "mock",
+      "model": "fixture-model",
+      "auth_kind": "official_subscription",
+      "support_level": "unverified",
+      "input_modalities": [
+        "text"
+      ],
+      "structured_output": false,
+      "tool_calls": false,
+      "parallel_tool_calls": true,
+      "reasoning_continuation": false,
+      "context_limit": 262144,
+      "max_tool_result_bytes": 65536,
+      "usage_reporting": "unavailable",
+      "cancellation": "best_effort",
+      "native_computer_use": false,
+      "output_budget_enforcement": "client_soft",
+      "evidence_refs": []
+    }
+  },
+  {
+    "name": "provider-no-secret-token-field",
+    "contract": "ProviderCapabilityManifest",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "adapter_id": "mock_provider",
+      "adapter_version": "0.1.0",
+      "provider": "mock",
+      "model": "fixture-model",
+      "auth_kind": "official_subscription",
+      "support_level": "unverified",
+      "input_modalities": [
+        "text"
+      ],
+      "structured_output": false,
+      "tool_calls": true,
+      "parallel_tool_calls": false,
+      "reasoning_continuation": false,
+      "context_limit": 262144,
+      "max_tool_result_bytes": 65536,
+      "usage_reporting": "unavailable",
+      "cancellation": "best_effort",
+      "native_computer_use": false,
+      "output_budget_enforcement": "client_soft",
+      "evidence_refs": [],
+      "access_token": "DO_NOT_LOG_THIS_SECRET"
+    }
+  },
+  {
+    "name": "manifest-complete",
+    "contract": "ArtifactManifest",
+    "valid": true,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-missing-required-verification",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-inconclusive-is-not-pass",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "inconclusive",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-empty-proof-is-not-pass",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-duplicate-criterion-ambiguous",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        },
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-cannot-hide-unresolved-effect",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [
+        "action_1"
+      ],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-partial-is-honest",
+    "contract": "ArtifactManifest",
+    "valid": true,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "partial",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "inconclusive",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [
+        "opens"
+      ],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-partial-must-list-missing-criteria",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "partial",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "inconclusive",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-cannot-invent-unmet-criterion",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "partial",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "inconclusive",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [
+        "opens",
+        "other"
+      ],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-partial-without-unmet-condition",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "partial",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-no-required-criteria",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-wrong-hash-shape",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "...",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-future-wire-version",
+    "contract": "ArtifactManifest",
+    "valid": false,
+    "instance": {
+      "manifest_version": 2,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-optional-failure-not-required",
+    "contract": "ArtifactManifest",
+    "valid": true,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [
+        {
+          "name": "report.docx",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "size_bytes": 84217,
+          "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        },
+        {
+          "criterion_id": "optional_style",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "fail",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  },
+  {
+    "name": "manifest-external-only-result",
+    "contract": "ArtifactManifest",
+    "valid": true,
+    "instance": {
+      "manifest_version": 1,
+      "task_id": "task_example",
+      "result_version": 1,
+      "status": "complete",
+      "artifacts": [],
+      "required_criteria": [
+        "opens"
+      ],
+      "verification": [
+        {
+          "criterion_id": "opens",
+          "method": "fixture-parser",
+          "tool_version": "mock-1",
+          "input_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": "pass",
+          "evidence_refs": [
+            "ev_1"
+          ],
+          "timestamp": "2026-09-30T12:00:00Z"
+        }
+      ],
+      "external_effect_receipts": [
+        "receipt_1"
+      ],
+      "unresolved_effects": [],
+      "unmet_required_criteria": [],
+      "created_at": "2026-09-30T12:00:00Z"
+    }
+  }
+]
