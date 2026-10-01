@@ -664,3 +664,43 @@ fn integral_float_counters_share_the_same_request_identity() {
     assert_eq!(call(&mut store, &mut sessions, &alternate), first);
     assert_eq!(count(&store, "control.completed"), 1);
 }
+
+#[test]
+fn corrupt_replay_record_closes_store_control_before_any_new_command() {
+    let temp = Temp::new();
+    let mut store = Store::open(&temp.0).unwrap();
+    let key = credential();
+    let mut sessions = pair(&store, &key);
+    call(&mut store, &mut sessions, &submit());
+    // A second receipt violates the single-owner command journal invariant.
+    // Private test SQL can construct corruption; no RPC exposes this operation.
+    store.conn.execute("INSERT INTO events(aggregate_id,kind,payload) SELECT aggregate_id,kind,payload FROM events WHERE kind='control.completed'", []).unwrap();
+    let frame = sessions
+        .1
+        .request(&serde_json::to_vec(&submit()).unwrap())
+        .unwrap();
+    assert!(matches!(
+        store.control_handle(&mut sessions.0, &frame),
+        Err(Error::RecoveryRequired)
+    ));
+    assert!(store.poisoned);
+    assert!(store.control_challenge(&key).is_err());
+    let before = count(&store, "task.cancelled");
+    assert!(store.cancel("task-a").is_err());
+    assert_eq!(count(&store, "task.cancelled"), before);
+}
+
+#[test]
+fn invalid_authenticated_requests_do_not_poison_other_sessions() {
+    let temp = Temp::new();
+    let mut store = Store::open(&temp.0).unwrap();
+    let key = credential();
+    let mut sessions = pair(&store, &key);
+    let reply = raw(&mut store, &mut sessions, b"not-json");
+    assert_eq!(reply["error"]["code"], -32700);
+    assert!(!store.poisoned);
+    let mut fresh = pair(&store, &key);
+    assert!(call(&mut store, &mut fresh, &submit())
+        .get("result")
+        .is_some());
+}

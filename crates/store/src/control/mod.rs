@@ -116,7 +116,7 @@ impl Store {
         Ok(self.conn.query_row(
             "SELECT store_id,generation FROM metadata WHERE singleton=1",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?)
     }
 
@@ -125,6 +125,22 @@ impl Store {
     /// Application responses are signed; storage errors abort the request and
     /// must not be turned into a success by the transport adapter.
     pub fn control_handle(&mut self, session: &mut ServerSession, frame: &[u8]) -> Result<Vec<u8>> {
+        let result = self.control_handle_inner(session, frame);
+        if matches!(
+            &result,
+            Err(Error::Sql(_) | Error::Io(_) | Error::RecoveryRequired)
+        ) {
+            self.poisoned = true;
+            session.revoke();
+        }
+        result
+    }
+
+    fn control_handle_inner(
+        &mut self,
+        session: &mut ServerSession,
+        frame: &[u8],
+    ) -> Result<Vec<u8>> {
         let (store_id, generation) = self.control_context()?;
         if let Err(error) = session.check(&store_id, generation) {
             session.revoke();
