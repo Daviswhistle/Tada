@@ -333,6 +333,61 @@ pub struct ArtifactManifest {
     pub created_at: UtcTimestamp,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlSubmitParams {
+    pub request_id: Identifier,
+    pub contract: TaskContract,
+    pub budget_micro_usd: Counter,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlCancelParams {
+    pub request_id: Identifier,
+    pub task_id: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlGetParams {
+    pub task_id: Identifier,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlEventsParams {
+    pub task_id: Identifier,
+    pub after_seq: Counter,
+    pub limit: crate::SafeInteger,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<Identifier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<TaskContract>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_micro_usd: Option<Counter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<Identifier>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_seq: Option<Counter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<crate::SafeInteger>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlRequest {
+    pub jsonrpc: String,
+    pub id: Identifier,
+    pub method: String,
+    pub params: ControlParams,
+}
+
 pub const CONTRACT_NAMES: &[&str] = &[
     "InputSnapshot",
     "Deliverable",
@@ -347,6 +402,12 @@ pub const CONTRACT_NAMES: &[&str] = &[
     "Artifact",
     "Verification",
     "ArtifactManifest",
+    "ControlSubmitParams",
+    "ControlCancelParams",
+    "ControlGetParams",
+    "ControlEventsParams",
+    "ControlParams",
+    "ControlRequest",
 ];
 
 impl crate::sealed::Sealed for InputSnapshot {}
@@ -375,6 +436,18 @@ impl crate::sealed::Sealed for Verification {}
 impl crate::Contract for Verification { const NAME: &'static str = "Verification"; }
 impl crate::sealed::Sealed for ArtifactManifest {}
 impl crate::Contract for ArtifactManifest { const NAME: &'static str = "ArtifactManifest"; }
+impl crate::sealed::Sealed for ControlSubmitParams {}
+impl crate::Contract for ControlSubmitParams { const NAME: &'static str = "ControlSubmitParams"; }
+impl crate::sealed::Sealed for ControlCancelParams {}
+impl crate::Contract for ControlCancelParams { const NAME: &'static str = "ControlCancelParams"; }
+impl crate::sealed::Sealed for ControlGetParams {}
+impl crate::Contract for ControlGetParams { const NAME: &'static str = "ControlGetParams"; }
+impl crate::sealed::Sealed for ControlEventsParams {}
+impl crate::Contract for ControlEventsParams { const NAME: &'static str = "ControlEventsParams"; }
+impl crate::sealed::Sealed for ControlParams {}
+impl crate::Contract for ControlParams { const NAME: &'static str = "ControlParams"; }
+impl crate::sealed::Sealed for ControlRequest {}
+impl crate::Contract for ControlRequest { const NAME: &'static str = "ControlRequest"; }
 
 /// Graph membership only; not permission, replay safety, or dispatch admission.
 pub fn is_action_transition_allowed(from: ActionState, to: ActionState) -> bool {

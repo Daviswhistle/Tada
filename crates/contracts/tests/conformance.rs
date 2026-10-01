@@ -4,6 +4,7 @@ use tada_contracts::*;
 fn typed_roundtrip(name: &str, value: &Value) -> Value {
     match name {
         "TaskContract" => encode(&decode::<TaskContract>(value).unwrap()).unwrap(),
+        "ControlRequest" => encode(&decode::<ControlRequest>(value).unwrap()).unwrap(),
         "TaskSnapshot" => encode(&decode::<TaskSnapshot>(value).unwrap()).unwrap(),
         "ActionRecord" => encode(&decode::<ActionRecord>(value).unwrap()).unwrap(),
         "PermissionGrant" => encode(&decode::<PermissionGrant>(value).unwrap()).unwrap(),

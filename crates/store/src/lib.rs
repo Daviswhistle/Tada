@@ -12,6 +12,7 @@ use std::{
 };
 use tada_contracts::{ActionRecord, SafeInteger, TaskContract, TaskSnapshot};
 
+pub mod control;
 pub mod mock;
 use mock::{MockMode, MockPayload, MockService, Receipt};
 
@@ -462,14 +463,8 @@ impl Store {
         counter(budget_micro_usd)?;
         let contract =
             tada_contracts::encode(contract).map_err(|_| Error::Invalid("INVALID_CONTRACT"))?;
-        let id = text(&contract, "task_id")?.to_owned();
-        // Only the fixed in-process mock adapter exists. A budget value here is
-        // a fake ledger cap, not a dollar guarantee for any real model route.
-        self.transact("create_task",|tx| {
-            let value = json!({"schema_version":1,"task_id":id,"version":1,"execution_status":"READY","completion_status":"PENDING","cancel_epoch":0,"unresolved_effects":[],"unmet_required_criteria":contract["acceptance"]});
-            checked("TaskSnapshot",&value)?;
-            tx.execute("INSERT INTO tasks(id,contract,snapshot,budget_micro_usd) VALUES(?1,?2,?3,?4)",params![id,contract.to_string(),value.to_string(),budget_micro_usd])?;
-            event(tx,&id,"task.created",&value)
+        self.transact("create_task", |tx| {
+            control::create_task_tx(tx, &contract, budget_micro_usd).map(|_| ())
         })
     }
 
@@ -712,17 +707,7 @@ impl Store {
         if number(&current, "cancel_epoch")? > 0 {
             return Ok(());
         }
-        self.transact("cancel",|tx| {
-            let mut value = snapshot(tx,id)?;
-            value["cancel_epoch"] = json!(increment(number(&value,"cancel_epoch")?)?);
-            value["execution_status"] = json!("CANCELLED");
-            value.as_object_mut().ok_or(Error::RecoveryRequired)?.remove("wait");
-            let value = save_task(tx,value,"task.cancelled")?;
-            tx.execute("UPDATE grants SET revoked=1 WHERE action_id IN (SELECT id FROM actions WHERE task_id=?1)",[id])?;
-            tx.execute("UPDATE runs SET active=0 WHERE task_id=?1",[id])?;
-            enqueue(tx,&value,"stopped")?;
-            Ok(())
-        })
+        self.transact("cancel", |tx| control::cancel_task_tx(tx, id).map(|_| ()))
     }
 
     pub fn revoke_mock_grant(&mut self, id: &str) -> Result<()> {

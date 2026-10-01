@@ -2191,5 +2191,808 @@
       "unmet_required_criteria": [],
       "created_at": "2026-09-30T12:00:00Z"
     }
+  },
+  {
+    "name": "control-submit-valid",
+    "contract": "ControlRequest",
+    "valid": true,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-cancel-valid",
+    "contract": "ControlRequest",
+    "valid": true,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-b",
+      "method": "task.cancel",
+      "params": {
+        "request_id": "cancel-a",
+        "task_id": "task-a"
+      }
+    }
+  },
+  {
+    "name": "control-get-valid",
+    "contract": "ControlRequest",
+    "valid": true,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-c",
+      "method": "task.get",
+      "params": {
+        "task_id": "task-a"
+      }
+    }
+  },
+  {
+    "name": "control-events-valid",
+    "contract": "ControlRequest",
+    "valid": true,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-d",
+      "method": "task.events",
+      "params": {
+        "task_id": "task-a",
+        "after_seq": 0,
+        "limit": 64
+      }
+    }
+  },
+  {
+    "name": "control-integral-float",
+    "contract": "ControlRequest",
+    "valid": true,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100.0
+      }
+    }
+  },
+  {
+    "name": "control-future-rpc-version",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "3.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-missing-transport-id",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-null-transport-id",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": null,
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-numeric-transport-id",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-unknown-root-field",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      },
+      "role": "controller"
+    }
+  },
+  {
+    "name": "control-unknown-method",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "policy.set",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-missing-request-id",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-unknown-params-field",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 100,
+        "approval": "DO_NOT_LOG_THIS_SECRET"
+      }
+    }
+  },
+  {
+    "name": "control-negative-budget",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": -1
+      }
+    }
+  },
+  {
+    "name": "control-unsafe-budget",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": 9007199254740992
+      }
+    }
+  },
+  {
+    "name": "control-string-budget",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        },
+        "budget_micro_usd": "100"
+      }
+    }
+  },
+  {
+    "name": "control-contract-unknown-field",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": {
+        "request_id": "submit-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": [],
+          "authority": "document"
+        },
+        "budget_micro_usd": 100
+      }
+    }
+  },
+  {
+    "name": "control-cancel-cross-method-params",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-b",
+      "method": "task.cancel",
+      "params": {
+        "request_id": "cancel-a",
+        "task_id": "task-a",
+        "contract": {
+          "task_id": "task_example",
+          "contract_version": 1,
+          "goal": "자료로 한국어 보고서 만들기",
+          "inputs": [
+            {
+              "ref": "fs://grant/quarterly",
+              "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ],
+          "deliverables": [
+            {
+              "kind": "docx",
+              "name": "보고서.docx"
+            }
+          ],
+          "acceptance": [
+            "opens",
+            "render_clean"
+          ],
+          "external_effects": [],
+          "budget": {
+            "max_usd": 3,
+            "max_model_turns": 80
+          },
+          "policy_profile_id": "profile_local_autonomous",
+          "on_budget_exhaustion": "save_and_request_decision",
+          "assumptions": []
+        }
+      }
+    }
+  },
+  {
+    "name": "control-get-cannot-carry-mutation-id",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-c",
+      "method": "task.get",
+      "params": {
+        "task_id": "task-a",
+        "request_id": "mutate"
+      }
+    }
+  },
+  {
+    "name": "control-negative-event-cursor",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-d",
+      "method": "task.events",
+      "params": {
+        "task_id": "task-a",
+        "after_seq": -1,
+        "limit": 64
+      }
+    }
+  },
+  {
+    "name": "control-event-limit-zero",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-d",
+      "method": "task.events",
+      "params": {
+        "task_id": "task-a",
+        "after_seq": 0,
+        "limit": 0
+      }
+    }
+  },
+  {
+    "name": "control-event-limit-excessive",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-d",
+      "method": "task.events",
+      "params": {
+        "task_id": "task-a",
+        "after_seq": 0,
+        "limit": 65
+      }
+    }
+  },
+  {
+    "name": "control-params-null",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": {
+      "jsonrpc": "2.0",
+      "id": "wire-a",
+      "method": "task.submit",
+      "params": null
+    }
+  },
+  {
+    "name": "control-batch-not-supported",
+    "contract": "ControlRequest",
+    "valid": false,
+    "instance": [
+      {
+        "jsonrpc": "2.0",
+        "id": "wire-a",
+        "method": "task.submit",
+        "params": {
+          "request_id": "submit-a",
+          "contract": {
+            "task_id": "task_example",
+            "contract_version": 1,
+            "goal": "자료로 한국어 보고서 만들기",
+            "inputs": [
+              {
+                "ref": "fs://grant/quarterly",
+                "snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            ],
+            "deliverables": [
+              {
+                "kind": "docx",
+                "name": "보고서.docx"
+              }
+            ],
+            "acceptance": [
+              "opens",
+              "render_clean"
+            ],
+            "external_effects": [],
+            "budget": {
+              "max_usd": 3,
+              "max_model_turns": 80
+            },
+            "policy_profile_id": "profile_local_autonomous",
+            "on_budget_exhaustion": "save_and_request_decision",
+            "assumptions": []
+          },
+          "budget_micro_usd": 100
+        }
+      }
+    ]
   }
 ]

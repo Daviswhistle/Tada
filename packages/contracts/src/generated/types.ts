@@ -192,6 +192,43 @@ export interface ArtifactManifest {
   created_at: UtcTimestamp;
 }
 
+export interface ControlSubmitParams {
+  request_id: Identifier;
+  contract: TaskContract;
+  budget_micro_usd: Counter;
+}
+
+export interface ControlCancelParams {
+  request_id: Identifier;
+  task_id: Identifier;
+}
+
+export interface ControlGetParams {
+  task_id: Identifier;
+}
+
+export interface ControlEventsParams {
+  task_id: Identifier;
+  after_seq: Counter;
+  limit: number;
+}
+
+export interface ControlParams {
+  request_id?: Identifier;
+  contract?: TaskContract;
+  budget_micro_usd?: Counter;
+  task_id?: Identifier;
+  after_seq?: Counter;
+  limit?: number;
+}
+
+export interface ControlRequest {
+  jsonrpc: "2.0";
+  id: Identifier;
+  method: "task.submit" | "task.cancel" | "task.get" | "task.events";
+  params: ControlParams;
+}
+
 export interface ContractMap {
   InputSnapshot: InputSnapshot;
   Deliverable: Deliverable;
@@ -206,4 +243,10 @@ export interface ContractMap {
   Artifact: Artifact;
   Verification: Verification;
   ArtifactManifest: ArtifactManifest;
+  ControlSubmitParams: ControlSubmitParams;
+  ControlCancelParams: ControlCancelParams;
+  ControlGetParams: ControlGetParams;
+  ControlEventsParams: ControlEventsParams;
+  ControlParams: ControlParams;
+  ControlRequest: ControlRequest;
 }
