@@ -56,7 +56,7 @@ fn state(store: &Store) -> Value {
 fn record(store: &Store) -> Value {
     action(&store.conn, "action-a").unwrap()
 }
-fn attempts(store: &Store) -> u64 {
+fn attempts(store: &Store) -> i64 {
     store
         .conn
         .query_row("SELECT count(*) FROM attempts", [], |r| r.get(0))
@@ -290,10 +290,16 @@ fn maximum_integer_budget_does_not_use_float_arithmetic() {
     let temp = Temp::new();
     let mut store = Store::open(&temp.0).unwrap();
     assert!(store
-        .create_task(&contract("too-large"), SafeInteger::MAX + 1)
+        .create_task(
+            &contract("too-large"),
+            i64::try_from(SafeInteger::MAX).unwrap() + 1
+        )
         .is_err());
     store
-        .create_task(&contract("task-a"), SafeInteger::MAX)
+        .create_task(
+            &contract("task-a"),
+            i64::try_from(SafeInteger::MAX).unwrap(),
+        )
         .unwrap();
     let lease = store.start_run("task-a", Duration::from_secs(60)).unwrap();
     store.propose_mock("action-a", &lease, &payload()).unwrap();
@@ -305,10 +311,13 @@ fn maximum_integer_budget_does_not_use_float_arithmetic() {
             &lease,
             &mut service,
             MockMode::DropResponse,
-            SafeInteger::MAX,
+            i64::try_from(SafeInteger::MAX).unwrap(),
         )
         .unwrap();
-    assert_eq!(store.budget_committed("task-a").unwrap(), SafeInteger::MAX);
+    assert_eq!(
+        store.budget_committed("task-a").unwrap(),
+        i64::try_from(SafeInteger::MAX).unwrap()
+    );
 }
 #[test]
 fn applied_mismatch_preserves_actual_effect_and_failed_acceptance() {
@@ -636,7 +645,7 @@ fn real_process_kill_matrix_preserves_effects_and_fails_closed() {
                 "{phase}"
             );
             assert_eq!(attempts(&store), 1);
-            assert_eq!(service.effect_count().unwrap(), u64::from(applied));
+            assert_eq!(service.effect_count().unwrap(), i64::from(applied));
             assert_eq!(store.budget_committed("task-a").unwrap(), 20);
             if phase == "reconcile.commit" {
                 assert!(!store.pending_notifications().unwrap().is_empty());
@@ -645,4 +654,18 @@ fn real_process_kill_matrix_preserves_effects_and_fails_closed() {
         assert_ne!(state(&store)["completion_status"], "SUCCEEDED");
         println!("fault {phase}: passed");
     }
+}
+
+#[test]
+fn negative_budget_and_reservation_cannot_create_credit() {
+    let temp = Temp::new();
+    let (mut store, mut service, lease) = setup(&temp.0);
+    let before = witness_tip(&store);
+    assert!(store.create_task(&contract("negative-cap"), -1).is_err());
+    assert!(store
+        .dispatch_mock("action-a", &lease, &mut service, MockMode::Normal, -1)
+        .is_err());
+    assert_eq!(witness_tip(&store), before);
+    assert_eq!(attempts(&store), 0);
+    assert_eq!(service.effect_count().unwrap(), 0);
 }

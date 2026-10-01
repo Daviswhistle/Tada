@@ -33,7 +33,7 @@ pub(crate) struct Receipt {
     pub action_id: String,
     pub request_hash: String,
     pub actual: MockPayload,
-    pub charged: u64,
+    pub charged: i64,
 }
 impl Receipt {
     pub fn reference(&self) -> String {
@@ -57,7 +57,7 @@ CREATE TRIGGER IF NOT EXISTS immutable_effect_delete BEFORE DELETE ON effects BE
             hidden: false,
         })
     }
-    pub fn effect_count(&self) -> Result<u64> {
+    pub fn effect_count(&self) -> Result<i64> {
         Ok(self
             .conn
             .query_row("SELECT count(*) FROM effects", [], |r| r.get(0))?)
@@ -98,7 +98,7 @@ CREATE TRIGGER IF NOT EXISTS immutable_effect_delete BEFORE DELETE ON effects BE
         if self.hidden {
             return Ok(None);
         }
-        let count: u64 = self.conn.query_row(
+        let count: i64 = self.conn.query_row(
             "SELECT count(*) FROM effects WHERE action_id=?1",
             [id],
             |r| r.get(0),
@@ -107,7 +107,7 @@ CREATE TRIGGER IF NOT EXISTS immutable_effect_delete BEFORE DELETE ON effects BE
         if count != 1 {
             return Ok(None);
         }
-        let (sequence, request_hash, raw, charged): (i64, String, String, u64) =
+        let (sequence, request_hash, raw, charged): (i64, String, String, i64) =
             self.conn.query_row(
                 "SELECT sequence,request_hash,actual,charged FROM effects WHERE action_id=?1",
                 [id],

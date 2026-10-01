@@ -67,15 +67,15 @@ impl From<serde_json::Error> for Error {
 pub struct Lease {
     task_id: String,
     run_id: i64,
-    generation: u64,
-    fence: u64,
+    generation: i64,
+    fence: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notification {
     pub key: String,
     pub task_id: String,
-    pub task_version: u64,
+    pub task_version: i64,
     pub kind: String,
 }
 
@@ -94,20 +94,23 @@ pub(crate) fn digest(bytes: &[u8]) -> String {
 fn checked(name: &str, value: &Value) -> Result<()> {
     tada_contracts::validate(name, value).map_err(|_| Error::Invalid("INVALID_CONTRACT"))
 }
-fn counter(value: u64) -> Result<u64> {
-    SafeInteger::new(value)
+fn counter(value: i64) -> Result<i64> {
+    u64::try_from(value)
+        .ok()
+        .and_then(SafeInteger::new)
         .map(|_| value)
         .ok_or(Error::Invalid("COUNTER_OVERFLOW"))
 }
-fn increment(value: u64) -> Result<u64> {
+fn increment(value: i64) -> Result<i64> {
     counter(
         value
             .checked_add(1)
             .ok_or(Error::Invalid("COUNTER_OVERFLOW"))?,
     )
 }
-fn number(value: &Value, key: &str) -> Result<u64> {
-    value[key].as_u64().ok_or(Error::RecoveryRequired)
+fn number(value: &Value, key: &str) -> Result<i64> {
+    counter(value[key].as_i64().ok_or(Error::RecoveryRequired)?)
+        .map_err(|_| Error::RecoveryRequired)
 }
 fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
     value[key].as_str().ok_or(Error::RecoveryRequired)
@@ -366,7 +369,7 @@ impl Store {
             let first: i64 =
                 tx.query_row("SELECT coalesce(max(seq),0) FROM events", [], |r| r.get(0))?;
             let result = operation(&tx)?;
-            let old: u64 = tx.query_row("SELECT witness_seq FROM metadata", [], |r| r.get(0))?;
+            let old: i64 = tx.query_row("SELECT witness_seq FROM metadata", [], |r| r.get(0))?;
             let seq = increment(old)?;
             let aggregates = {
                 let mut s =
@@ -400,7 +403,7 @@ impl Store {
 
     fn recover(&mut self) -> Result<()> {
         self.transact("recovery", |tx| {
-            let generation: u64 =
+            let generation: i64 =
                 tx.query_row("SELECT generation FROM metadata", [], |r| r.get(0))?;
             tx.execute(
                 "UPDATE metadata SET generation=?1",
@@ -454,7 +457,7 @@ impl Store {
         })
     }
 
-    pub fn create_task(&mut self, contract: &TaskContract, budget_micro_usd: u64) -> Result<()> {
+    pub fn create_task(&mut self, contract: &TaskContract, budget_micro_usd: i64) -> Result<()> {
         counter(budget_micro_usd)?;
         let contract =
             tada_contracts::encode(contract).map_err(|_| Error::Invalid("INVALID_CONTRACT"))?;
@@ -472,7 +475,7 @@ impl Store {
     pub fn start_run(&mut self, id: &str, ttl: Duration) -> Result<Lease> {
         let tick = self.tick()?;
         let duration =
-            u64::try_from(ttl.as_millis()).map_err(|_| Error::Invalid("LEASE_DURATION"))?;
+            i64::try_from(ttl.as_millis()).map_err(|_| Error::Invalid("LEASE_DURATION"))?;
         if duration == 0 {
             return Err(Error::Invalid("LEASE_DURATION"));
         }
@@ -487,9 +490,9 @@ impl Store {
             }
             let unresolved: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM actions WHERE task_id=?1 AND state IN ('DISPATCHING','UNCERTAIN','ACKNOWLEDGED'))",[id],|r|r.get(0))?;
             if unresolved { return Err(Error::Denied("RECONCILIATION_REQUIRED")); }
-            let previous: u64 = tx.query_row("SELECT fence FROM tasks WHERE id=?1",[id],|r|r.get(0))?;
+            let previous: i64 = tx.query_row("SELECT fence FROM tasks WHERE id=?1",[id],|r|r.get(0))?;
             let fence = increment(previous)?;
-            let generation: u64 = tx.query_row("SELECT generation FROM metadata",[],|r|r.get(0))?;
+            let generation: i64 = tx.query_row("SELECT generation FROM metadata",[],|r|r.get(0))?;
             tx.execute("UPDATE tasks SET fence=?1 WHERE id=?2",params![fence,id])?;
             tx.execute("INSERT INTO runs(task_id,generation,fence,expires_tick,active) VALUES(?1,?2,?3,?4,1)",params![id,generation,fence,until])?;
             let run_id = tx.last_insert_rowid();
@@ -498,8 +501,8 @@ impl Store {
             Ok(Lease{ task_id:id.to_owned(),run_id,generation,fence })
         })
     }
-    fn tick(&self) -> Result<u64> {
-        u64::try_from(self.clock.elapsed().as_millis()).map_err(|_| Error::RecoveryRequired)
+    fn tick(&self) -> Result<i64> {
+        i64::try_from(self.clock.elapsed().as_millis()).map_err(|_| Error::RecoveryRequired)
     }
 
     pub fn propose_mock(&mut self, id: &str, lease: &Lease, payload: &MockPayload) -> Result<()> {
@@ -510,7 +513,7 @@ impl Store {
         self.transact("propose",|tx| {
             admit_lease(tx,lease,tick)?;
             scope(tx,&lease.task_id,&payload.target)?;
-            let revision: u64 = tx.query_row("SELECT policy_revision FROM metadata",[],|r|r.get(0))?;
+            let revision: i64 = tx.query_row("SELECT policy_revision FROM metadata",[],|r|r.get(0))?;
             let epoch = number(&snapshot(tx,&lease.task_id)?,"cancel_epoch")?;
             let value = json!({"schema_version":1,"action_id":id,"task_id":lease.task_id,"version":1,"state":"PROPOSED","effect":"external_write","intent_hash":hash,"payload_ref":format!("blob://sha256/{hash}"),"method":"mock.apply","endpoint":"mock://ledger","account_ref":"mock-account","target":payload.target,"policy_revision":revision,"cancel_epoch":epoch,"precondition_version":1,"verifier_version":"mock-ledger-v1","side_effect_state":"none","reconciliation_verdict":"NOT_OBSERVED","acceptance_status":"pending","evidence_refs":[]});
             checked("ActionRecord",&value)?;
@@ -529,7 +532,7 @@ impl Store {
                 return Err(Error::Denied("ACTION_NOT_PROPOSED"));
             }
             scope(tx, &lease.task_id, text(&value, "target")?)?;
-            let (revision, denied): (u64, bool) =
+            let (revision, denied): (i64, bool) =
                 tx.query_row("SELECT policy_revision,denied FROM metadata", [], |r| {
                     Ok((r.get(0)?, r.get(1)?))
                 })?;
@@ -554,7 +557,7 @@ impl Store {
         })
     }
 
-    fn admit(&mut self, id: &str, lease: &Lease, reserved: u64) -> Result<Dispatch> {
+    fn admit(&mut self, id: &str, lease: &Lease, reserved: i64) -> Result<Dispatch> {
         counter(reserved)?;
         let tick = self.tick()?;
         self.transact("dispatch",|tx| {
@@ -562,14 +565,14 @@ impl Store {
             let mut value = action(tx,id)?;
             if value["state"] != "PREPARED" || value["task_id"] != lease.task_id { return Err(Error::Denied("ACTION_NOT_PREPARED")); }
             let current = snapshot(tx,&lease.task_id)?;
-            let (revision,denied): (u64,bool) = tx.query_row("SELECT policy_revision,denied FROM metadata",[],|r|Ok((r.get(0)?,r.get(1)?)))?;
+            let (revision,denied): (i64,bool) = tx.query_row("SELECT policy_revision,denied FROM metadata",[],|r|Ok((r.get(0)?,r.get(1)?)))?;
             let valid: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM grants WHERE action_id=?1 AND run_id=?2 AND policy_revision=?3 AND cancel_epoch=?4 AND fence=?5 AND revoked=0)",params![id,lease.run_id,revision,number(&current,"cancel_epoch")?,lease.fence],|r|r.get(0))?;
             if denied || !valid || number(&value,"policy_revision")? != revision || number(&value,"cancel_epoch")? != number(&current,"cancel_epoch")? || number(&value,"fencing_token")? != lease.fence {
                 return Err(Error::Denied("STALE_OR_REVOKED_GRANT"));
             }
             scope(tx,&lease.task_id,text(&value,"target")?)?;
             let used = committed_budget(tx,&lease.task_id)?;
-            let cap: u64 = tx.query_row("SELECT budget_micro_usd FROM tasks WHERE id=?1",[&lease.task_id],|r|r.get(0))?;
+            let cap: i64 = tx.query_row("SELECT budget_micro_usd FROM tasks WHERE id=?1",[&lease.task_id],|r|r.get(0))?;
             if used.checked_add(reserved).is_none_or(|n| n > cap) { return Err(Error::Denied("BUDGET_EXHAUSTED")); }
             let bytes: Vec<u8> = tx.query_row("SELECT content FROM payloads WHERE hash=?1",[text(&value,"intent_hash")?],|r|r.get(0))?;
             if digest(&bytes) != text(&value,"intent_hash")? { return Err(Error::RecoveryRequired); }
@@ -592,7 +595,7 @@ impl Store {
         lease: &Lease,
         service: &mut MockService,
         mode: MockMode,
-        reserved: u64,
+        reserved: i64,
     ) -> Result<()> {
         let request = self.admit(id, lease, reserved)?;
         let receipt = service.apply(&request, mode)?;
@@ -731,7 +734,7 @@ impl Store {
     }
     pub fn set_mock_policy_denied(&mut self, denied: bool) -> Result<()> {
         self.transact("policy", |tx| {
-            let revision: u64 =
+            let revision: i64 =
                 tx.query_row("SELECT policy_revision FROM metadata", [], |r| r.get(0))?;
             tx.execute(
                 "UPDATE metadata SET policy_revision=?1,denied=?2",
@@ -751,7 +754,7 @@ impl Store {
     pub fn action(&self, id: &str) -> Result<ActionRecord> {
         tada_contracts::decode(&action(&self.conn, id)?).map_err(|_| Error::RecoveryRequired)
     }
-    pub fn budget_committed(&self, id: &str) -> Result<u64> {
+    pub fn budget_committed(&self, id: &str) -> Result<i64> {
         committed_budget(&self.conn, id)
     }
     pub fn pending_notifications(&self) -> Result<Vec<Notification>> {
@@ -795,8 +798,7 @@ impl Store {
         if destination.exists() {
             return Err(Error::Denied("BACKUP_DESTINATION_EXISTS"));
         }
-        self.conn
-            .backup(rusqlite::DatabaseName::Main, destination, None)?;
+        self.conn.backup("main", destination, None)?;
         Ok(())
     }
     /// Read-only forensic export remains possible when the writable open fails.
@@ -810,7 +812,7 @@ impl Store {
     }
 }
 
-fn admit_lease(tx: &Transaction<'_>, lease: &Lease, tick: u64) -> Result<()> {
+fn admit_lease(tx: &Transaction<'_>, lease: &Lease, tick: i64) -> Result<()> {
     let current = snapshot(tx, &lease.task_id)?;
     if number(&current, "cancel_epoch")? > 0 {
         return Err(Error::Denied("TASK_CANCELLED"));
@@ -838,7 +840,7 @@ fn scope(tx: &Transaction<'_>, id: &str, target: &str) -> Result<()> {
     }
     Ok(())
 }
-fn committed_budget(conn: &Connection, id: &str) -> Result<u64> {
+fn committed_budget(conn: &Connection, id: &str) -> Result<i64> {
     Ok(conn.query_row("SELECT coalesce(sum(CASE WHEN status='settled' THEN charged ELSE reserved END),0) FROM reservations WHERE task_id=?1",[id],|r|r.get(0))?)
 }
 fn bind_receipt(value: &Value, receipt: &Receipt) -> Result<()> {
@@ -849,8 +851,9 @@ fn bind_receipt(value: &Value, receipt: &Receipt) -> Result<()> {
     }
     Ok(())
 }
-fn settle(tx: &Transaction<'_>, id: &str, charged: u64) -> Result<()> {
-    let reserved: u64 = tx.query_row(
+fn settle(tx: &Transaction<'_>, id: &str, charged: i64) -> Result<()> {
+    counter(charged)?;
+    let reserved: i64 = tx.query_row(
         "SELECT reserved FROM reservations WHERE action_id=?1",
         [id],
         |r| r.get(0),
@@ -869,7 +872,7 @@ pub(crate) struct Dispatch {
     action_id: String,
     payload: MockPayload,
     hash: String,
-    reserved: u64,
+    reserved: i64,
 }
 
 // Fault hooks exist only in the unit-test binary. Release builds have no
