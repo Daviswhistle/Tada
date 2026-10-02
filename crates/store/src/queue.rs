@@ -272,10 +272,9 @@ pub(crate) fn sync(tx: &Transaction<'_>, value: &Value, recovery: bool) -> Resul
         && entry.state == WorkState::Leased
         && entry.kind == kind
         && entry.cancel_epoch == epoch
+        && (kind == WorkKind::Reconcile || value["execution_status"] == "RUNNING")
     {
-        if kind == WorkKind::Reconcile || value["execution_status"] == "RUNNING" {
-            state = WorkState::Leased;
-        }
+        state = WorkState::Leased;
     }
     if kind != entry.kind {
         entry.run_after_ms = 0;
