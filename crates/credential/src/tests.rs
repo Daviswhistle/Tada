@@ -84,13 +84,14 @@ pub(super) async fn call(client: &mut Client, method: &str) -> serde_json::Value
 async fn fake_connect(path: &Path, vault: &MemoryVault) -> Result<Client> {
     let id = Installation::load_with(path, vault)?;
     let e = id.discovery()?;
+    let credential = id.credential()?;
     Ok(Client::connect_pinned(
         &ConnectInfo {
             address: e.address,
             store_id: e.store_id,
             server_pid: e.server_pid,
         },
-        &id.credential()?,
+        &credential,
         Limits::default(),
         e.generation,
     )
