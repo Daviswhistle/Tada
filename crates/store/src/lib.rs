@@ -212,6 +212,9 @@ fn refresh_task(tx: &Transaction<'_>, id: &str, stop: bool) -> Result<Value> {
     } else {
         save_task(tx, value, "task.effect_observed")?
     };
+    // Verification can finish while the task stays CANCELLED/PENDING. The
+    // action changed even when no new task version was necessary.
+    queue::sync(tx, &value, false)?;
     if stop {
         let kind = if !unresolved.is_empty() {
             "decision_required"

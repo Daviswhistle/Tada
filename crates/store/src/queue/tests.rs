@@ -624,3 +624,30 @@ fn nine_process_kill_boundaries_preserve_queue_or_require_read_only_recovery() {
         println!("queue fault {phase}: passed");
     }
 }
+
+#[test]
+fn action_only_verification_retires_cancelled_observation_without_fake_task_version() {
+    let temp = Temp::new();
+    let mut store = setup(&temp.0);
+    let service = effects(&mut store, &temp.0);
+    store.cancel("task-a").unwrap();
+    let receipt = service.observe("action-a").unwrap().unwrap();
+    store.record_receipt("action-a", &receipt).unwrap();
+    let before = snapshot(&store.conn, "task-a").unwrap();
+    assert_eq!(before["execution_status"], "CANCELLED");
+    assert_eq!(before["completion_status"], "PENDING");
+    store.reconcile_mock("action-a", &service).unwrap();
+    assert_eq!(snapshot(&store.conn, "task-a").unwrap(), before);
+    assert_eq!(
+        store.work_entry("task-a").unwrap().state,
+        WorkState::Cancelled
+    );
+    assert_eq!(store.work_entry("task-a").unwrap().kind, WorkKind::Advance);
+    drop(store);
+    let mut store = Store::open(&temp.0).unwrap();
+    assert!(store
+        .claim_work("worker", 0, Duration::from_secs(10))
+        .unwrap()
+        .is_none());
+    assert_eq!(service.effect_count().unwrap(), 1);
+}
