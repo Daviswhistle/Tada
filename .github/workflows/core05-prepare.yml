@@ -1,0 +1,40 @@
+name: Prepare CORE-05 branch
+on:
+  push:
+    branches: [codex/core-05-installation-identity]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.actor == 'Daviswhistle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Apply exact source integration
+        run: python3 scripts/core05-import.py
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Lock and format sources
+        run: |
+          cargo metadata --format-version=1 > /dev/null
+          cargo fmt --all
+      - name: Commit only prepared source and dependency lock
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/codex/core-05-installation-identity
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- Cargo.lock crates/credential crates/local-ipc/src/lib.rs scripts/core05-import.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(identity): lock OS-vault dependencies and format native identity source'
+            AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push origin HEAD:refs/heads/codex/core-05-installation-identity
+          fi
+      - name: Validate ordinary identity tests and opt-in test compilation
+        run: |
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test --locked -p tada-credential -- --nocapture
