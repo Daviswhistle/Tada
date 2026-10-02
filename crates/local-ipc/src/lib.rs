@@ -28,7 +28,8 @@ mod platform;
 #[path = "windows.rs"]
 mod platform;
 #[cfg(not(any(target_os = "linux", windows)))]
-compile_error!("tada-local-ipc currently qualifies Linux and Windows only");
+#[path = "unsupported.rs"]
+mod platform;
 pub use platform::Listener;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -42,6 +43,7 @@ pub enum Error {
     WorkerFailed,
     Closed,
     InvalidHandshake,
+    UnsupportedPlatform,
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -55,6 +57,7 @@ impl fmt::Display for Error {
             Self::WorkerFailed => "IPC_STORE_WORKER_FAILED",
             Self::Closed => "IPC_CLOSED",
             Self::InvalidHandshake => "IPC_HANDSHAKE_REJECTED",
+            Self::UnsupportedPlatform => "IPC_UNSUPPORTED_PLATFORM",
         })
     }
 }
@@ -351,8 +354,16 @@ pub fn create_runtime_dir(path: &Path) -> Result<()> {
     }
     #[cfg(windows)]
     std::fs::create_dir(path)?;
-    Ok(())
+    #[cfg(any(target_os = "linux", windows))]
+    {
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
+    {
+        let _ = path;
+        Err(Error::UnsupportedPlatform)
+    }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(target_os = "linux", windows)))]
 mod tests;

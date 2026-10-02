@@ -1,3 +1,5 @@
+#![cfg(any(target_os = "linux", windows))]
+
 use std::{
     fs,
     io::Read,

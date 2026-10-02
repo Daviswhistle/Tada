@@ -14,6 +14,8 @@ cargo run --locked -p tada-local-ipc --bin tada-ipc-demo -- ./new-native-demo
 
 The directory must not already exist. The parent and child authenticate, submit, disconnect, reconnect, replay and cancel. The parent independently checks the final cancellation epoch and scans both closed SQLite fixture files for the raw transferred secret. Both processes exit; no service, scheduled task, login hook, TCP listener or deployment is installed. The directory retains only disposable fixture data, not a production user vault.
 
+The native endpoint capability is enabled only on Linux and Windows. On other OSes, the crate remains buildable but binding, connecting and runtime-directory provisioning return `IPC_UNSUPPORTED_PLATFORM`. macOS portability CI compiles the workspace and tests this explicit rejection; it does not qualify a macOS socket or desktop bridge.
+
 ## Linux boundary
 
 The runtime directory must already be an absolute, current-user-owned directory with mode 0700. It is opened with O_DIRECTORY/O_NOFOLLOW/O_CLOEXEC and checked against its named identity. `create_runtime_dir` creates a new private directory; it does not repair or chmod an existing one. The socket is `control.sock` inside that directory. Binding an occupied file, socket or symlink fails rather than unlinking it to claim the address.

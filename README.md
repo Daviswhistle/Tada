@@ -4,11 +4,11 @@
 
 An open-source, local-first desktop agent being built to execute work on your computer and return verified results. The intended architecture is a Rust daemon and authority broker, a TypeScript engine, and a Tauri desktop UI. Remote inference uses explicitly connected accounts; “local-first” does not mean all inference stays on-device.
 
-## Current status: contracts, durable mock core and control protocol, not a working agent
+## Current status: durable mock core with native local control
 
-This repository contains versioned contracts, generated Rust/TypeScript types, cross-language conformance fixtures, and a Rust store that exercises durable state, cancellation and recovery against an independent mock effect ledger. A transport-neutral control protocol adds authenticated sessions and durable request replay. **There is no desktop application, installed daemon, native IPC listener, model login or browser control yet.** Protocol and mock recovery tests do not establish native IPC protection, real-provider safety or the design's release gates.
+This repository contains versioned contracts, generated Rust/TypeScript types, cross-language conformance fixtures, and a Rust store that exercises durable state, cancellation and recovery against an independent mock effect ledger. The control protocol now connects real frontend processes through Linux Unix-domain sockets and Windows named pipes, with OS peer checks, authenticated sessions and durable request replay. **There is no desktop UI, installed daemon, persistent credential store, model login or browser control yet.** Native transport and mock recovery have their own regression tests; real-provider safety and the design's release gates remain separate.
 
-The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. [Contract decisions](docs/contracts-v1.md), [CORE-02 implementation boundaries](docs/core-02.md), and [control protocol decisions](docs/control-protocol.md) distinguish executable code from illustrative design snippets and guarantees that still require runtime evidence.
+The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. [Contract decisions](docs/contracts-v1.md), [CORE-02 implementation boundaries](docs/core-02.md), [control protocol decisions](docs/control-protocol.md), and [native IPC boundaries](docs/native-ipc.md) distinguish executable code from illustrative design snippets and guarantees that still require runtime evidence.
 
 ## Check the foundation
 
@@ -33,6 +33,16 @@ cargo run --locked -p tada-store --example control_replay -- ./new-control-demo
 
 The first mock saves one effect and loses its response. Execution is cancelled, the store is reopened, and the existing effect is verified without sending the mutation again. The task is not declared successful. The second example authenticates in-process, discards a submit reply, reopens the store and replays submit/cancel without reviving cancelled work. It uses an ephemeral in-memory fixture key, not a real IPC endpoint or installed secret store. Both destinations must not already exist; only mock data is written.
 
+On Linux or Windows, run the separate-process native IPC demonstration:
+
+```sh
+cargo run --locked -p tada-local-ipc --bin tada-ipc-demo -- ./new-native-demo
+```
+
+The parent opens the fixture store and native listener, then transfers an ephemeral credential to its own client child through an anonymous pipe. The child authenticates, disconnects, reconnects and replays submit/cancel. No key is saved to disk, passed in argv/environment, or sent through RPC. The new directory must not exist. Both processes exit when verification finishes; nothing is installed.
+
+The native listener is available only on Linux/Windows in this slice. Other OS builds return `IPC_UNSUPPORTED_PLATFORM` before creating an endpoint, instead of breaking the portable workspace or pretending to offer peer-verified IPC. macOS native transport and credential integration remain unimplemented.
+
 Change the source schema, regenerate, and rerun the full suite:
 
 ```sh
@@ -52,6 +62,7 @@ Do not hand-edit generated files. JSON Schema checks and typed decoding are sepa
 | `crates/contracts/` | Rust validation and validate-before-decode/encode helpers |
 | `crates/store/` | SQLite state/event transactions, restore witness, mock admission/reconciliation, budget reservations, outbox and fault tests |
 | `crates/store/src/control/` | Bounded authenticated frames, strict JSON-RPC commands, atomic request replay and task-event reads; no listener |
+| `crates/local-ipc/` | Native socket/pipe peers, bounded I/O and sessions, graceful drain, and opt-in cross-process fixture demo |
 | `fixtures/contracts/v1/` | The same valid and invalid cases consumed by both runtimes |
 | `scripts/` | Deterministic generation and source-fidelity checks |
 | `docs/` | Supplied design, implementation decisions, threat boundaries, and next gates |
@@ -60,7 +71,7 @@ The action graph only describes possible transitions; it is not permission or re
 
 ## Next gates
 
-[CORE-02 follow-through and SEC-01](docs/roadmap.md): native local IPC with OS peer checks and protected credential bootstrap, scheduled work, general resource leases, production recovery controls, reviewed policies, encrypted real-user data and provider-aware budgets. The control protocol is not an OS sandbox or a completed IPC-security gate. ART-01 must verify and publish results before successful-result notifications exist. Real provider authentication remains a separate unproven gate. Do not enable live external writes merely because the mock tests pass.
+[CORE-02 follow-through and SEC-01](docs/roadmap.md): persistent installation identity/discovery and OS-secret-store bootstrap, scheduled work, general resource leases, production recovery controls, reviewed policies, encrypted real-user data and provider-aware budgets. The control protocol is not an OS sandbox or a completed IPC-security gate. ART-01 must verify and publish results before successful-result notifications exist. Real provider authentication remains a separate unproven gate. Do not enable live external writes merely because the mock tests pass.
 
 ## Contributing and security
 
