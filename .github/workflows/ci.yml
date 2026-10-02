@@ -91,6 +91,7 @@ jobs:
         run: bash scripts/test-os-vault.sh
       - name: Test Windows user Credential Manager
         if: runner.os == 'Windows'
-        run: cargo test --locked -p tada-credential --features os-vault-tests os_tests:: -- --nocapture --test-threads=1
+        run: |
+          cargo test --locked -p tada-credential --features os-vault-tests os_tests:: -- --nocapture --test-threads=1
       - name: Reject uncommitted changes
         run: git diff --exit-code
