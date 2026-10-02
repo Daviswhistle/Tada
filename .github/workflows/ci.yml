@@ -41,5 +41,25 @@ jobs:
         run: cargo run --locked -p tada-store --example recover_mock -- "${{ runner.temp }}/tada-core02-demo"
       - name: Run authenticated control replay example
         run: cargo run --locked -p tada-store --example control_replay -- "${{ runner.temp }}/tada-core03-demo"
+      - name: Run two-process native IPC example
+        run: cargo run --locked -p tada-local-ipc --bin tada-ipc-demo -- "${{ runner.temp }}/tada-core04-demo"
       - name: Reject uncommitted generated changes
+        run: git diff --exit-code
+  portability:
+    name: Core portability (macOS; native IPC disabled)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Check workspace formatting and portability
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Unsupported native transport rejects before side effects
+        run: cargo test --locked -p tada-local-ipc --lib -- --nocapture
+      - name: Reject uncommitted changes
         run: git diff --exit-code
