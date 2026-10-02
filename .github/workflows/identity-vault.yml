@@ -1,0 +1,40 @@
+name: Native identity vault
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: identity-vault-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-vault:
+    name: OS vault (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+      - name: Compile and lint opt-in native-vault tests
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+      - name: Install Linux fixture service
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnome-keyring dbus
+      - name: Test isolated Linux Secret Service
+        if: runner.os == 'Linux'
+        run: bash scripts/test-os-vault.sh
+      - name: Test Windows user Credential Manager
+        if: runner.os == 'Windows'
+        run: cargo test --locked -p tada-credential --features os-vault-tests os_tests:: -- --nocapture --test-threads=1
+      - name: Reject uncommitted changes
+        run: git diff --exit-code
