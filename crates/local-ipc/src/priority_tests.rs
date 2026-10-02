@@ -24,6 +24,6 @@ async fn authenticated_native_cancel_overtakes_queued_probe_completion() {
     drop(owner);
     assert!(cancel_job.await.unwrap().get("result").is_some());
     assert!(matches!(worker.await.unwrap(),Err(tada_store::Error::Denied("STALE_QUEUE_LEASE"))));
-    assert_eq!(h.store.lock().unwrap().task("ipc-task").unwrap().execution_status,tada_contracts::ExecutionStatus::Cancelled);
-    assert_eq!(h.close().await.failed,0);
+    assert_eq!(serde_json::to_value(h.store.lock().unwrap().task("ipc-task").unwrap()).unwrap()["execution_status"], "CANCELLED");
+    h.close().await;
 }

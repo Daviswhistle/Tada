@@ -955,6 +955,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tada-agentd"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "serde_json",
+ "sha2",
+ "tada-contracts",
+ "tada-store",
+]
+
+[[package]]
 name = "tada-contracts"
 version = "0.1.0"
 dependencies = [
