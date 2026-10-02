@@ -239,12 +239,19 @@ async fn connection(
         }
         let prepared = tada_store::control::PreparedControl::authenticate(session, &frame)?;
         let ticket = gate.register(prepared.priority())?;
+        // Waiting consumes no blocking-pool slot. Otherwise an ordinary
+        // waiter can occupy the last thread needed to run a queued cancel.
+        let permit = tokio::select! {
+            biased;
+            _ = stopped.changed() => return Ok(()),
+            permit = ticket => permit?,
+        };
         let owner = Arc::clone(&store);
         let stop_at_admission = stopped.clone();
         // Do not time out/abort this blocking worker and then claim the command
         // did not commit. The immutable CORE-03 receipt settles lost replies.
         let (returned_session, response) = tokio::task::spawn_blocking(move || {
-            let _permit = ticket.wait()?;
+            let _permit = permit;
             let mut store = owner.lock().map_err(|_| Error::WorkerFailed)?;
             if *stop_at_admission.borrow() {
                 return Err(Error::Closed);
