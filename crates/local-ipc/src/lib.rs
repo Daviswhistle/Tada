@@ -271,6 +271,27 @@ impl Client {
         credential: &Credential,
         limits: Limits,
     ) -> Result<Self> {
+        Self::connect_inner(info, credential, limits, None).await
+    }
+    /// Pin a supervisor generation obtained from authenticated installation
+    /// discovery. Existing session-only launch callers can still use connect.
+    pub async fn connect_pinned(
+        info: &ConnectInfo,
+        credential: &Credential,
+        limits: Limits,
+        generation: i64,
+    ) -> Result<Self> {
+        if generation <= 0 {
+            return Err(Error::PeerRejected);
+        }
+        Self::connect_inner(info, credential, limits, Some(generation)).await
+    }
+    async fn connect_inner(
+        info: &ConnectInfo,
+        credential: &Credential,
+        limits: Limits,
+        expected_generation: Option<i64>,
+    ) -> Result<Self> {
         let limits = limits.validate()?;
         if info.server_pid == 0 {
             return Err(Error::PeerRejected);
@@ -278,6 +299,9 @@ impl Client {
         let handshake = async {
             let mut stream = platform::connect(&info.address, info.server_pid).await?;
             let challenge: Challenge = read_handshake(&mut stream).await?;
+            if expected_generation.is_some_and(|expected| expected != challenge.generation) {
+                return Err(Error::PeerRejected);
+            }
             let (pending, proof) = credential.answer(&challenge, &info.store_id)?;
             write_handshake(&mut stream, &proof).await?;
             let proof: ServerProof = read_handshake(&mut stream).await?;
