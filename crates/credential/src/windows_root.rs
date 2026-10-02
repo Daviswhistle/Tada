@@ -20,8 +20,9 @@ use windows_sys::Win32::{
         GetSecurityInfo, SE_FILE_OBJECT,
     },
     Security::{
-        GetAce, GetTokenInformation, TokenUser, ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION,
-        OWNER_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
+        GetAce, GetTokenInformation, TokenOwner, TokenUser, ACCESS_ALLOWED_ACE,
+        DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION, SECURITY_ATTRIBUTES, TOKEN_OWNER,
+        TOKEN_QUERY, TOKEN_USER,
     },
     Storage::FileSystem::{
         CreateDirectoryW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
@@ -65,6 +66,10 @@ fn sid_text(sid: *mut c_void) -> Result<String> {
     }
 }
 fn own_sid() -> Result<String> {
+    token_sid(false)
+}
+fn token_sid(default_owner: bool) -> Result<String> {
+    let class = if default_owner { TokenOwner } else { TokenUser };
     let mut raw = null_mut();
     // SAFETY: current-process pseudo handle is borrowed; token owns its handle.
     unsafe {
@@ -73,7 +78,7 @@ fn own_sid() -> Result<String> {
         }
         let token = OwnedHandle::from_raw_handle(raw);
         let mut needed = 0;
-        if GetTokenInformation(token.as_raw_handle(), TokenUser, null_mut(), 0, &mut needed) != 0
+        if GetTokenInformation(token.as_raw_handle(), class, null_mut(), 0, &mut needed) != 0
             || GetLastError() != ERROR_INSUFFICIENT_BUFFER
             || needed == 0
             || needed > 65_536
@@ -83,7 +88,7 @@ fn own_sid() -> Result<String> {
         let mut storage = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
         if GetTokenInformation(
             token.as_raw_handle(),
-            TokenUser,
+            class,
             storage.as_mut_ptr().cast(),
             (storage.len() * size_of::<usize>()) as u32,
             &mut needed,
@@ -91,10 +96,14 @@ fn own_sid() -> Result<String> {
         {
             return Err(Error::UnsafePath);
         }
-        sid_text((*storage.as_ptr().cast::<TOKEN_USER>()).User.Sid)
+        if default_owner {
+            sid_text((*storage.as_ptr().cast::<TOKEN_OWNER>()).Owner)
+        } else {
+            sid_text((*storage.as_ptr().cast::<TOKEN_USER>()).User.Sid)
+        }
     }
 }
-fn private_acl(file: &File) -> Result<()> {
+fn private_acl(file: &File, require_user_owner: bool) -> Result<()> {
     let mut owner = null_mut();
     let mut dacl = null_mut();
     let mut raw = null_mut();
@@ -116,7 +125,15 @@ fn private_acl(file: &File) -> Result<()> {
             return Err(Error::UnsafePath);
         }
         let _memory = Local(raw);
-        if owner.is_null() || sid_text(owner)? != sid || dacl.is_null() || (*dacl).AceCount != 1 {
+        if owner.is_null() || dacl.is_null() || (*dacl).AceCount != 1 {
+            return Err(Error::UnsafePath);
+        }
+        // Windows applies TOKEN_OWNER, not necessarily TOKEN_USER, to new
+        // lock/SQLite files. The root is explicitly user-owned. Child files
+        // may have exactly our current token's default owner; the DACL below
+        // must still contain exactly one full-access ACE for our user SID.
+        let actual_owner = sid_text(owner)?;
+        if actual_owner != sid && (require_user_owner || actual_owner != token_sid(true)?) {
             return Err(Error::UnsafePath);
         }
         let mut ace = null_mut();
@@ -200,7 +217,7 @@ pub fn check_dir(path: &Path, file: &File) -> Result<()> {
     {
         return Err(Error::UnsafePath);
     }
-    private_acl(file)
+    private_acl(file, true)
 }
 pub fn open_file(path: &Path, create: bool) -> Result<File> {
     Ok(OpenOptions::new()
@@ -217,10 +234,67 @@ pub fn check_file(file: &File) -> Result<()> {
     if i.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 || i.nNumberOfLinks != 1 {
         return Err(Error::UnsafePath);
     }
-    private_acl(file)
+    private_acl(file, false)
 }
 // SQLite FULL supplies its documented transaction durability. Windows does not
 // expose a portable Rust directory-fsync equivalent; do not claim power-cut proof.
 pub fn sync(_: &File) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_child_inherits_user_only_access_with_native_default_owner() {
+        let temp = crate::tests::Temp::new();
+        let root = temp.id();
+        create(&root).unwrap();
+        let directory = open_dir(&root).unwrap();
+        check_dir(&root, &directory).unwrap();
+        let file = open_file(&root.join("identity.lock"), true).unwrap();
+        check_file(&file).unwrap();
+        let mut owner = null_mut();
+        let mut descriptor = null_mut();
+        // SAFETY: live handle and output pointers; owner borrows descriptor.
+        let actual = unsafe {
+            assert_eq!(
+                GetSecurityInfo(
+                    file.as_raw_handle(),
+                    SE_FILE_OBJECT,
+                    OWNER_SECURITY_INFORMATION,
+                    &mut owner,
+                    null_mut(),
+                    null_mut(),
+                    null_mut(),
+                    &mut descriptor
+                ),
+                0
+            );
+            let _owned = Local(descriptor);
+            sid_text(owner).unwrap()
+        };
+        let user = own_sid().unwrap();
+        let default_owner = token_sid(true).unwrap();
+        assert_eq!(actual, default_owner);
+        if user != default_owner {
+            assert!(
+                private_acl(&file, true).is_err(),
+                "old user-only owner check must reproduce the failure"
+            );
+        }
+        println!("Windows file owner matches TOKEN_OWNER: true; TOKEN_OWNER differs from TOKEN_USER: {}; exact user-only DACL: passed", user != default_owner);
+    }
+
+    #[test]
+    fn unprotected_existing_root_is_rejected_without_repairing_its_acl() {
+        let temp = crate::tests::Temp::new();
+        let directory = open_dir(&temp.0).unwrap();
+        assert!(check_dir(&temp.0, &directory).is_err());
+        assert!(check_dir(&temp.0, &directory).is_err());
+        // Creation of a separate protected root still works under this token.
+        create(&temp.id()).unwrap();
+        check_dir(&temp.id(), &open_dir(&temp.id()).unwrap()).unwrap();
+    }
 }
