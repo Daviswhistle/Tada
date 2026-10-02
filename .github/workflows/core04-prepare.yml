@@ -21,14 +21,14 @@ jobs:
         run: |
           cargo metadata --format-version=1 > /dev/null
           cargo fmt --all
-      - name: Commit only prepared files on this branch
+      - name: Commit source only; workflow changes require the author path
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$GITHUB_REF" = refs/heads/codex/core-04-native-ipc
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- Cargo.lock crates/local-ipc scripts/core04-import.py README.md docs/native-ipc.md docs/roadmap.md .github/workflows/ci.yml
+          git add -- Cargo.lock crates/local-ipc scripts/core04-import.py README.md docs/native-ipc.md docs/roadmap.md
           if ! git diff --cached --quiet; then
             git commit -m 'fix(ipc): keep unsupported platforms fail-closed and document native boundary'
             AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
