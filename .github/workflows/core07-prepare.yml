@@ -14,21 +14,23 @@ jobs:
         with:
           persist-credentials: false
       - name: Apply exact foreground and lifecycle integration
-        run: python3 scripts/core07-import.py
+        run: |
+          python3 scripts/core07-import.py
+          git restore -- .github/workflows/ci.yml
       - name: Install pinned Rust
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
       - name: Lock and format source
         run: |
           cargo metadata --format-version=1 > /dev/null
           cargo fmt --all
-      - name: Commit only prepared CORE-07 source to this branch
+      - name: Commit only prepared source to this branch
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$GITHUB_REF" = refs/heads/codex/core-07-process-host
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- Cargo.lock crates/agentd crates/credential crates/store/src/queue.rs crates/store/src/queue/process.rs scripts/core07-import.py .github/workflows/ci.yml
+          git add -- Cargo.lock crates/agentd crates/credential crates/store/src/queue.rs crates/store/src/queue/process.rs scripts/core07-import.py
           if ! git diff --cached --quiet; then
             git commit -m 'chore(agentd): integrate foreground probe lifecycle and locked dependencies'
             AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
