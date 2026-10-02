@@ -147,7 +147,16 @@ impl Store {
             return Err(error);
         }
         let body = session.open(frame)?;
-        let value = match json_input::parse(&body) {
+        self.control_body_inner(session, &body)
+    }
+
+    fn control_body_inner(&mut self, session: &mut ServerSession, body: &[u8]) -> Result<Vec<u8>> {
+        let (store_id, generation) = self.control_context()?;
+        if let Err(error) = session.check(&store_id, generation) {
+            session.revoke();
+            return Err(error);
+        }
+        let value = match json_input::parse(body) {
             Ok(value) => value,
             Err(_) => return signed(session, failure(Value::Null, -32700, "INVALID_JSON")),
         };
@@ -394,6 +403,7 @@ pub(crate) fn create_task_tx(tx: &Transaction<'_>, contract: &Value, budget: i64
         params![id, contract.to_string(), value.to_string(), budget],
     )?;
     event(tx, id, "task.created", &value)?;
+    crate::queue::sync(tx, &value, false)?;
     Ok(value)
 }
 pub(crate) fn cancel_task_tx(tx: &Transaction<'_>, id: &str) -> Result<Value> {
@@ -419,3 +429,50 @@ pub(crate) fn cancel_task_tx(tx: &Transaction<'_>, id: &str) -> Result<Value> {
 
 #[cfg(test)]
 mod tests;
+
+/// Opaque, authenticated request waiting for store admission. It cannot be
+/// constructed from a model-provided priority flag or edited after verification.
+pub struct PreparedControl {
+    session: ServerSession,
+    body: Vec<u8>,
+    priority: crate::priority::Priority,
+}
+impl PreparedControl {
+    pub fn authenticate(mut session: ServerSession, frame: &[u8]) -> Result<Self> {
+        let body = session.open(frame)?;
+        let cancellation = session.access == Access::Controller
+            && json_input::parse(&body).is_ok_and(|value| {
+                value["method"] == "task.cancel" && checked("ControlRequest", &value).is_ok()
+            });
+        let priority = if cancellation {
+            crate::priority::Priority::Cancellation
+        } else {
+            crate::priority::Priority::Ordinary
+        };
+        Ok(Self {
+            session,
+            body,
+            priority,
+        })
+    }
+    pub fn priority(&self) -> crate::priority::Priority {
+        self.priority
+    }
+}
+impl Store {
+    pub fn control_handle_prepared(
+        &mut self,
+        mut request: PreparedControl,
+    ) -> Result<(ServerSession, Vec<u8>)> {
+        // Current generation, expiry and revocation are checked AFTER waiting.
+        let result = self.control_body_inner(&mut request.session, &request.body);
+        if matches!(
+            &result,
+            Err(Error::Sql(_) | Error::Io(_) | Error::RecoveryRequired)
+        ) {
+            self.poisoned = true;
+            request.session.revoke();
+        }
+        Ok((request.session, result?))
+    }
+}

@@ -43,6 +43,8 @@ jobs:
         run: cargo run --locked -p tada-store --example control_replay -- "${{ runner.temp }}/tada-core03-demo"
       - name: Run two-process native IPC example
         run: cargo run --locked -p tada-local-ipc --bin tada-ipc-demo -- "${{ runner.temp }}/tada-core04-demo"
+      - name: Run durable supervisor probe without task completion
+        run: cargo run --locked -p tada-agentd --example supervisor_probe -- "${{ runner.temp }}/tada-core06-demo"
       - name: Reject uncommitted generated changes
         run: git diff --exit-code
   portability:

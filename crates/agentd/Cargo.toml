@@ -1,0 +1,15 @@
+[package]
+name = "tada-agentd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+tada-store = { path = "../store" }
+tada-contracts = { path = "../contracts" }
+sha2 = "=0.10.9"
+serde_json = "=1.0.145"
+
+[dev-dependencies]
+getrandom = "=0.3.4"

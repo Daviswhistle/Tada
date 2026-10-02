@@ -140,6 +140,10 @@ pub async fn serve(
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<ServeReport> {
     let limits = limits.validate()?;
+    let gate = store
+        .lock()
+        .map_err(|_| Error::WorkerFailed)?
+        .admission_gate();
     let permits = Arc::new(Semaphore::new(limits.connections));
     let (stop, stopped) = watch::channel(false);
     let mut jobs = JoinSet::new();
@@ -165,9 +169,10 @@ pub async fn serve(
                 report.accepted += 1;
                 let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else { report.capacity_rejected += 1; drop(stream); continue; };
                 let store = Arc::clone(&store);
+                let gate = Arc::clone(&gate);
                 let credential = Arc::clone(&credential);
                 let stopped = stopped.clone();
-                jobs.spawn(async move { let _permit = permit; connection(stream, store, credential, limits, stopped).await });
+                jobs.spawn(async move { let _permit = permit; connection(stream, store, credential, limits, stopped, gate).await });
             }
         }
     }
@@ -193,6 +198,7 @@ async fn connection(
     credential: Arc<Credential>,
     limits: Limits,
     mut stopped: watch::Receiver<bool>,
+    gate: Arc<tada_store::priority::AdmissionGate>,
 ) -> Result<()> {
     let handshake = async {
         // The pending challenge borrows only the credential, not the store.
@@ -231,17 +237,26 @@ async fn connection(
         if *stopped.borrow() {
             return Ok(());
         }
+        let prepared = tada_store::control::PreparedControl::authenticate(session, &frame)?;
+        let ticket = gate.register(prepared.priority())?;
+        // Waiting consumes no blocking-pool slot. Otherwise an ordinary
+        // waiter can occupy the last thread needed to run a queued cancel.
+        let permit = tokio::select! {
+            biased;
+            _ = stopped.changed() => return Ok(()),
+            permit = ticket => permit?,
+        };
         let owner = Arc::clone(&store);
         let stop_at_admission = stopped.clone();
         // Do not time out/abort this blocking worker and then claim the command
         // did not commit. The immutable CORE-03 receipt settles lost replies.
         let (returned_session, response) = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
             let mut store = owner.lock().map_err(|_| Error::WorkerFailed)?;
             if *stop_at_admission.borrow() {
                 return Err(Error::Closed);
             }
-            let response = store.control_handle(&mut session, &frame)?;
-            Ok::<_, Error>((session, response))
+            Ok::<_, Error>(store.control_handle_prepared(prepared)?)
         })
         .await
         .map_err(|_| Error::WorkerFailed)??;

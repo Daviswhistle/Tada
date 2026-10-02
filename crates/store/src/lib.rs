@@ -14,6 +14,9 @@ use tada_contracts::{ActionRecord, SafeInteger, TaskContract, TaskSnapshot};
 
 pub mod control;
 pub mod mock;
+pub mod priority;
+pub mod queue;
+mod queue_migration;
 use mock::{MockMode, MockPayload, MockService, Receipt};
 
 const SCHEMA: &str = include_str!("schema.sql");
@@ -87,6 +90,7 @@ pub struct Store {
     _lock: File,
     clock: Instant,
     poisoned: bool,
+    admission: std::sync::Arc<priority::AdmissionGate>,
 }
 
 pub(crate) fn digest(bytes: &[u8]) -> String {
@@ -151,6 +155,7 @@ fn save_task(tx: &Transaction<'_>, mut value: Value, kind: &str) -> Result<Value
         return Err(Error::Denied("TASK_CAS_CONFLICT"));
     }
     event(tx, text(&value, "task_id")?, kind, &value)?;
+    queue::sync(tx, &value, false)?;
     Ok(value)
 }
 fn save_action(tx: &Transaction<'_>, mut value: Value, state: &str, kind: &str) -> Result<Value> {
@@ -207,6 +212,9 @@ fn refresh_task(tx: &Transaction<'_>, id: &str, stop: bool) -> Result<Value> {
     } else {
         save_task(tx, value, "task.effect_observed")?
     };
+    // Verification can finish while the task stays CANCELLED/PENDING. The
+    // action changed even when no new task version was necessary.
+    queue::sync(tx, &value, false)?;
     if stop {
         let kind = if !unresolved.is_empty() {
             "decision_required"
@@ -236,7 +244,7 @@ fn configure(conn: &Connection) -> Result<()> {
     }
     Ok(())
 }
-fn healthy_database(conn: &Connection) -> Result<()> {
+fn healthy_database(conn: &Connection, expected_version: i64) -> Result<()> {
     let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     let fk_problem = conn
@@ -244,7 +252,7 @@ fn healthy_database(conn: &Connection) -> Result<()> {
         .query([])?
         .next()?
         .is_some();
-    if integrity != "ok" || version != 1 || fk_problem {
+    if integrity != "ok" || version != expected_version || fk_problem {
         return Err(Error::RecoveryRequired);
     }
     Ok(())
@@ -254,6 +262,16 @@ impl Store {
     /// Use a dedicated trusted local directory, never a network filesystem.
     /// Every open creates a new supervisor generation; no prior lease survives.
     pub fn open(root: &Path) -> Result<Self> {
+        let mut store = Self::open_unrecovered(root, false)?;
+        store.recover()?;
+        Ok(store)
+    }
+
+    pub fn admission_gate(&self) -> std::sync::Arc<priority::AdmissionGate> {
+        std::sync::Arc::clone(&self.admission)
+    }
+
+    fn open_unrecovered(root: &Path, allow_legacy: bool) -> Result<Self> {
         fs::create_dir_all(root)?;
         for name in ["state.sqlite", "witness.sqlite", "owner.lock"] {
             if fs::symlink_metadata(root.join(name)).is_ok_and(|m| m.file_type().is_symlink()) {
@@ -284,9 +302,10 @@ impl Store {
                 conn.query_row("SELECT lower(hex(randomblob(16)))", [], |r| r.get(0))?;
             conn.execute_batch("BEGIN IMMEDIATE")?;
             conn.execute_batch(SCHEMA)?;
+            conn.execute_batch(queue::SCHEMA)?;
             conn.execute(
                 "INSERT INTO metadata VALUES(1,?1,?2,0,0,1,0)",
-                params![store_id, digest(SCHEMA.as_bytes())],
+                params![store_id, queue_migration::schema_hash(2)?],
             )?;
             conn.execute_batch("COMMIT")?;
             witness.execute_batch("BEGIN IMMEDIATE")?;
@@ -294,21 +313,26 @@ impl Store {
             witness.execute("INSERT INTO identity VALUES(?1)", [store_id])?;
             witness.execute_batch("COMMIT")?;
         }
-        let mut store = Self {
+        let store = Self {
             conn,
             witness,
             _lock: lock,
             clock: Instant::now(),
             poisoned: false,
+            admission: std::sync::Arc::new(priority::AdmissionGate::default()),
         };
         store.audit()?;
-        store.recover()?;
+        if !allow_legacy && queue_migration::version(&store.conn)? == 1 {
+            return Err(Error::Denied("QUEUE_MIGRATION_REQUIRED"));
+        }
         Ok(store)
     }
 
     fn audit(&self) -> Result<()> {
-        healthy_database(&self.conn)?;
-        healthy_database(&self.witness)?;
+        let version = queue_migration::version(&self.conn)?;
+        let expected_hash = queue_migration::schema_hash(version)?;
+        healthy_database(&self.conn, version)?;
+        healthy_database(&self.witness, 1)?;
         let (id, hash, seq): (String, String, i64) = self.conn.query_row(
             "SELECT store_id,schema_hash,witness_seq FROM metadata",
             [],
@@ -320,7 +344,7 @@ impl Store {
         let tip: i64 =
             self.witness
                 .query_row("SELECT coalesce(max(seq),0) FROM journal", [], |r| r.get(0))?;
-        if id != other || hash != digest(SCHEMA.as_bytes()) || seq != tip {
+        if id != other || hash != expected_hash || seq != tip {
             return Err(Error::RecoveryRequired);
         }
         for id in ids(&self.conn, "SELECT id FROM tasks")? {
@@ -342,6 +366,9 @@ impl Store {
             if hash != digest(&bytes) || value["payload_ref"] != format!("blob://sha256/{hash}") {
                 return Err(Error::RecoveryRequired);
             }
+        }
+        if version == 2 {
+            queue::audit(self)?;
         }
         Ok(())
     }
@@ -449,6 +476,7 @@ impl Store {
                     enqueue(tx, &value, "decision_required")?;
                 }
             }
+            queue::recover(tx)?;
             event(
                 tx,
                 "supervisor",
@@ -479,23 +507,7 @@ impl Store {
             tick.checked_add(duration)
                 .ok_or(Error::Invalid("LEASE_DURATION"))?,
         )?;
-        self.transact("start_run",|tx| {
-            let mut value = snapshot(tx,id)?;
-            if number(&value,"cancel_epoch")? != 0 || value["execution_status"] != "READY" {
-                return Err(Error::Denied("TASK_NOT_READY"));
-            }
-            let unresolved: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM actions WHERE task_id=?1 AND state IN ('DISPATCHING','UNCERTAIN','ACKNOWLEDGED'))",[id],|r|r.get(0))?;
-            if unresolved { return Err(Error::Denied("RECONCILIATION_REQUIRED")); }
-            let previous: i64 = tx.query_row("SELECT fence FROM tasks WHERE id=?1",[id],|r|r.get(0))?;
-            let fence = increment(previous)?;
-            let generation: i64 = tx.query_row("SELECT generation FROM metadata",[],|r|r.get(0))?;
-            tx.execute("UPDATE tasks SET fence=?1 WHERE id=?2",params![fence,id])?;
-            tx.execute("INSERT INTO runs(task_id,generation,fence,expires_tick,active) VALUES(?1,?2,?3,?4,1)",params![id,generation,fence,until])?;
-            let run_id = tx.last_insert_rowid();
-            value["execution_status"] = json!("RUNNING");
-            save_task(tx,value,"task.run_started")?;
-            Ok(Lease{ task_id:id.to_owned(),run_id,generation,fence })
-        })
+        self.transact("start_run", |tx| queue::start_run_tx(tx, id, until))
     }
     fn tick(&self) -> Result<i64> {
         i64::try_from(self.clock.elapsed().as_millis()).map_err(|_| Error::RecoveryRequired)

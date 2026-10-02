@@ -389,3 +389,5 @@ fn invalid_resource_limits_and_diagnostics_fail_closed() {
     let e = Error::Io(std::io::Error::other("DO_NOT_LOG_THIS_SECRET"));
     assert!(!format!("{e:?} {e}").contains("DO_NOT_LOG_THIS_SECRET"));
 }
+
+include!("priority_tests.rs");

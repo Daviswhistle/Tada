@@ -1,47 +1,59 @@
 # Implementation gates
 
-This is an execution order, not a release-date promise. The supplied design's §32 and Appendix F remain the basis.
+This is an execution order, not a release-date promise. The supplied design's §32 and Appendix F remain the basis. CORE-03 through CORE-06 are implementation substeps; they do not rename the original work breakdown or complete its entire stage 1.
 
 ## CORE 01 — contract foundation
 
-Schema and transition sources, generated Rust/TypeScript types, fail-closed value validation, shared fixtures, preserved design, and CI. A green contract suite is not “stage 0 complete”: provider authentication evidence and an independent threat-boundary review remain open.
+Schema and transition sources, generated Rust/TypeScript types, fail-closed value validation, shared fixtures, preserved design, and CI. Provider authentication evidence and an independent threat-boundary review remain separate from the green contract suite.
 
 ## CORE 02 — durable mock execution
 
-The first executable slice is in `crates/store`, with exact implementation boundaries and fixed fault cases in [CORE-02](core-02.md). It provides SQLite state/event CAS, a separately durable restore witness, OS store ownership, supervisor-generation leases, cancellation/dispatch serialization, an independent non-idempotent mock, integer reservations and a stopped/decision outbox. It does not complete the entire stage-1 daemon.
+`crates/store` owns SQLite state/event CAS, a separately durable restore witness, OS store ownership, supervisor-generation leases, cancellation/dispatch serialization, an independent non-idempotent mock, exact integer fixture reservations and a stopped/decision outbox. See [CORE-02](core-02.md) for original boundaries and fixed fault cases.
 
 The original review scope remains:
 
-1. SQLite WAL and synchronous FULL; state/version CAS plus event append in one transaction; foreign keys and state constraints; one active run; read-only recovery when invariants fail.
-2. Single daemon ownership, boot identity, scoped leases and monotonic-time fencing. A stale owner cannot admit a new dispatch.
-3. Cancellation epoch and durable tombstone serialized against dispatch admission. An already admitted in-flight operation may finish after cancellation; reconciliation observations may continue, new effects may not.
-4. Immutable action payload, append-only attempts, receipts, and explicit reconciliation. The mock service must save an effect and drop its response. Restart must not create a second effect or invent a success.
-5. Budget reservations (including uncertain usage), recovery checkpoints, and result notification outbox. Do not implement a floating-point money ledger from the illustrative wire budget.
+1. WAL/FULL, state/version CAS and event append in one transaction, foreign keys and state constraints, one active run, and read-only recovery when invariants fail.
+2. Single daemon ownership, scoped leases and monotonic-time fencing. Stale owners cannot admit new dispatch. Current recovery conservatively invalidates all prior generations, including the same OS boot.
+3. Durable cancellation serialized with dispatch admission. Already-admitted operations may finish after cancellation; observation may continue, new effects may not.
+4. Immutable payloads, append-only attempts/receipts and explicit reconciliation. Response loss must neither cause a second effect nor fabricate success.
+5. Reservations including uncertain usage, checkpoints and result outbox. Do not implement a floating-point money ledger from the illustrative wire budget.
 
-Required fault cases include kill-before/after admission, response loss, revoked cached grant, concurrent cancellation, stale fence, an applied mismatch, unknown outcome after cancellation, disk-write failure, and backup restoration after an external effect. Count fixed cases; do not shrink the denominator to make a gate pass.
+Required faults include process kill around admission, response loss, revoked cached grant, concurrent cancellation, stale fence, applied mismatch, unknown outcome after cancellation, disk-write failure and restoring a backup after an external effect. Preserve fixed denominators. Safe quarantine is not successful automatic recovery, and regression samples are not the 1,000-injection release gate or hardware power-loss qualification.
 
-Remaining CORE-02 integration: installed supervisor and scheduled/priority queue, OS boot identity and general resource leases, rich checkpoints, production recovery export/restore handling, hierarchical/provider-aware budgets, and successful-result delivery coupled to ART-01. The mock currently invalidates every previous generation on open and forbids retransmission rather than implementing all safe-retry cases. Quarantine after a witness/state mismatch is a safety fallback, not successful automatic recovery. Fixed process-kill cases are not the 1,000-injection release gate or a latency/power-cut qualification.
+## CORE 03 / CORE 04 — authenticated control and native transports
 
-## CORE 03 / CORE 04 — control integration substeps
-
-[CORE-03](control-protocol.md) supplies authenticated bounded commands and atomic logical request replay. [CORE-04](native-ipc.md) binds them to Linux Unix sockets and Windows named pipes, with peer identity checks, absolute I/O deadlines, bounded sessions and a separate-process fixture. Session-only key transfer remains available through an inherited anonymous pipe. Unsupported OSes reject native endpoint creation while allowing the portable workspace to compile.
+[CORE-03](control-protocol.md) supplies bounded authenticated commands and atomic logical-request replay. [CORE-04](native-ipc.md) binds them to Linux Unix sockets and Windows named pipes with peer checks, absolute I/O deadlines, bounded sessions and a separate-process fixture. Session-only bootstrap remains available through an inherited anonymous pipe. Unsupported native platforms reject before creating endpoints while the portable workspace still compiles.
 
 ## CORE 05 — persistent installation identity
 
-[CORE-05](installation-identity.md) adds the trusted-host `crates/credential` module: explicit RESERVED/ACTIVE enrollment, Linux Secret Service and Windows Credential Manager adapters, private installation metadata, a daemon lifetime lock, authenticated runtime discovery and generation-pinned native connection. The original task DB and command contracts stay unchanged. Missing or altered active keys block load/bind/reconnect; an interrupted reservation requires explicit finish, with lookup before creation. Tests distinguish private mock-vault conformance from isolated native-vault process tests.
+[CORE-05](installation-identity.md) adds explicit RESERVED/ACTIVE enrollment, Linux Secret Service and Windows Credential Manager adapters, private installation metadata, a daemon lifetime lock, authenticated discovery and generation-pinned native connection. Missing or altered active keys block new load/bind/reconnect; interrupted reservation requires explicit finish with lookup before creation. Tests distinguish mock-vault behavior from isolated real-vault process tests.
 
-This closes the library-level persistent bootstrap/discovery slice, not complete packaging or independent security review. Human-facing enrollment and recovery, stable default launcher paths, key rotation/live durable revocation, bounded stale-runtime retention and platform reboot qualification remain. Existing in-memory sessions are not instantly revoked by deleting a vault item. No installation credential is a worker capability.
+Human-facing enrollment/recovery, stable default launcher paths, key rotation, live durable revocation, stale-runtime retention and reboot qualification remain. Deleting an OS-vault key does not instantly revoke cached sessions. Installation credentials never constitute worker tool grants.
 
-These substep names do not replace the original work breakdown or complete stage 1. Next implement the supervisor/queue and cancellation priority on the durable store, then integrate reviewed SEC-01 worker authority before any real external tool.
+## CORE 06 — durable queue and cooperative supervisor
+
+[CORE-06](queue-supervisor.md) stores queue registration and updates with authoritative tasks/events in one witnessed transaction. It adds one-shot UTC not-before scheduling, reconciliation/deadline/ordinary ordering, opaque owner/generation/fence leases, safe explicit yield, immutable probe checkpoints, and a host supervisor with bounded active assignments. Idle polling makes no journal writes. Cancelled execution does not resume; unresolved effects retain observation-only work and their cost reservations.
+
+Native control registers authenticated cancellation at a shared priority gate before blocking-worker scheduling. Queued cancellation precedes ordinary worker completion; the store rechecks session revocation, expiry and generation after admission. Already-entered transactions are not preempted. The native regression proves this order over actual sockets/pipes, without claiming a measured p95 latency or resolving pre-authentication connection exhaustion.
+
+Task-ledger schema v2 uses an explicit backed-up migration from the unchanged v1 source. Normal v1 open requests migration instead of silently changing data. Unresolved effects/publication block migration; witness/state gaps require read-only recovery. The independent installation-identity schema and task/control wire contracts remain unchanged.
+
+The supervisor's executable fixture is an immutable-input probe, not a model worker: checkpointed tasks retain unmet user acceptance criteria and never become SUCCEEDED. Nine added process-kill boundaries exercise claim, yield, checkpoint and migration without replacing earlier faults.
+
+## Next core / SEC-01 integration
+
+Implement the foreground/installed daemon host and bounded worker-process protocol, process lifecycle/containment, verified safe reaping and queue lease reclamation. A live expired lease currently blocks rather than being silently stolen. Keep CPU-heavy work and external I/O outside store locks, preserve cancellation-first admission, and establish scoped worker grants before enabling actual tools.
+
+Follow-through includes recurring IANA-time-zone/occurrence/catch-up contracts, decision-response priority, general resource locks, rich engine checkpoints, production recovery export/restore, parent/child and provider-aware budgets, and notifications coupled to ART-01 publication. None is implied by the fixed probe or in-process admission gate.
 
 ## Provider proof — separate gate
 
-With explicit user authorization, verify official account/registration eligibility, authentication, one inference request, tool-call completion, refresh/re-authentication, and cancellation. Subscription and API-key paths remain distinct. Do not silently use an existing CLI token file, browser cookies, a borrowed client ID, or a paid fallback. Record official source/version/date and observable evidence without credentials.
+With explicit user authorization, verify official app/account eligibility, authentication, one inference request, tool-call completion, refresh/re-authentication and cancellation. Subscription and API-key paths remain distinct. Do not silently use another CLI's token, browser cookies, a borrowed client ID or a paid fallback. Record official source/version/date and observable evidence without credentials.
 
-## ART 01 — first result end to end
+## ART 01 — first user result end to end
 
-Input snapshot → isolated staging → file generation → independent verification → immutable artifact → durable publish intent → destination re-read → result/outbox commit. Kill at every boundary. Detect original-file changes and never turn unverified staging into a completed result. Only then attach the TypeScript model loop and thin request/result UI.
+Input snapshot → isolated staging → file generation → independent verification → immutable artifact → durable publish intent → destination re-read → result/outbox commit. Kill at every boundary. Detect original-file changes and preserve user edits. A verified action or supervisor checkpoint is not a verified, published user artifact. Connect the TypeScript model loop and request/result UI through these existing boundaries.
 
 ## Later product scope
 
-Managed browser, Windows native automation, Linux core parity, optional macOS bridge, signed packaging/updates, and the design's full safety/quality evaluations follow their original dependencies. None is represented by empty placeholder packages.
+Managed browser, Windows native automation, Linux core parity, optional macOS bridge, signed packaging/updates and full safety/quality evaluations follow their original dependencies. No empty placeholder package stands in for implementation or evidence.
