@@ -1,0 +1,90 @@
+//! Bounded-host admission ordering. No transaction is preempted once entered.
+//! Register after authentication but before spawning a blocking worker: executor
+//! thread scheduling must not decide whether queued cancellation gets priority.
+use crate::{Error, Result};
+use std::{collections::BTreeSet, sync::{Arc, Condvar, Mutex}};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Priority { Cancellation, Reconciliation, Ordinary }
+#[derive(Default)]
+struct State { next:u64, active:bool, waiting:BTreeSet<(Priority,u64)> }
+#[derive(Default)]
+pub struct AdmissionGate { state:Mutex<State>, changed:Condvar }
+pub struct Ticket { gate:Arc<AdmissionGate>, key:Option<(Priority,u64)> }
+pub struct Permit { gate:Arc<AdmissionGate> }
+impl AdmissionGate {
+    pub fn register(self:&Arc<Self>,priority:Priority)->Result<Ticket> {
+        let mut state=self.state.lock().map_err(|_|Error::RecoveryRequired)?;
+        // Native callers are limited by connection count; this second bound
+        // protects trusted host integration mistakes without dropping a commit.
+        if state.waiting.len()>=1024 { return Err(Error::Denied("ADMISSION_CAPACITY")); }
+        let ticket=state.next;
+        state.next=state.next.checked_add(1).ok_or(Error::RecoveryRequired)?;
+        let key=(priority,ticket); state.waiting.insert(key);
+        Ok(Ticket{gate:Arc::clone(self),key:Some(key)})
+    }
+    pub fn enter(self:&Arc<Self>,priority:Priority)->Result<Permit> { self.register(priority)?.wait() }
+}
+impl Ticket {
+    pub fn wait(mut self)->Result<Permit> {
+        let key=self.key.ok_or(Error::RecoveryRequired)?;
+        let mut state=self.gate.state.lock().map_err(|_|Error::RecoveryRequired)?;
+        while state.active || state.waiting.first()!=Some(&key) {
+            state=self.gate.changed.wait(state).map_err(|_|Error::RecoveryRequired)?;
+        }
+        state.waiting.remove(&key); state.active=true; self.key=None;
+        Ok(Permit{gate:Arc::clone(&self.gate)})
+    }
+}
+impl Drop for Ticket {
+    fn drop(&mut self) {
+        if let Some(key)=self.key.take() {
+            if let Ok(mut state)=self.gate.state.lock() { state.waiting.remove(&key); }
+            self.gate.changed.notify_all();
+        }
+    }
+}
+impl Drop for Permit {
+    fn drop(&mut self) {
+        if let Ok(mut state)=self.gate.state.lock() { state.active=false; }
+        self.gate.changed.notify_all();
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn cancellation_precedes_queued_observation_and_ordinary_work_without_preempting_owner() {
+        let gate=Arc::new(AdmissionGate::default());
+        let owner=gate.enter(Priority::Ordinary).unwrap();
+        let normal=gate.register(Priority::Ordinary).unwrap();
+        let observe=gate.register(Priority::Reconciliation).unwrap();
+        let cancel=gate.register(Priority::Cancellation).unwrap();
+        let (tx,rx)=std::sync::mpsc::channel();
+        let handles=[(normal,2),(observe,1),(cancel,0)].into_iter().map(|(ticket,n)| {
+            let tx=tx.clone(); std::thread::spawn(move || { let _permit=ticket.wait().unwrap(); tx.send(n).unwrap(); })
+        }).collect::<Vec<_>>();
+        assert!(rx.try_recv().is_err());
+        drop(owner);
+        for n in 0..3 { assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(),n); }
+        for handle in handles { handle.join().unwrap(); }
+    }
+    #[test]
+    fn same_class_fifo_and_dropped_ticket_do_not_leave_a_permanent_waiter() {
+        let gate=Arc::new(AdmissionGate::default());
+        let owner=gate.enter(Priority::Ordinary).unwrap();
+        let first=gate.register(Priority::Ordinary).unwrap();
+        let lost=gate.register(Priority::Cancellation).unwrap();
+        let second=gate.register(Priority::Ordinary).unwrap();
+        drop(lost); drop(owner);
+        let p=first.wait().unwrap(); drop(p); drop(second.wait().unwrap());
+        assert!(gate.state.lock().unwrap().waiting.is_empty());
+    }
+    #[test]
+    fn saturated_gate_is_bounded_and_recovers_after_ticket_drop() {
+        let gate=Arc::new(AdmissionGate::default());
+        let tickets=(0..1024).map(|_|gate.register(Priority::Ordinary).unwrap()).collect::<Vec<_>>();
+        assert!(matches!(gate.register(Priority::Ordinary),Err(Error::Denied("ADMISSION_CAPACITY"))));
+        drop(tickets); assert!(gate.enter(Priority::Cancellation).is_ok());
+    }
+}
