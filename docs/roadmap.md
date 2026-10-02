@@ -20,7 +20,13 @@ The original review scope remains:
 
 Required fault cases include kill-before/after admission, response loss, revoked cached grant, concurrent cancellation, stale fence, an applied mismatch, unknown outcome after cancellation, disk-write failure, and backup restoration after an external effect. Count fixed cases; do not shrink the denominator to make a gate pass.
 
-Remaining CORE-02 integration: authenticated local IPC and request deduplication, installed supervisor and scheduled queue, OS boot identity and general resource leases, rich checkpoints, production recovery export/restore handling, hierarchical/provider-aware budgets, and successful-result delivery coupled to ART-01. The mock currently invalidates every previous generation on open and forbids retransmission rather than implementing all safe-retry cases. Quarantine after a witness/state mismatch is a safety fallback, not successful automatic recovery. Seven process-kill boundaries and sixteen races are not the 1,000-injection release gate or a latency/power-cut qualification.
+Remaining CORE-02 integration: persistent installation identity and OS-secret-store bootstrap, installed supervisor and scheduled queue, OS boot identity and general resource leases, rich checkpoints, production recovery export/restore handling, hierarchical/provider-aware budgets, and successful-result delivery coupled to ART-01. The mock currently invalidates every previous generation on open and forbids retransmission rather than implementing all safe-retry cases. Quarantine after a witness/state mismatch is a safety fallback, not successful automatic recovery. Seven process-kill boundaries and sixteen races are not the 1,000-injection release gate or a latency/power-cut qualification.
+
+## CORE 03 / CORE 04 — control integration substeps
+
+[CORE-03](control-protocol.md) supplies authenticated bounded commands and atomic logical request replay. [CORE-04](native-ipc.md) binds them to Linux Unix sockets and Windows named pipes, with peer identity checks, absolute I/O deadlines, bounded sessions and a separate-process fixture. Existing task/action contracts and the database schema remain unchanged. Session-only key transfer is implemented through an inherited anonymous pipe; durable OS-secret-store provisioning, safe discovery and rotation remain separate. Unsupported OSes reject native endpoint creation explicitly while allowing the portable workspace to compile.
+
+These substep names do not replace the original work breakdown or complete stage 1. Native transport tests do not qualify a full SEC-01 worker broker, a scheduler, live provider access or an independent security review.
 
 ## Provider proof — separate gate
 
