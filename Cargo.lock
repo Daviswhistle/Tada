@@ -959,10 +959,17 @@ name = "tada-agentd"
 version = "0.1.0"
 dependencies = [
  "getrandom",
+ "libc",
+ "rusqlite",
+ "serde",
  "serde_json",
  "sha2",
  "tada-contracts",
+ "tada-credential",
+ "tada-local-ipc",
  "tada-store",
+ "tokio",
+ "windows-sys",
 ]
 
 [[package]]

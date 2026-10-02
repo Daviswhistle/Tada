@@ -224,3 +224,8 @@ mod tests {
         std::fs::remove_dir_all(path).unwrap();
     }
 }
+
+pub mod foreground;
+mod process_runner;
+mod process_scope;
+pub mod worker_wire;
