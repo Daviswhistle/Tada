@@ -111,7 +111,9 @@ pub fn worker_stdio(mode: &str) -> Result<()> {
         return fixture(mode, reply);
     }
     let output = packet(&serde_json::to_vec(&reply)?, MAX_REPLY)?;
-    std::io::stdout().lock().write_all(&output)?;
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(&output)?;
+    stdout.flush()?;
     Ok(())
 }
 #[cfg(feature = "process-fixtures")]
@@ -128,12 +130,15 @@ fn fixture(mode: &str, mut reply: Reply) -> Result<()> {
         "wrong-fence" => reply.fence += 1,
         "stdout-flood" => {
             std::io::stdout().write_all(&[255; 4])?;
+            // Make the malformed frame observable before the worker parks.
+            std::io::stdout().flush()?;
             loop {
                 std::thread::park();
             }
         }
         "stderr-flood" => {
             std::io::stderr().write_all(&[b'x'; MAX_REPLY + 1])?;
+            std::io::stderr().flush()?;
             loop {
                 std::thread::park();
             }
@@ -188,6 +193,7 @@ fn fixture(mode: &str, mut reply: Reply) -> Result<()> {
         _ => return Err(Error::Invalid("PROBE_FIXTURE_UNKNOWN")),
     }
     std::io::stdout().write_all(&packet(&serde_json::to_vec(&reply)?, MAX_REPLY)?)?;
+    std::io::stdout().flush()?;
     Ok(())
 }
 #[cfg(test)]
