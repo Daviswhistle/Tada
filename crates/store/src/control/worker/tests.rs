@@ -331,9 +331,9 @@ fn monotonic_grant_and_channel_expiry_do_not_wait_for_wall_clock() {
         let temp = Temp::new();
         let (mut s, _, channel, call) = setup(&temp.0);
         let g = grant(&mut s, &channel, &call);
-        s.clock = Instant::now()
-            .checked_sub(Duration::from_secs(seconds))
-            .unwrap();
+        // Advance the existing clock origin, preserving time spent in setup.
+        // Replacing it with now-minus-N can leave a late-issued grant unexpired.
+        s.clock = s.clock.checked_sub(Duration::from_secs(seconds)).unwrap();
         assert!(matches!(
             invoke(&mut s, &channel, &request(&call, &g, "rpc-a")),
             Err(Error::Denied("WORKER_EXPIRED"))
