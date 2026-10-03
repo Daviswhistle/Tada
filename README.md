@@ -99,6 +99,16 @@ cargo test --workspace --locked
 
 Do not hand-edit generated contracts. Validation is not authorization; queue ownership is not a tool grant; an acknowledged effect is not verified; verified actions and checkpoints are not whole-task completion. Cancellation preserves uncertain external effects and does not authorize automatic compensation.
 
+## Worker authority admission
+
+[SEC-01A](docs/worker-authority.md) adds a host-bound, exact-scope policy and one-call grant broker. It evaluates DENY/ALLOW/REQUIRE_DECISION/HANDOFF, rechecks cancellation, revocation, generation, fence, scope and monotonic expiry at admission, and records read-only invocation results in the existing witnessed ledger. Rust and TypeScript validate the same separate worker-v1 schema and 41 fixtures; existing task/control v1 is unchanged.
+
+The only registered tool is `task.contract_digest`, which reads the immutable digest of its own assigned task. The serialized worker request API is a library boundary, not yet connected to the native process pipe or a TypeScript engine. Policy/channel creation stays on the trusted host, never in the UI or model RPC router. There is no file, shell, network, credential-export or task-completion capability in this slice.
+
+```sh
+cargo test --locked -p tada-store control::worker:: -- --nocapture
+```
+
 ## Next gates
 
 The [roadmap](docs/roadmap.md) retains reviewed worker-scoped SEC-01 authority, the shared TypeScript engine/tool boundary, general process containment/recovery, installed-service integration, richer recovery, hierarchical/provider-aware budgets and recurring schedule contracts. Provider authentication, file tools and ART-01 result verification/publication require their own evidence. Persistent-key rotation and live revocation also remain separate. Do not enable live tools merely because mock/native tests pass.

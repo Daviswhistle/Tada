@@ -12,12 +12,18 @@ fn roundtrip<T: Contract>(value: &Value) {
 }
 #[test]
 fn shared_worker_wire_cases_and_typed_roundtrips() {
-    let cases: Vec<Value> = serde_json::from_str(include_str!("../../../fixtures/worker/v1/cases.json")).unwrap();
+    let cases: Vec<Value> =
+        serde_json::from_str(include_str!("../../../fixtures/worker/v1/cases.json")).unwrap();
     assert_eq!(cases.len(), 41, "fixed worker wire denominator");
     for case in cases {
         let name = case["contract"].as_str().unwrap();
         let value = &case["value"];
-        assert_eq!(tada_contracts::validate(name, value).is_ok(), case["valid"].as_bool().unwrap(), "{}", case["name"]);
+        assert_eq!(
+            tada_contracts::validate(name, value).is_ok(),
+            case["valid"].as_bool().unwrap(),
+            "{}",
+            case["name"]
+        );
         if case["valid"] == true {
             match name {
                 "WorkerRule" => roundtrip::<WorkerRule>(value),

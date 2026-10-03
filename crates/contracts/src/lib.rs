@@ -10,6 +10,9 @@ use std::{collections::BTreeSet, fmt};
 mod generated;
 pub use generated::*;
 
+#[rustfmt::skip]
+pub mod worker;
+
 pub(crate) mod sealed {
     pub trait Sealed {}
 }
@@ -61,12 +64,15 @@ impl fmt::Display for ContractError {
 impl std::error::Error for ContractError {}
 
 pub fn validate(name: &str, value: &Value) -> Result<(), ContractError> {
-    if !CONTRACT_NAMES.contains(&name) {
+    let source = if CONTRACT_NAMES.contains(&name) {
+        include_str!("../../../packages/contracts/schema/v1.json")
+    } else if worker::CONTRACT_NAMES.contains(&name) {
+        include_str!("../../../packages/contracts/schema/worker.v1.json")
+    } else {
         return Err(ContractError("UNKNOWN_CONTRACT"));
-    }
+    };
     let mut schema: Value =
-        serde_json::from_str(include_str!("../../../packages/contracts/schema/v1.json"))
-            .map_err(|_| ContractError("INVALID_EMBEDDED_SCHEMA"))?;
+        serde_json::from_str(source).map_err(|_| ContractError("INVALID_EMBEDDED_SCHEMA"))?;
     schema["$ref"] = Value::String(format!("#/$defs/{name}"));
     // No HTTP or filesystem reference features are enabled in Cargo.toml.
     let validator = jsonschema::draft202012::options()

@@ -2,13 +2,18 @@ import { readFileSync } from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
-const schema = JSON.parse(readFileSync(new URL('../schema/v1.json', import.meta.url), 'utf8'));
+const schemas = ['v1.json', 'worker.v1.json'].map((name) =>
+  JSON.parse(readFileSync(new URL('../schema/' + name, import.meta.url), 'utf8')));
 const ajv = new Ajv2020({ strict: true, strictRequired: false, strictTypes: false, allErrors: true });
 addFormats(ajv);
-ajv.addSchema(schema);
 const validators = new Map();
-for (const [name, definition] of Object.entries(schema.$defs)) {
-  if (definition.type === 'object') validators.set(name, ajv.compile({ $ref: `${schema.$id}#/$defs/${name}` }));
+for (const schema of schemas) {
+  ajv.addSchema(schema);
+  for (const [name, definition] of Object.entries(schema.$defs)) {
+    if (definition.type !== 'object') continue;
+    if (validators.has(name)) throw new Error('Duplicate contract name');
+    validators.set(name, ajv.compile({ $ref: `${schema.$id}#/$defs/${name}` }));
+  }
 }
 
 // JSON Schema cannot compare required_criteria with an arbitrary result list.
