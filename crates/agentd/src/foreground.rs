@@ -372,9 +372,9 @@ async fn demo_impl(
     } else if mode == "cancel-before-invoke" {
         let pid = invoke_reached.await?;
         cancel(&mut client, "probe-a").await?;
-        invoke_release
-            .send(())
-            .map_err(|_| "INVOCATION_RUNNER_LOST")?;
+        // Cancellation is already durably confirmed. The independent monitor
+        // may have closed the exchange first; an absent waiter is not a fault.
+        let _ = invoke_release.send(());
         pid
     } else {
         (&mut started).await?
