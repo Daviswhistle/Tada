@@ -27,6 +27,8 @@ const HELP: &str = "Tada foreground development host\n\
   tada-agentd serve-probe ABS_STORE ABS_IDENTITY\n\
   tada-agentd request ABS_IDENTITY REQUEST_JSON_FILE\n\
   tada-agentd demo NEW_DIRECTORY\n\
+  tada-agentd demo-engine NEW_DIRECTORY\n\
+  tada-agentd demo-typescript NEW_DIRECTORY ABS_NODE\n\
 init/finish-init explicitly use the current user's OS vault. serve only accepts\n\
 authenticated control requests. serve-probe additionally runs the fixed no-tool\n\
 input-hash probe; it never fulfills a user's goal or marks a task SUCCEEDED.\n\
@@ -118,6 +120,44 @@ pub fn run(args: Vec<OsString>) -> Result<()> {
                 }
                 Ok::<_, Box<dyn std::error::Error>>(())
             })?;
+        }
+        ("demo-engine", 2) => {
+            runtime()?.block_on(demo_impl(
+                Path::new(&args[1]),
+                "normal",
+                Some(crate::engine_pipe::Program::BuiltIn),
+            ))?;
+        }
+        ("demo-typescript", 3) => {
+            let node = absolute(&args[2])?;
+            if !node.is_file() {
+                return Err("ENGINE_ABSOLUTE_NODE_REQUIRED".into());
+            }
+            runtime()?.block_on(demo_impl(
+                Path::new(&args[1]),
+                "normal",
+                Some(crate::engine_pipe::Program::Node(node)),
+            ))?;
+        }
+        #[cfg(feature = "process-fixtures")]
+        ("demo-engine", 3) => {
+            runtime()?.block_on(demo_impl(
+                Path::new(&args[1]),
+                args[2].to_str().ok_or("INVALID_FIXTURE")?,
+                Some(crate::engine_pipe::Program::BuiltIn),
+            ))?;
+        }
+        #[cfg(feature = "process-fixtures")]
+        ("demo-typescript", 4) => {
+            let node = absolute(&args[2])?;
+            if !node.is_file() {
+                return Err("ENGINE_ABSOLUTE_NODE_REQUIRED".into());
+            }
+            runtime()?.block_on(demo_impl(
+                Path::new(&args[1]),
+                args[3].to_str().ok_or("INVALID_FIXTURE")?,
+                Some(crate::engine_pipe::Program::Node(node)),
+            ))?;
         }
         ("demo", 2) => {
             runtime()?.block_on(demo(Path::new(&args[1]), "normal"))?;
@@ -219,6 +259,13 @@ async fn cancel(client: &mut Client, id: &str) -> Result<()> {
     Ok(())
 }
 async fn demo(path: &Path, mode: &str) -> Result<()> {
+    demo_impl(path, mode, None).await
+}
+async fn demo_impl(
+    path: &Path,
+    mode: &str,
+    engine: Option<crate::engine_pipe::Program>,
+) -> Result<()> {
     // Resolve relative syntax without converting Windows Disk paths to verbatim
     // device syntax. Keep the existing private-root validator and ACL checks.
     // Validate before any creation; canonicalization must not hide parent hops.
@@ -262,7 +309,28 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
     let (startup_notice, startup_reached) = oneshot::channel();
     #[cfg(feature = "process-fixtures")]
     let (startup_release, startup_resume) = oneshot::channel();
+    if engine.is_some() {
+        let policy = crate::engine_pipe::demo_policy("probe-a", mode)?;
+        process_runner::with_store(
+            Arc::clone(&store),
+            tada_store::priority::Priority::Ordinary,
+            move |s| s.set_worker_policy("probe-a", &policy),
+        )
+        .await?;
+    }
+    #[cfg(feature = "process-fixtures")]
+    let (invoke_notice, invoke_reached) = oneshot::channel();
+    #[cfg(feature = "process-fixtures")]
+    let (invoke_release, invoke_resume) = oneshot::channel();
     let options = Options {
+        engine: engine.clone(),
+        #[cfg(feature = "process-fixtures")]
+        invocation_barrier: (mode == "cancel-before-invoke").then_some(
+            process_runner::StartupBarrier {
+                reached: invoke_notice,
+                resume: invoke_resume,
+            },
+        ),
         mode: if ["cancel", "shutdown", "timeout", "parent-death"].contains(&mode) {
             "hang".into()
         } else if mode == "cancel-before-start" {
@@ -301,6 +369,13 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
             .send(())
             .map_err(|_| "STARTUP_RUNNER_LOST")?;
         pid
+    } else if mode == "cancel-before-invoke" {
+        let pid = invoke_reached.await?;
+        cancel(&mut client, "probe-a").await?;
+        invoke_release
+            .send(())
+            .map_err(|_| "INVOCATION_RUNNER_LOST")?;
+        pid
     } else {
         (&mut started).await?
     };
@@ -320,18 +395,30 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
     }
     let _ = pid;
     let report = runner.await??.ok_or("DEMO_NO_ASSIGNMENT")?;
-    let followup = if mode == "cancel-before-start" {
-        if started.await.is_ok() {
+    let followup = if ["cancel-before-start", "cancel-before-invoke"].contains(&mode) {
+        if mode == "cancel-before-start" && started.await.is_ok() {
             return Err("CANCELLED_ASSIGNMENT_WAS_DELIVERED".into());
         }
         // Keep using the same server and store after the cancelled spawn.
         call(&mut client, submit("probe-after-race")).await?;
+        if engine.is_some() {
+            let policy = crate::engine_pipe::demo_policy("probe-after-race", "normal")?;
+            process_runner::with_store(
+                Arc::clone(&store),
+                tada_store::priority::Priority::Ordinary,
+                move |s| s.set_worker_policy("probe-after-race", &policy),
+            )
+            .await?;
+        }
         process_runner::run_one(
             Arc::clone(&store),
             std::env::current_exe()?,
             work.path().to_owned(),
             rx,
-            Options::default(),
+            Options {
+                engine: engine.clone(),
+                ..Options::default()
+            },
             None,
         )
         .await?
@@ -351,7 +438,7 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
     }
     println!(
         "{}",
-        json!({"report":report,"task":task,"queued_cancel_epoch":cancelled.cancel_epoch,"live_tools":0,"followup":followup})
+        json!({"report":report,"task":task,"queued_cancel_epoch":cancelled.cancel_epoch,"live_tools":0,"broker_enabled":engine.is_some(),"followup":followup})
     );
     drop(client);
     drop(store);

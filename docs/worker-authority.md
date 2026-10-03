@@ -71,3 +71,7 @@ The fixed nine-case process-kill matrix kills a real child before, between witne
 Wire the broker into a versioned duplex engine/tool process connection that retains the host channel, bounds request queues and honors cancellation-prioritized store admission. The existing CORE-07 fixed probe still uses its original private pipe protocol; the TypeScript model engine and its transport are not implemented by these generated types. Do not advertise end-to-end worker RPC until that separate process integration is tested.
 
 A later SEC-01 slice must add authenticated human policy/approval management, scope predicates and resource handles, real-tool admission, destination/egress and amount checks, reviewed caller registration, grant delegation/parent limits, policy startup audit and indexed projections. Actual file/process/browser tools, OS sandboxing, provider authentication, ART-01 result publication, UI and installed services remain distinct gates. Same-user unrestricted host access is outside this broker's enforcement boundary.
+
+## Follow-through: ENGINE-01A
+
+The subsequent [duplex integration](engine-duplex.md) retains the opaque channel in the parent and calls this broker from a real child-pipe exchange. The original SEC-01A library boundary above describes its initial slice; the built-in and TypeScript demonstration paths now exercise it across processes. Neither path exposes host policy installation or channel issuance to worker JSON.

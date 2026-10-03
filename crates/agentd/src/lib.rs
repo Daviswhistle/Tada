@@ -229,3 +229,5 @@ pub mod foreground;
 mod process_runner;
 mod process_scope;
 pub mod worker_wire;
+
+pub mod engine_pipe;

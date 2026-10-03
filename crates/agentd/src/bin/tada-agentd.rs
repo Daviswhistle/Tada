@@ -12,6 +12,15 @@ fn main() {
                 },
                 _ => Err("INVALID_WORKER_ARGUMENTS".into()),
             }
+        } else if args.first().is_some_and(|a| a == "--engine-worker") {
+            match args.as_slice() {
+                [_] => tada_agentd::engine_pipe::worker_stdio("normal").map_err(Into::into),
+                [_, mode] => match mode.to_str() {
+                    Some(mode) => tada_agentd::engine_pipe::worker_stdio(mode).map_err(Into::into),
+                    None => Err("INVALID_WORKER_MODE".into()),
+                },
+                _ => Err("INVALID_WORKER_ARGUMENTS".into()),
+            }
         } else {
             tada_agentd::foreground::run(args)
         };

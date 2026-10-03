@@ -12,6 +12,7 @@
   "include": [
     "packages/contracts/src/**/*.ts",
     "packages/contracts/src/**/*.mts",
-    "packages/contracts/tests/**/*.ts"
+    "packages/contracts/tests/**/*.ts",
+    "packages/engine/src/**/*.ts"
   ]
 }

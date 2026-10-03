@@ -18,6 +18,15 @@ mod policy;
 mod tests;
 
 pub const MAX_WORKER_BODY: usize = 16_384;
+/// Bounded unique-key parsing plus the generated contract validator. This
+/// constructs values only; it never authenticates a channel or grants authority.
+pub fn decode_worker_message<T: Contract>(bytes: &[u8]) -> Result<T> {
+    if bytes.is_empty() || bytes.len() > MAX_WORKER_BODY {
+        return Err(Error::Invalid("WORKER_BODY_LIMIT"));
+    }
+    let value = json_input::parse(bytes).map_err(|_| Error::Invalid("WORKER_INVALID_JSON"))?;
+    decode(&value)
+}
 const CATALOG: &str = "task.contract_digest/v1;effect=read;source=bound-task-contract;arguments=expected_hash;network=none;result=sha256;input=16384;output=4096";
 
 /// Host-owned channel identity. Never reconstructed from a worker's subject,

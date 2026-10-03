@@ -30,6 +30,9 @@ pub(crate) struct StartupBarrier {
     pub resume: oneshot::Receiver<()>,
 }
 pub(crate) struct Options {
+    pub engine: Option<crate::engine_pipe::Program>,
+    #[cfg(feature = "process-fixtures")]
+    pub invocation_barrier: Option<StartupBarrier>,
     pub mode: String,
     pub deadline: Duration,
     #[cfg(feature = "process-fixtures")]
@@ -38,6 +41,9 @@ pub(crate) struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            engine: None,
+            #[cfg(feature = "process-fixtures")]
+            invocation_barrier: None,
             mode: "normal".into(),
             deadline: Duration::from_secs(10),
             #[cfg(feature = "process-fixtures")]
@@ -53,6 +59,7 @@ pub(crate) enum Cause {
     Shutdown,
     Deadline,
     InvalidOutput,
+    AuthorityDenied,
     ProcessFailed,
     OwnershipLost,
 }
@@ -133,9 +140,21 @@ async fn reap(child: &mut Child, scope: &Scope) -> Result<ExitStatus> {
     .map_err(|_| Error::Denied("PROBE_SCOPE_NOT_EMPTY"))??;
     Ok(status)
 }
-fn configure(command: &mut Command, cwd: &Path) {
+fn configure(command: &mut Command, cwd: &Path, engine: &Option<crate::engine_pipe::Program>) {
+    match engine {
+        None => {
+            command.arg("--probe-worker");
+        }
+        Some(crate::engine_pipe::Program::BuiltIn) => {
+            command.arg("--engine-worker");
+        }
+        Some(crate::engine_pipe::Program::Node(_)) => {
+            command.arg(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packages/engine/src/stdio.mjs"),
+            );
+        }
+    }
     command
-        .arg("--probe-worker")
         .current_dir(cwd)
         .env_clear()
         .stdin(Stdio::piped())
@@ -168,6 +187,12 @@ pub(crate) async fn run_one(
     {
         return Err(Error::Invalid("PROBE_OPTIONS"));
     }
+    if let Some(crate::engine_pipe::Program::Node(node)) = &options.engine {
+        if !node.is_absolute() || !node.is_file() {
+            return Err(Error::Invalid("ENGINE_ABSOLUTE_NODE_REQUIRED"));
+        }
+    }
+    let engine_enabled = options.engine.is_some();
     if *stop.borrow() {
         return Ok(None);
     }
@@ -197,10 +222,15 @@ pub(crate) async fn run_one(
         }
         let contract = s.work_contract(&lease)?;
         let value = tada_contracts::encode(&contract).map_err(|_| Error::RecoveryRequired)?;
-        Ok(Some((lease, serde_json::to_string(&value)?)))
+        let channel = if engine_enabled {
+            Some(s.open_worker_channel(&lease, Duration::from_secs(60))?)
+        } else {
+            None
+        };
+        Ok(Some((lease, serde_json::to_string(&value)?, channel)))
     })
     .await?;
-    let Some((lease, contract_json)) = assignment else {
+    let Some((lease, contract_json, engine_channel)) = assignment else {
         return Ok(None);
     };
     let mut nonce = [0; 16];
@@ -213,8 +243,11 @@ pub(crate) async fn run_one(
         contract_json,
     };
     let input = worker_wire::packet(&serde_json::to_vec(&request)?, MAX_REQUEST)?;
-    let mut command = Command::new(exe);
-    configure(&mut command, &cwd);
+    let mut command = match &options.engine {
+        Some(crate::engine_pipe::Program::Node(node)) => Command::new(node),
+        _ => Command::new(exe),
+    };
+    configure(&mut command, &cwd, &options.engine);
     #[cfg(feature = "process-fixtures")]
     if options.mode != "normal" {
         command.arg(&options.mode);
@@ -257,6 +290,12 @@ pub(crate) async fn run_one(
         // available. Do not invent a start/reap journal pair for unadmitted work.
         drop(stdin);
         reap(&mut child, &scope).await?;
+        if let Some(channel) = engine_channel.clone() {
+            with_store(Arc::clone(&store), Priority::Cancellation, move |s| {
+                s.revoke_worker_channel(&channel)
+            })
+            .await?;
+        }
         if matches!(error, Error::Denied("STALE_QUEUE_LEASE" | "TASK_CANCELLED")) {
             let current = lease.clone();
             let cancelled = with_store(Arc::clone(&store), Priority::Ordinary, move |s| {
@@ -284,7 +323,25 @@ pub(crate) async fn run_one(
         return Err(error);
     }
     let expected_hash = lease.contract_hash().to_owned();
+    let engine_stop = stop.clone();
     let observation = async {
+        if let Some(channel) = engine_channel.clone() {
+            let exchange = crate::engine_pipe::Exchange {
+                store: Arc::clone(&store),
+                channel,
+                seed: crate::engine_pipe::proposal(lease.task_id(), &expected_hash, &request.nonce),
+                stdin,
+                stdout,
+                started,
+                pid,
+                stop: engine_stop,
+                mode: options.mode.clone(),
+                #[cfg(feature = "process-fixtures")]
+                invocation_barrier: options.invocation_barrier,
+            };
+            tokio::try_join!(exchange.run(), drain_stderr(stderr))?;
+            return Ok::<_, Error>(());
+        }
         let send = async move {
             stdin.write_all(&input).await?;
             stdin.shutdown().await?;
@@ -339,7 +396,12 @@ pub(crate) async fn run_one(
                     if !matches!(error,Error::Denied(_)) { storage_error=Some(error); }
                     break Cause::OwnershipLost;
                 },
-                result=&mut observation,if !got_reply=>match result {Ok(())=>got_reply=true,Err(_)=>break Cause::InvalidOutput},
+                result=&mut observation,if !got_reply=>match result {
+                    Ok(())=>got_reply=true,
+                    Err(error @ (Error::Sql(_) | Error::RecoveryRequired))=>{storage_error=Some(error);break Cause::OwnershipLost},
+                    Err(Error::Denied(_))=>break Cause::AuthorityDenied,
+                    Err(_)=>break Cause::InvalidOutput,
+                },
                 status=&mut wait,if !exited=>match status {Ok(status) if status.success()=>exited=true,_=>break Cause::ProcessFailed},
             }
         }
@@ -349,6 +411,14 @@ pub(crate) async fn run_one(
     reap(&mut child, &scope).await?;
     if let Some(error) = storage_error {
         return Err(error);
+    }
+    // Earlier entered broker operations retain the admission permit until the
+    // DB closure finishes. Revoke/drain before retiring or reassigning work.
+    if let Some(channel) = engine_channel {
+        with_store(Arc::clone(&store), Priority::Cancellation, move |s| {
+            s.revoke_worker_channel(&channel)
+        })
+        .await?;
     }
     let current = lease.clone();
     with_store(Arc::clone(&store), Priority::Ordinary, move |s| {
