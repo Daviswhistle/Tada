@@ -24,16 +24,24 @@ use tokio::{
 };
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
-#[derive(Clone)]
+#[cfg(feature = "process-fixtures")]
+pub(crate) struct StartupBarrier {
+    pub reached: oneshot::Sender<u32>,
+    pub resume: oneshot::Receiver<()>,
+}
 pub(crate) struct Options {
     pub mode: String,
     pub deadline: Duration,
+    #[cfg(feature = "process-fixtures")]
+    pub startup_barrier: Option<StartupBarrier>,
 }
 impl Default for Options {
     fn default() -> Self {
         Self {
             mode: "normal".into(),
             deadline: Duration::from_secs(10),
+            #[cfg(feature = "process-fixtures")]
+            startup_barrier: None,
         }
     }
 }
@@ -222,14 +230,58 @@ pub(crate) async fn run_one(
     let mut stdin = child.stdin.take().ok_or(Error::RecoveryRequired)?;
     let mut stdout = child.stdout.take().ok_or(Error::RecoveryRequired)?;
     let stderr = child.stderr.take().ok_or(Error::RecoveryRequired)?;
+    #[cfg(feature = "process-fixtures")]
+    if let Some(barrier) = options.startup_barrier {
+        // Test-only synchronization at the exact spawn/admission boundary.
+        // No sleeps guess whether the native cancellation has committed.
+        let reached = barrier.reached.send(pid).is_ok();
+        let resumed = reached
+            && matches!(
+                timeout(Duration::from_secs(5), barrier.resume).await,
+                Ok(Ok(()))
+            );
+        if !resumed {
+            drop(stdin);
+            reap(&mut child, &scope).await?;
+            return Err(Error::Invalid("PROBE_STARTUP_FIXTURE_ABANDONED"));
+        }
+    }
     let observed_lease = lease.clone();
     if let Err(error) = with_store(Arc::clone(&store), Priority::Ordinary, move |s| {
         s.note_probe_process(&observed_lease, pid, false)
     })
     .await
     {
+        // Cancellation can win after spawn but before process admission.
+        // Close the unsent input, confirm cleanup, and keep unrelated control
+        // available. Do not invent a start/reap journal pair for unadmitted work.
         drop(stdin);
         reap(&mut child, &scope).await?;
+        if matches!(
+            error,
+            Error::Denied("STALE_QUEUE_LEASE" | "TASK_CANCELLED")
+        ) {
+            let current = lease.clone();
+            let cancelled = with_store(Arc::clone(&store), Priority::Ordinary, move |s| {
+                let task = s.task(current.task_id())?;
+                let entry = s.work_entry(current.task_id())?;
+                Ok(task.execution_status == tada_contracts::ExecutionStatus::Cancelled
+                    && entry.state == WorkState::Cancelled
+                    && entry.fence == current.fence()
+                    && entry.contract_hash == current.contract_hash())
+            })
+            .await?;
+            if cancelled {
+                return Ok(Some(Report {
+                    task_id: lease.task_id().into(),
+                    pid,
+                    reaped: true,
+                    cause: Cause::Cancelled,
+                    queue_state: WorkState::Cancelled,
+                    checkpoint: None,
+                }));
+            }
+        }
         return Err(error);
     }
     let expected_hash = lease.contract_hash().to_owned();
