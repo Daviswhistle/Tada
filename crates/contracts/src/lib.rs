@@ -12,6 +12,8 @@ pub use generated::*;
 
 #[rustfmt::skip]
 pub mod worker;
+#[rustfmt::skip]
+pub mod model;
 
 pub(crate) mod sealed {
     pub trait Sealed {}
@@ -68,6 +70,8 @@ pub fn validate(name: &str, value: &Value) -> Result<(), ContractError> {
         include_str!("../../../packages/contracts/schema/v1.json")
     } else if worker::CONTRACT_NAMES.contains(&name) {
         include_str!("../../../packages/contracts/schema/worker.v1.json")
+    } else if model::CONTRACT_NAMES.contains(&name) {
+        include_str!("../../../packages/contracts/schema/model.v1.json")
     } else {
         return Err(ContractError("UNKNOWN_CONTRACT"));
     };

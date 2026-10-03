@@ -66,7 +66,8 @@ const io = {
 try {
   const pinned = readFileSync(new URL('../../../.node-version', import.meta.url), 'utf8').trim();
   if (process.versions.node !== pinned) throw new Error('ENGINE_NODE_VERSION');
-  if (!['normal', 'lost-reply', 'cancel-before-invoke', 'env-canary', 'hang'].includes(mode)) {
+  const modelMode = mode.startsWith('model-');
+  if (!['normal', 'lost-reply', 'cancel-before-invoke', 'env-canary', 'hang'].includes(mode) && !modelMode) {
     throw new Error('ENGINE_FIXTURE_UNKNOWN');
   }
   if (mode === 'env-canary' && ['TADA_SECRET_CANARY','OPENAI_API_KEY','NODE_OPTIONS','PYTHONPATH'].some((k) => process.env[k] !== undefined)) {
@@ -76,7 +77,14 @@ try {
     input.resume();
     await new Promise(() => {});
   }
-  await runDigestSession(io, mode === 'lost-reply');
+  if (modelMode) {
+    // The normal Rust host never accepts fixture modes. MockProvider validates
+    // the finite scenario list; neither a SDK nor a live endpoint is selected.
+    const { runMockModelSession } = await import('./model-session.mjs');
+    await runMockModelSession(io, mode.slice(6));
+  } else {
+    await runDigestSession(io, mode === 'lost-reply');
+  }
   input.destroy();
   await new Promise((resolve) => output.end(resolve));
 } catch {

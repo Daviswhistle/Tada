@@ -50,7 +50,7 @@ Public task/control contracts, the preserved design and task/identity schema ver
 
 ## Next core / SEC-01 integration
 
-Implement reviewed worker-scoped policy/grant admission and the versioned Rust/TypeScript engine/tool interface before enabling actual tools. Keep CPU-heavy work and external I/O outside store locks and preserve cancellation-first admission. General workers need independently verified containment and stop/reaping recovery; the fixed probe's retirement rule is not a license to steal expired live assignments. Installed-service packaging remains separate from explicit foreground operation.
+The reviewed worker-scoped policy/grant admission and versioned Rust/TypeScript digest interface are implemented in SEC-01A and ENGINE-01A. Keep CPU-heavy work and external I/O outside store locks and preserve cancellation-first admission when adding real tools. General workers need independently verified containment and stop/reaping recovery; the fixed probe's retirement rule is not a license to steal expired live assignments. Installed-service packaging remains separate from explicit foreground operation.
 
 Follow-through includes recurring IANA-time-zone/occurrence/catch-up contracts, decision-response priority, general resource locks, rich engine checkpoints, production recovery export/restore, parent/child and provider-aware budgets, and notifications coupled to ART-01 publication. None is implied by the fixed probe or in-process admission gate.
 
@@ -69,3 +69,9 @@ Managed browser, Windows native automation, Linux core parity, optional macOS br
 ## ENGINE-01A — duplex digest integration
 
 The actual Rust and TypeScript process paths are specified in [engine-duplex.md](engine-duplex.md). This joins the existing host-owned channel to a bounded propose/authorize/invoke/replay/final exchange without replacing the task/control/worker schemas. It remains a model-free fixed read probe; general model planning, provider adapters, file actions, artifact verification/publication, packaged runtime integrity and independent security review are separate gates.
+
+## MODEL-01A / ENGINE-01B — normalized mock streams and bounded controller
+
+[Model streams](model-streams.md) adds a separately versioned event schema with generated Rust/TypeScript types and shared conformance fixtures. The collector withholds calls until completion and EOF; the controller enforces finite requests/tools/recovery/time, rejects changed scope, preserves observed/unknown usage, distinguishes waiting reasons and refuses automatic retry of ambiguous tool outcomes. A feature-only actual Node path uses the unchanged Rust digest broker and preserves committed evidence when a later model stream fails. No real provider account or inference is used.
+
+These controller meters and classifications are session-local. The next gate is authoritative Rust model-request admission, durable budget reservation/settlement and versioned engine outcome/checkpoint envelopes, including committed observations before another model turn and process-kill recovery. Persisted WAITING wake conditions, encrypted continuation and live provider serializers/conformance must be connected before production inference. A mock stream parser and a pure-probe checkpoint do not complete the original MODEL 01 or ENGINE 01 release gates.
