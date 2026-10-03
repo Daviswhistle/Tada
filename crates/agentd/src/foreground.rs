@@ -219,13 +219,17 @@ async fn cancel(client: &mut Client, id: &str) -> Result<()> {
     Ok(())
 }
 async fn demo(path: &Path, mode: &str) -> Result<()> {
-    let path = if path.is_absolute() {
-        path.to_owned()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
-    tada_local_ipc::create_runtime_dir(&path)?;
-    let path = std::fs::canonicalize(path)?;
+    // Resolve relative syntax without converting Windows Disk paths to verbatim
+    // device syntax. Keep the existing private-root validator and ACL checks.
+    // Validate before any creation; canonicalization must not hide parent hops.
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("ABSOLUTE_PRIVATE_PATH_REQUIRED".into());
+    }
+    let path = std::path::absolute(path)?;
+    let demo_root = StoreDirectory::create(&path)?;
     let root = StoreDirectory::create(&path.join("data"))?;
     let store = Arc::new(Mutex::new(root.initialize_store()?));
     let work = StoreDirectory::create(&path.join("work"))?;
@@ -254,9 +258,15 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
     drop(client);
     let mut client = Client::connect(&info, &key, Limits::default()).await?;
     call(&mut client, submit("probe-a")).await?;
+    #[cfg(feature = "process-fixtures")]
+    let (startup_notice, startup_reached) = oneshot::channel();
+    #[cfg(feature = "process-fixtures")]
+    let (startup_release, startup_resume) = oneshot::channel();
     let options = Options {
         mode: if ["cancel", "shutdown", "timeout", "parent-death"].contains(&mode) {
             "hang".into()
+        } else if mode == "cancel-before-start" {
+            "normal".into()
         } else {
             mode.into()
         },
@@ -265,17 +275,33 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
         } else {
             Duration::from_secs(30)
         },
+        #[cfg(feature = "process-fixtures")]
+        startup_barrier: (mode == "cancel-before-start").then_some(process_runner::StartupBarrier {
+            reached: startup_notice,
+            resume: startup_resume,
+        }),
     };
-    let (notice, started) = oneshot::channel();
+    let (notice, mut started) = oneshot::channel();
     let runner = tokio::spawn(process_runner::run_one(
         Arc::clone(&store),
         std::env::current_exe()?,
         work.path().to_owned(),
-        rx,
+        rx.clone(),
         options,
         Some(notice),
     ));
-    let pid = started.await?;
+    #[cfg(feature = "process-fixtures")]
+    let pid = if mode == "cancel-before-start" {
+        let pid = startup_reached.await?;
+        // A real authenticated native cancellation, not a direct DB test write.
+        cancel(&mut client, "probe-a").await?;
+        startup_release.send(()).map_err(|_| "STARTUP_RUNNER_LOST")?;
+        pid
+    } else {
+        (&mut started).await?
+    };
+    #[cfg(not(feature = "process-fixtures"))]
+    let pid = (&mut started).await?;
     if mode == "cancel" {
         cancel(&mut client, "probe-a").await?;
     }
@@ -289,11 +315,27 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
         std::future::pending::<()>().await;
     }
     let _ = pid;
-    let result = runner.await;
+    let report = runner.await??.ok_or("DEMO_NO_ASSIGNMENT")?;
+    let followup = if mode == "cancel-before-start" {
+        if started.await.is_ok() {
+            return Err("CANCELLED_ASSIGNMENT_WAS_DELIVERED".into());
+        }
+        // Keep using the same server and store after the cancelled spawn.
+        call(&mut client, submit("probe-after-race")).await?;
+        process_runner::run_one(
+            Arc::clone(&store),
+            std::env::current_exe()?,
+            work.path().to_owned(),
+            rx,
+            Options::default(),
+            None,
+        )
+        .await?
+    } else {
+        None
+    };
     let _ = stop.send(true);
-    let served = server.await;
-    let report = result??.ok_or("DEMO_NO_ASSIGNMENT")?;
-    served??;
+    server.await??;
     let (task, cancelled) = {
         let owner = store.lock().map_err(|_| "STORE_POISONED")?;
         (owner.task("probe-a")?, owner.task("probe-cancelled")?)
@@ -305,11 +347,12 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
     }
     println!(
         "{}",
-        json!({"report":report,"task":task,"queued_cancel_epoch":cancelled.cancel_epoch,"live_tools":0})
+        json!({"report":report,"task":task,"queued_cancel_epoch":cancelled.cancel_epoch,"live_tools":0,"followup":followup})
     );
     drop(client);
     drop(store);
     drop(work);
     drop(root);
+    drop(demo_root);
     Ok(())
 }
