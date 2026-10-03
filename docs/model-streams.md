@@ -26,6 +26,10 @@ The session has separate turn, tool-call, recovery-attempt, active-time, event-c
 
 A failed model request consumes its reserved turn. A malformed or interrupted response may be replaced by a fresh bounded model stream, never by patching its partial JSON. Two consecutive identical phase/input/error signatures enter `diagnose`; changing errors still cannot exceed the total recovery allowance. Resource exhaustion stops rather than entering a schema-correction loop.
 
+A replacement stream also requires the previous local iterator to have ended or acknowledged `return()` with `done: true`. Cleanup gets a separate, bounded 100ms grace period after abort is forwarded. Missing, rejecting, malformed or non-settling cleanup produces `unsupported / MODEL_CLEANUP_UNCONFIRMED`; the loop starts no second stream. Cancellation and an already expired session deadline keep their own classifications. Natural EOF needs no extra `return()` call. Closing a local iterator is not proof that a remote provider cancelled an inference or refunded usage.
+
+Iterator ownership is retained as soon as it is acquired, even when acquisition itself finishes after cancellation or the monotonic deadline. The rejected acquisition result is still cleaned up. A timeout while awaiting the wrapper must not lose the resource that the wrapped operation actually created. Late cleanup rejection is observed without exposing raw adapter errors.
+
 Capacity responses return `waiting / PROVIDER_CAPACITY` with a bounded positive `retry_after_ms` when provided. Authentication and network failures return distinct waiting reasons. This controller does not sleep, register schedules, reconnect accounts, install a provider or choose another paid route. A future persistent scheduler must supply wake events/times under the existing task WAITING contract.
 
 Tool transport/result failures are outside the model-correction loop. They return `reconcile` and retain consumed call capacity. The controller never automatically reissues an ambiguous tool invocation. Logical call IDs cannot be invoked twice by later model turns. The supplied ToolPort is a trusted host adapter, not authority created by a JavaScript interface: the actual fixture still uses current Rust policy, channel, generation, cancellation epoch, fence and result bindings.
@@ -34,7 +38,7 @@ Tool transport/result failures are outside the model-correction loop. They retur
 
 ## Cancellation and accounting
 
-Async waits are bounded by one monotonic session deadline, including final-event-then-hang and adapters whose `next` or `return` never settle. Abort is forwarded, late promise rejections are observed and operations are rechecked immediately before entry. This cannot preempt synchronous same-process code or prove a remote request stopped. The Rust parent still owns process cleanup; the existing Linux/Windows lifecycle regressions remain enabled.
+Async waits are bounded by one monotonic session deadline, including final-event-then-hang. Iterator cleanup has the additional bounded 100ms grace period described above, even for adapters whose `next` or `return` never settle. Abort is forwarded, late promise rejections are observed and operations are rechecked immediately before entry. This cannot preempt synchronous same-process code or prove a remote request stopped. The Rust parent still owns process cleanup; the existing Linux/Windows lifecycle regressions remain enabled.
 
 Cancellation before tool admission produces no new call. Cancellation during an already-entered ToolPort wait is an unknown outcome requiring reconciliation, not a rollback receipt. The host remains responsible for actual dispatch/cancellation serialization and preserving late effects.
 
@@ -73,6 +77,8 @@ cargo run --locked -p tada-agentd --features process-fixtures --bin tada-agentd 
 The fixed test denominators are 36 model-wire cases shared across languages, 16 stream protocol rejection cases, and 9 actual Node model-fault scenarios plus 2 successful/recovered scenarios. Additional tests cover deadlines, cancellation, usage, recovery/tool limits and outcome binding. The process scenarios are nested in two Rust test functions and must not be added again as independent top-level functions. Expanded suites overlap ordinary coverage. Per-head CI results belong in the PR, not invented here.
 
 The nine process failures are persistent partial JSON, repeated protocol failure, capacity, authentication, network, prose-only completion, failure after a committed read, changed tool scope and a hung model stream. Each checks process reaping, channel revocation and no false checkpoint. Only the post-read failure retains one invocation record. Earlier broker replay, native cancellation, parent-death and thirteen-case process/duplex matrices remain mandatory.
+
+Seven additional cleanup regression functions cover acknowledgement before recovery, eight unconfirmed cleanup variants, natural EOF without `return`, cancellation/deadline during acquisition, cancellation during cleanup, and late cleanup rejection. The eight variants are missing, pending, rejected, synchronously thrown, null, `done: false`, a throwing `return` getter, and a throwing `done` getter. These cases preserve the previous fixed denominators; no case was removed to obtain a passing run.
 
 ## Next gate
 
