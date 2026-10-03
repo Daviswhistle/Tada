@@ -116,3 +116,7 @@ The [roadmap](docs/roadmap.md) retains reviewed worker-scoped SEC-01 authority, 
 See [CONTRIBUTING](CONTRIBUTING.md), [agent instructions](AGENTS.md) and [security boundaries](docs/security.md). No maintainer sign-off, independent security review or response SLA is fabricated.
 
 Licensed under [Apache-2.0](LICENSE).
+
+## Duplex engine integration
+
+[ENGINE-01A](docs/engine-duplex.md) connects the SEC-01A broker to actual child pipes. `demo-engine NEW_DIRECTORY` uses the built-in Rust reference; `demo-typescript NEW_DIRECTORY ABS_NODE` uses the checked-in deterministic TypeScript worker with the exact `.node-version` runtime supplied explicitly. Both authorize and invoke only the current task contract-digest read, preserve one committed result on replay, revoke their host-owned channel, and require confirmed process cleanup before a probe checkpoint. They do not call models or complete user tasks. The mandatory process-fixture suite now requires the pinned Node executable on the developer test PATH in addition to `npm ci`; production commands never resolve a runtime from PATH.

@@ -65,3 +65,7 @@ Input snapshot → isolated staging → file generation → independent verifica
 ## Later product scope
 
 Managed browser, Windows native automation, Linux core parity, optional macOS bridge, signed packaging/updates and full safety/quality evaluations follow their original dependencies. No empty placeholder package stands in for implementation or evidence.
+
+## ENGINE-01A — duplex digest integration
+
+The actual Rust and TypeScript process paths are specified in [engine-duplex.md](engine-duplex.md). This joins the existing host-owned channel to a bounded propose/authorize/invoke/replay/final exchange without replacing the task/control/worker schemas. It remains a model-free fixed read probe; general model planning, provider adapters, file actions, artifact verification/publication, packaged runtime integrity and independent security review are separate gates.
