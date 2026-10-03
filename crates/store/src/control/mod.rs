@@ -12,6 +12,8 @@ use tada_contracts::{CompletionStatus, ExecutionStatus};
 
 pub mod auth;
 mod json_input;
+// Separate host-bound worker API; never routed through the UI control methods.
+pub mod worker;
 use auth::{identifier, Access, Credential, Pending, ServerSession, MAX_BODY};
 
 #[derive(Serialize, Deserialize)]

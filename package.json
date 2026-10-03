@@ -8,8 +8,8 @@
     "node": ">=22.16.0 <25"
   },
   "scripts": {
-    "generate": "node scripts/generate-contracts.mjs",
-    "generate:check": "node scripts/generate-contracts.mjs --check",
+    "generate": "node scripts/generate-contracts.mjs && node scripts/generate-worker-contracts.mjs",
+    "generate:check": "node scripts/generate-contracts.mjs --check && node scripts/generate-worker-contracts.mjs --check",
     "typecheck": "tsc --noEmit",
     "test": "node --test packages/contracts/tests/*.test.mjs scripts/*.test.mjs",
     "check": "npm run generate:check && npm run typecheck && npm test"
