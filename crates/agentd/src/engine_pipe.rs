@@ -322,16 +322,15 @@ pub fn worker_stdio(mode: &str) -> Result<()> {
             std::thread::park();
         },
         "env-canary" => {
-            if [
+            for name in [
                 "TADA_SECRET_CANARY",
                 "OPENAI_API_KEY",
                 "NODE_OPTIONS",
                 "PYTHONPATH",
-            ]
-            .iter()
-            .any(|k| std::env::var_os(k).is_some())
-            {
-                return Err(Error::Invalid("ENGINE_ENV_LEAK"));
+            ] {
+                if std::env::var_os(name).is_some() {
+                    return Err(Error::Invalid("ENGINE_ENV_LEAK"));
+                }
             }
         }
         _ => (),
