@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
-const schemas = ['v1.json', 'worker.v1.json'].map((name) =>
+const schemas = ['v1.json', 'worker.v1.json', 'model.v1.json'].map((name) =>
   JSON.parse(readFileSync(new URL('../schema/' + name, import.meta.url), 'utf8')));
 const ajv = new Ajv2020({ strict: true, strictRequired: false, strictTypes: false, allErrors: true });
 addFormats(ajv);
@@ -10,7 +10,7 @@ const validators = new Map();
 for (const schema of schemas) {
   ajv.addSchema(schema);
   for (const [name, definition] of Object.entries(schema.$defs)) {
-    if (definition.type !== 'object') continue;
+    if (definition.type !== 'object' && name !== 'ModelEvent') continue;
     if (validators.has(name)) throw new Error('Duplicate contract name');
     validators.set(name, ajv.compile({ $ref: `${schema.$id}#/$defs/${name}` }));
   }

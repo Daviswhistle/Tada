@@ -5,6 +5,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "skipLibCheck": false
@@ -13,6 +14,7 @@
     "packages/contracts/src/**/*.ts",
     "packages/contracts/src/**/*.mts",
     "packages/contracts/tests/**/*.ts",
-    "packages/engine/src/**/*.ts"
+    "packages/engine/src/**/*.ts",
+    "packages/providers/src/**/*.ts"
   ]
 }
