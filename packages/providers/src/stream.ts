@@ -33,7 +33,7 @@ const faultCodes = new Set([
   'MODEL_NETWORK','MODEL_AUTH','MODEL_PROTOCOL','MODEL_UNSUPPORTED','MODEL_PARTIAL_CALL',
   'MODEL_FINISH_MISMATCH','MODEL_CALL_LIMIT','MODEL_CALL_ALREADY_COMPLETE',
   'MODEL_ARGUMENT_LIMIT','MODEL_COMPLETE_MISMATCH','MODEL_STREAM_INCOMPLETE',
-  'MODEL_TOOL_SCHEMA','MODEL_TOOL_SCOPE',
+  'MODEL_TOOL_SCHEMA','MODEL_TOOL_SCOPE','MODEL_CLEANUP_UNCONFIRMED',
 ]);
 const categories = new Set(['protocol','network','auth','capacity','unsupported','cancelled','deadline']);
 export class ModelFault extends Error {
@@ -94,6 +94,24 @@ function checkLimits(limits: StreamLimits): void {
     if (value === undefined || minimum === undefined || ceiling === undefined || !Number.isSafeInteger(value) || value < minimum || value > ceiling) {
       throw new ModelFault('MODEL_LIMITS', 'unsupported', emptyUsage());
     }
+  }
+}
+
+/** Confirm the local iterator acknowledged closure before a replacement stream.
+ * This is not proof of remote cancellation or a refund. A rejecting, missing or
+ * unending return() is unconfirmed; late rejections are still consumed. The
+ * additional cleanup wait is capped at 100ms, not at the provider's patience.
+ */
+async function closeIterator(iterator: AsyncIterator<unknown>): Promise<boolean> {
+  if (!iterator.return) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => iterator.return!()).then((item) => item.done === true, () => false),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 100); }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -182,10 +200,13 @@ export async function collectModelTurn(
   } finally {
     signal.removeEventListener('abort', abort);
     child.abort();
-    if (!ended && iterator?.return) {
-      // An uncooperative iterator may never settle return(). Do not make the
-      // cancellation deadline depend on it, and always observe a late rejection.
-      try { void Promise.resolve(iterator.return()).catch(() => {}); } catch { /* fixed diagnostics only */ }
+    const closed = ended || iterator === undefined || await closeIterator(iterator);
+    if (signal.aborted) throw new ModelFault('MODEL_CANCELLED', 'cancelled', usage);
+    if (!closed) {
+      if (performance.now() >= deadline) throw new ModelFault('MODEL_DEADLINE', 'deadline', usage);
+      // No replacement stream while the previous local producer may be active.
+      // The session controller does not retry this unsupported boundary.
+      throw new ModelFault('MODEL_CLEANUP_UNCONFIRMED', 'unsupported', usage);
     }
   }
 }
