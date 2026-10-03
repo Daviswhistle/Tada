@@ -257,18 +257,17 @@ pub(crate) async fn run_one(
         // available. Do not invent a start/reap journal pair for unadmitted work.
         drop(stdin);
         reap(&mut child, &scope).await?;
-        if matches!(
-            error,
-            Error::Denied("STALE_QUEUE_LEASE" | "TASK_CANCELLED")
-        ) {
+        if matches!(error, Error::Denied("STALE_QUEUE_LEASE" | "TASK_CANCELLED")) {
             let current = lease.clone();
             let cancelled = with_store(Arc::clone(&store), Priority::Ordinary, move |s| {
                 let task = s.task(current.task_id())?;
                 let entry = s.work_entry(current.task_id())?;
-                Ok(task.execution_status == tada_contracts::ExecutionStatus::Cancelled
-                    && entry.state == WorkState::Cancelled
-                    && entry.fence == current.fence()
-                    && entry.contract_hash == current.contract_hash())
+                Ok(
+                    task.execution_status == tada_contracts::ExecutionStatus::Cancelled
+                        && entry.state == WorkState::Cancelled
+                        && entry.fence == current.fence()
+                        && entry.contract_hash == current.contract_hash(),
+                )
             })
             .await?;
             if cancelled {
