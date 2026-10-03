@@ -1,0 +1,39 @@
+name: Prepare SEC-01 source
+on:
+  push:
+    branches: [codex/sec-01-worker-authority]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.actor == 'Daviswhistle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - name: Apply exact-base source additions
+        run: python3 scripts/sec01-prepare.py
+      - name: Generate versioned contracts
+        run: npm run generate
+      - name: Install pinned formatter
+        run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+      - name: Format source without editing generated modules
+        run: cargo fmt --all
+      - name: Commit source only to this development branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/codex/sec-01-worker-authority
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- crates packages fixtures scripts package.json README.md
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore(sec01): generate worker contracts and format exact-base integration'
+            AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push origin HEAD:refs/heads/codex/sec-01-worker-authority
+          fi
