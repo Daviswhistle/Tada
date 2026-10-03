@@ -1,6 +1,6 @@
 # Implementation gates
 
-This is an execution order, not a release-date promise. The supplied design's §32 and Appendix F remain the basis. CORE-03 through CORE-06 are implementation substeps; they do not rename the original work breakdown or complete its entire stage 1.
+This is an execution order, not a release-date promise. The supplied design's §32 and Appendix F remain the basis. CORE-03 through CORE-07 are implementation substeps; they do not rename the original work breakdown or complete its entire stage 1.
 
 ## CORE 01 — contract foundation
 
@@ -40,9 +40,17 @@ Task-ledger schema v2 uses an explicit backed-up migration from the unchanged v1
 
 The supervisor's executable fixture is an immutable-input probe, not a model worker: checkpointed tasks retain unmet user acceptance criteria and never become SUCCEEDED. Nine added process-kill boundaries exercise claim, yield, checkpoint and migration without replacing earlier faults.
 
+## CORE 07 — foreground host and fixed child lifecycle
+
+[CORE-07](process-host.md) composes protected ledger directories, explicit enrollment, authenticated native control and an optional separate-process fixed probe in the `tada-agentd` executable. The private single-request worker protocol bounds input/output and binds task, nonce, fence and contract hash. A complete reply and actual owned-process exit/cleanup are both required before checkpointing or safe retirement. Graceful shutdown may yield this known pure worker; faults park it without automatic respawn. Cancellation after spawn but before admission sends no assignment, confirms cleanup and leaves unrelated control available.
+
+The Windows demo retains normal local-drive path syntax without relaxing existing namespace/owner/ACL checks. Linux parent-death handling and Windows Job Objects cover this trusted fixed worker's lifecycle, not a universal filesystem sandbox or arbitrary process-tree recovery. Normal and feature-only lifecycle regressions are both required in Linux/Windows CI. The thirteen-case fault matrix remains fixed, with extra exact-boundary cancellation and output-limit tests; per-commit results and any failures are recorded in the PR rather than inferred from compilation.
+
+Public task/control contracts, the preserved design and task/identity schema versions are unchanged. The ordinary foreground demo uses session-only authentication. Existing real-vault suites do not establish every persistent CLI flow, physical reboot behavior or end-user service installation.
+
 ## Next core / SEC-01 integration
 
-Implement the foreground/installed daemon host and bounded worker-process protocol, process lifecycle/containment, verified safe reaping and queue lease reclamation. A live expired lease currently blocks rather than being silently stolen. Keep CPU-heavy work and external I/O outside store locks, preserve cancellation-first admission, and establish scoped worker grants before enabling actual tools.
+Implement reviewed worker-scoped policy/grant admission and the versioned Rust/TypeScript engine/tool interface before enabling actual tools. Keep CPU-heavy work and external I/O outside store locks and preserve cancellation-first admission. General workers need independently verified containment and stop/reaping recovery; the fixed probe's retirement rule is not a license to steal expired live assignments. Installed-service packaging remains separate from explicit foreground operation.
 
 Follow-through includes recurring IANA-time-zone/occurrence/catch-up contracts, decision-response priority, general resource locks, rich engine checkpoints, production recovery export/restore, parent/child and provider-aware budgets, and notifications coupled to ART-01 publication. None is implied by the fixed probe or in-process admission gate.
 

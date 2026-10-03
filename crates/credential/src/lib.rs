@@ -527,3 +527,6 @@ fn checkpoint(phase: &str) {
 mod os_tests;
 #[cfg(all(test, any(target_os = "linux", windows)))]
 mod tests;
+
+mod store_directory;
+pub use store_directory::StoreDirectory;

@@ -37,6 +37,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test contracts, durable store and process-kill recovery
         run: cargo test --workspace --locked -- --nocapture
+      - name: Test complete process fault matrix and startup regressions
+        run: cargo test --locked -p tada-agentd --features process-fixtures -- --nocapture
       - name: Run disposable mock recovery example
         run: cargo run --locked -p tada-store --example recover_mock -- "${{ runner.temp }}/tada-core02-demo"
       - name: Run authenticated control replay example
@@ -45,6 +47,8 @@ jobs:
         run: cargo run --locked -p tada-local-ipc --bin tada-ipc-demo -- "${{ runner.temp }}/tada-core04-demo"
       - name: Run durable supervisor probe without task completion
         run: cargo run --locked -p tada-agentd --example supervisor_probe -- "${{ runner.temp }}/tada-core06-demo"
+      - name: Run foreground fixed-worker demo without native vault enrollment
+        run: cargo run --locked -p tada-agentd --bin tada-agentd -- demo "${{ runner.temp }}/tada-core07-demo"
       - name: Reject uncommitted generated changes
         run: git diff --exit-code
   portability:
