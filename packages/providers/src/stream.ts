@@ -103,13 +103,17 @@ function checkLimits(limits: StreamLimits): void {
  * additional cleanup wait is capped at 100ms, not at the provider's patience.
  */
 async function closeIterator(iterator: AsyncIterator<unknown>): Promise<boolean> {
-  if (!iterator.return) return false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    const close = iterator.return;
+    if (typeof close !== 'function') return false;
     return await Promise.race([
-      Promise.resolve().then(() => iterator.return!()).then((item) => item.done === true, () => false),
+      Promise.resolve().then(() => close.call(iterator)).then((item) => item?.done === true).catch(() => false),
       new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), 100); }),
     ]);
+  } catch {
+    // Even malformed provider cleanup/getter responses use fixed diagnostics.
+    return false;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
   }
@@ -136,7 +140,13 @@ export async function collectModelTurn(
   const calls = new Map<string, { chunks: string; size: number; payload: string | undefined }>();
   function fail(code: string): never { throw new ModelFault(code, 'protocol', usage); }
   try {
-    iterator = await bounded(async () => adapter.stream(request, child.signal)[Symbol.asyncIterator](), child.signal, deadline);
+    iterator = await bounded(async () => {
+      const acquired = adapter.stream(request, child.signal)[Symbol.asyncIterator]();
+      // Retain ownership even if acquisition finishes after cancellation or the
+      // deadline: bounded() can reject that result, but cleanup must still run.
+      iterator = acquired;
+      return acquired;
+    }, child.signal, deadline);
     while (true) {
       const current = iterator;
       const item = await bounded(() => current.next(), child.signal, deadline);
