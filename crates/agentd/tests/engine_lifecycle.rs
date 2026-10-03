@@ -70,7 +70,10 @@ fn killing_foreground_parent_also_stops_the_real_node_runtime() {
         .as_u64()
         .unwrap() as u32;
     let witness = ProcessWatch::open(pid);
-    assert!(witness.running(), "Node must be live before parent termination");
+    assert!(
+        witness.running(),
+        "Node must be live before parent termination"
+    );
     parent.kill().unwrap();
     assert!(!parent.wait().unwrap().success());
     let deadline = Instant::now() + Duration::from_secs(5);
