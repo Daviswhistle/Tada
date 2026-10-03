@@ -96,21 +96,22 @@ export async function runModelLoop(
     });
     let proposals: WorkerProposal[];
     let modelStopped = false;
+    let usageAccounted = false;
     try {
       const turn = await collectModelTurn(adapter, request, signal, deadline, {
         max_events: limits.max_events, max_bytes: limits.max_bytes,
         max_calls: limits.max_tool_calls, max_call_bytes: limits.max_call_bytes,
       });
       if (!addUsage(turn.usage, true)) return outcome('budget','MODEL_USAGE_OVERFLOW');
+      usageAccounted = true;
       // Validate ALL calls before any of them reaches the broker.
       proposals = turn.calls.map((call) => proposalFrom(call.payload_json, call.call_id, seed));
       modelStopped = turn.finish_reason === 'stop';
     } catch (error) {
       if (!(error instanceof ModelFault)) return outcome('diagnose','MODEL_CONTROLLER_FAULT');
-      // Tool parsing occurs after successful usage accounting; its faults have
-      // no extra usage. Collection faults always retain any observed counters.
-      if (!['MODEL_TOOL_SCHEMA','MODEL_TOOL_SCOPE'].includes(error.message)
-          && !addUsage(error.usage, false)) return outcome('budget','MODEL_USAGE_OVERFLOW');
+      // Use the actual accounting phase, not an exception code that an adapter
+      // could also throw. Every failed stream retains its observed usage once.
+      if (!usageAccounted && !addUsage(error.usage, false)) return outcome('budget','MODEL_USAGE_OVERFLOW');
       if (signal.aborted || error.category === 'cancelled') return outcome('cancelled','MODEL_CANCELLED');
       if (error.category === 'deadline') return outcome('budget','MODEL_ACTIVE_LIMIT');
       if (error.category === 'capacity') return outcome('waiting','PROVIDER_CAPACITY',error.retry_after_ms);

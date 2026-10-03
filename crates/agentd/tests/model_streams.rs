@@ -78,8 +78,16 @@ fn verify(mode: &str, checkpoint: bool, calls: i64) {
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["report"]["reaped"], true, "{mode}");
     assert_eq!(value["task"]["completion_status"], "PENDING", "{mode}");
-    assert_eq!(value["report"]["checkpoint"].is_string(), checkpoint, "{mode}");
-    assert_eq!(value["report"]["cause"] == "completed", checkpoint, "{mode}");
+    assert_eq!(
+        value["report"]["checkpoint"].is_string(),
+        checkpoint,
+        "{mode}"
+    );
+    assert_eq!(
+        value["report"]["cause"] == "completed",
+        checkpoint,
+        "{mode}"
+    );
     let conn = rusqlite::Connection::open_with_flags(
         root.0.join("data/state.sqlite"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
