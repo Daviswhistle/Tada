@@ -276,10 +276,12 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
             Duration::from_secs(30)
         },
         #[cfg(feature = "process-fixtures")]
-        startup_barrier: (mode == "cancel-before-start").then_some(process_runner::StartupBarrier {
-            reached: startup_notice,
-            resume: startup_resume,
-        }),
+        startup_barrier: (mode == "cancel-before-start").then_some(
+            process_runner::StartupBarrier {
+                reached: startup_notice,
+                resume: startup_resume,
+            },
+        ),
     };
     let (notice, mut started) = oneshot::channel();
     let runner = tokio::spawn(process_runner::run_one(
@@ -295,7 +297,9 @@ async fn demo(path: &Path, mode: &str) -> Result<()> {
         let pid = startup_reached.await?;
         // A real authenticated native cancellation, not a direct DB test write.
         cancel(&mut client, "probe-a").await?;
-        startup_release.send(()).map_err(|_| "STARTUP_RUNNER_LOST")?;
+        startup_release
+            .send(())
+            .map_err(|_| "STARTUP_RUNNER_LOST")?;
         pid
     } else {
         (&mut started).await?
