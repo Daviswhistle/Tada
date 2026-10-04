@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Explicit foreground, local-only conversational preview. No listening HTTP control port.
+// Explicit foreground conversation; local reads and public research are separate opt-ins.
 import { createInterface } from 'node:readline';
 import { resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,12 +42,22 @@ pulls a model, accesses provider credentials or switches to a paid/remote route.
 With no readable sources the assistant can converse and ask for missing context.
 
 Type ordinary messages; /forget clears conversation, /exit exits. Ctrl+C cancels.
-This preview reads small text files and answers; it cannot yet see your screen,
+This local mode reads small text files and answers; it cannot yet see your screen,
 search the web, modify files, or resume conversation after process exit.
 Source hash rechecks do not prove every semantic assertion in a model answer.
+
+A separate explicit public-web API-key preview is available:
+  npm run assistant -- --web --help
+It sends only its own foreground conversation to the chosen OpenAI API model,
+requires billing consent and hidden key entry, and has no local source access.
+Neither mode automatically falls back to the other or transfers private context.
 `;
 
 export async function main(args = process.argv.slice(2)) {
+  if (args[0] === '--web') {
+    const { main: researchMain } = await import('./research-cli.mjs');
+    return researchMain(args.slice(1));
+  }
   const options = parseOptions(args);
   if (options.help) { process.stdout.write(HELP); return; }
   const provider = new OllamaLocal(options);
