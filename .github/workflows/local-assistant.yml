@@ -56,8 +56,11 @@ jobs:
             if curl --fail --silent http://127.0.0.1:11434/api/version; then break; fi
             sleep 1
           done
-          "$OLLAMA" pull qwen3:4b
+          # Explicit evaluator selection, not a product fallback. The earlier
+          # qwen3:4b thinking-only failure remains recorded in the PR.
+          # https://ollama.com/library/qwen3:4b-instruct
+          "$OLLAMA" pull qwen3:4b-instruct
           node --experimental-strip-types evals/assistant-v1/local-model-smoke.mjs \
-            "$PWD/target/debug/tada-read-broker" qwen3:4b
+            "$PWD/target/debug/tada-read-broker" qwen3:4b-instruct
       - name: Preserve source cleanliness
         run: git diff --exit-code

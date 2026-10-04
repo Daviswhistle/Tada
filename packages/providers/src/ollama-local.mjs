@@ -101,6 +101,13 @@ export class OllamaLocal {
     const raw = await jsonRequest(this.endpoint, '/api/chat', body, signal, 65536);
     if (raw.done !== true || raw.done_reason !== 'stop' || raw.message?.role !== 'assistant'
         || typeof raw.message.content !== 'string') throw new Error('OLLAMA_INCOMPLETE_TURN');
+    // Some model/template pairs emit their private trace inside content rather
+    // than the separate thinking field. Reject the whole turn BEFORE returning
+    // any text or tool call. Never strip a delimiter and salvage guessed output.
+    // This detects explicit channel markers, not every possible untagged trace.
+    if (/<\/?(?:think|analysis|reasoning)(?:\s|>)/iu.test(raw.message.content)) {
+      throw new Error('OLLAMA_UNSEPARATED_REASONING');
+    }
     const calls = raw.message.tool_calls ?? [];
     if (!Array.isArray(calls) || calls.length > 8) throw new Error('OLLAMA_TOOL_CALL_LIMIT');
     const normalized = calls.map(call => {
@@ -111,7 +118,7 @@ export class OllamaLocal {
     });
     const usage = [raw.prompt_eval_count, raw.eval_count];
     if (!usage.every(n => Number.isSafeInteger(n) && n >= 0)) throw new Error('OLLAMA_USAGE_UNAVAILABLE');
-    // Thinking is neither displayed nor retained. Do not silently trim user history.
+    // A separately supplied thinking field is not displayed or retained.
     return { message: { role: 'assistant', content: raw.message.content, tool_calls: normalized },
       input_tokens: usage[0], output_tokens: usage[1] };
   }
