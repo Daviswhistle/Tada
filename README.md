@@ -18,13 +18,27 @@ The intended experience is:
 
 Context access is scoped and permission-aware. This does not require continuous screen recording, unrestricted private-data collection, guessed approvals, or a promise to understand information the assistant cannot observe. Full-computer control remains a planned explicit mode, with its real limits disclosed.
 
-## What works today
+## Conversational developer preview
 
-**There is not yet a usable general-purpose assistant.** The current implementation has a Rust execution and recovery core, authenticated Linux/Windows local control, OS-vault installation identity, a durable queue, bounded child processes, a TypeScript mock-model loop and a separate durable inference ledger. The only broker-backed tool currently exercised is `task.contract_digest`.
+The first conversation path now accepts raw messages, uses an explicitly selected local Ollama model, discovers permitted text sources through a Rust read-only gateway, and supports same-session follow-up. Source directories are granted once at startup; the user does not select the exact answer file or supply a TaskContract with each question. The model chooses among reusable source-listing and reading tools, not phrase-specific scripts.
 
-Real model integration, conversational intake, active-context collection, autonomous source discovery, general file/browser/app work, and a user-facing conversation/result screen are not yet connected into a working assistant. The TypeScript loop is not wired to the durable inference ledger. These are the next user-experience milestones, not features proven by component CI.
+Build with the repository-pinned toolchains, run your own trusted Ollama server with cloud disabled, and choose an already installed tool-capable local model:
 
-The [assistant acceptance suite](evals/assistant-v1/README.md) defines 16 natural-delegation scenarios. Its [baseline](evals/assistant-v1/baseline.json) is explicitly **not run**: component tests and scripted digest demonstrations are not assistant success evidence. The new suite-integrity tests only validate that specification.
+```sh
+npm ci --ignore-scripts
+cargo build --locked -p tada-agentd --bin tada-read-broker
+npm run assistant -- --model YOUR_INSTALLED_LOCAL_MODEL --broker ABSOLUTE_PATH_TO_TADA_READ_BROKER --allow-read YOUR_NOTES_DIRECTORY
+```
+
+Use actual paths in place of the placeholders; the Windows gateway ends in `.exe`. Type ordinary questions and follow-up requests. `/forget` clears session context and `/exit` exits. No model download, credential reuse, paid fallback or service installation occurs in this command. See the [preview guide](docs/conversational-preview.md) for local-only setup, read scope, limits and verification.
+
+**This is not yet the complete general-purpose assistant.** It reads small UTF-8 text files and answers with source references whose bytes are rechecked. It does not yet see the current screen, search public websites, use mail/calendar, change files, run arbitrary commands, publish artifacts or retain conversation after process exit. A source hash verifies bytes, not every semantic claim. The current terminal is a development entry point, not the intended desktop experience.
+
+## Existing execution core and product evidence
+
+The repository also has a Rust execution/recovery core, authenticated Linux/Windows local control, OS-vault installation identity, durable queue, bounded child processes, TypeScript mock-model loop and separate durable inference ledger. These retain their original tests. The old WorkerRPC tool remains `task.contract_digest`; the new read-only conversation gateway is a narrow launcher-owned path and does not claim full task/budget/worker-ledger integration. No fake contract or price is created to make the new path look integrated.
+
+The [assistant acceptance suite](evals/assistant-v1/README.md) defines 16 natural-delegation scenarios. Its historical [baseline](evals/assistant-v1/baseline.json) remains **not run**. A separate real-local-model smoke exercises discovery and follow-up in two predetermined synthetic contexts; observed pass/failure evidence is reported per PR/head. Neither scripted unit responses nor that narrow smoke qualifies all 16 product scenarios.
 
 ## Development
 
@@ -39,7 +53,7 @@ cargo test --workspace --locked
 cargo test --locked -p tada-agentd --features process-fixtures -- --nocapture
 ```
 
-Ordinary tests use fixtures, not live paid inference or OS-vault enrollment. The process-fixture suite requires the pinned Node runtime and locked Node dependencies. It remains mandatory in Linux/Windows CI. These are developer prerequisites, not the intended end-user experience.
+Ordinary tests use fixtures, not live paid inference or OS-vault enrollment. The process-fixture suite requires the pinned Node runtime and locked Node dependencies. It remains mandatory in Linux/Windows CI. The separate local-assistant CI downloads a checked Ollama runtime and public local-model weights into an isolated runner, not a user's machine. These are developer prerequisites, not the intended end-user experience.
 
 Disposable component examples require a destination that does not exist:
 
@@ -52,12 +66,12 @@ The first checks native control and a fixed child probe. The second preserves a 
 
 ## Implementation references
 
-[Contracts](docs/contracts-v1.md), [durable core](docs/core-02.md), [control replay](docs/control-protocol.md), [native IPC](docs/native-ipc.md), [installation identity](docs/installation-identity.md), [queue/supervisor](docs/queue-supervisor.md), [foreground host](docs/process-host.md), [worker authority](docs/worker-authority.md), [duplex engine](docs/engine-duplex.md), [mock model streams](docs/model-streams.md), and [inference ledger](docs/inference-ledger.md) document implemented boundaries and remaining limits. Older “next step” sections are historical; the current roadmap governs priorities.
+[Contracts](docs/contracts-v1.md), [durable core](docs/core-02.md), [control replay](docs/control-protocol.md), [native IPC](docs/native-ipc.md), [installation identity](docs/installation-identity.md), [queue/supervisor](docs/queue-supervisor.md), [foreground host](docs/process-host.md), [worker authority](docs/worker-authority.md), [duplex engine](docs/engine-duplex.md), [mock model streams](docs/model-streams.md), [inference ledger](docs/inference-ledger.md), and [conversational preview](docs/conversational-preview.md) document implemented boundaries and remaining limits. The current product roadmap governs priorities, not old infrastructure-only “next step” sections.
 
-Existing developer data has explicit version transitions. Ordinary new stores use schema v2; v1 queue migration and optional v2-to-v3 mock inference require a safe point and a new backup. See the queue and inference documents before opening or migrating existing data. No example is an installer or restore wizard.
+Existing developer data has explicit version transitions. Ordinary new stores use schema v2; v1 queue migration and optional v2-to-v3 mock inference require a safe point and a new backup. The conversational preview does not change those schema versions or store raw prompts in them. See the queue and inference documents before opening or migrating existing data. No example is an installer or restore wizard.
 
-Linux Secret Service and Windows Credential Manager tests are separately opt-in and write disposable entries. Use an isolated test session and the [identity test instructions](docs/installation-identity.md). macOS currently has static portability and unsupported-native checks, not native engine/Keychain support.
+Linux Secret Service and Windows Credential Manager tests are separately opt-in and write disposable entries. Use an isolated test session and the [identity test instructions](docs/installation-identity.md). macOS currently has static portability and unsupported-native checks, not the native read gateway or native engine/Keychain support.
 
-See [AGENTS.md](AGENTS.md) for development priorities and invariants, [CONTRIBUTING.md](CONTRIBUTING.md), and [security boundaries](docs/security.md). Local-first means execution/state ownership on the user's device; remote inference may transmit permitted context to the chosen provider. No live account route or undocumented credential reuse is implied.
+See [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), and [security boundaries](docs/security.md). Local-first means execution/state ownership on the user's device. The current conversational route is local-only; future remote routes may transmit permitted context to the explicitly chosen provider. No remote account access or undocumented credential reuse is implied.
 
 Licensed under [Apache-2.0](LICENSE).
