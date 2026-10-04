@@ -1,0 +1,25 @@
+{
+  "suite_id": "assistant-v1",
+  "format": 1,
+  "status": "not_run",
+  "basis_commit": "1517061abd5913c95e9f1e9949e859be16c7282e",
+  "note": "PR #11까지의 부품 CI와 별개인 제품 평가 기준점. 실제 모델로 비서 평가를 실행하지 않았으므로 성공률을 계산하지 않는다.",
+  "cases": [
+    {"id":"A01","status":"not_run","evidence_refs":[]},
+    {"id":"A02","status":"not_run","evidence_refs":[]},
+    {"id":"A03","status":"not_run","evidence_refs":[]},
+    {"id":"A04","status":"not_run","evidence_refs":[]},
+    {"id":"A05","status":"not_run","evidence_refs":[]},
+    {"id":"A06","status":"not_run","evidence_refs":[]},
+    {"id":"A07","status":"not_run","evidence_refs":[]},
+    {"id":"A08","status":"not_run","evidence_refs":[]},
+    {"id":"A09","status":"not_run","evidence_refs":[]},
+    {"id":"A10","status":"not_run","evidence_refs":[]},
+    {"id":"A11","status":"not_run","evidence_refs":[]},
+    {"id":"A12","status":"not_run","evidence_refs":[]},
+    {"id":"A13","status":"not_run","evidence_refs":[]},
+    {"id":"A14","status":"not_run","evidence_refs":[]},
+    {"id":"A15","status":"not_run","evidence_refs":[]},
+    {"id":"A16","status":"not_run","evidence_refs":[]}
+  ]
+}
