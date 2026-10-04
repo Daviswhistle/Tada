@@ -27,6 +27,13 @@ const size = (value: unknown): number => new TextEncoder().encode(JSON.stringify
 const codeOf = (error: unknown): string => error instanceof Error && /^[A-Z_]{1,64}$/u.test(error.message)
   ? error.message : 'ASSISTANT_OPERATION_FAILED';
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+function registered(definitions: unknown[], name: unknown): boolean {
+  return typeof name === 'string' && definitions.some(definition => {
+    if (!definition || typeof definition !== 'object') return false;
+    const fn = (definition as Record<string, unknown>).function;
+    return !!fn && typeof fn === 'object' && (fn as Record<string, unknown>).name === name;
+  });
+}
 
 export class ConversationAssistant {
   private history: Message[] = [{ role: 'system', content: SYSTEM }];
@@ -64,6 +71,7 @@ export class ConversationAssistant {
     let toolCount = 0;
     let freshReads = 0;
     let citationCorrection = false;
+    let batchCorrection = false;
     const failures = new Map<string, number>();
     try {
       for (let turn = 0; turn < 12; turn++) {
@@ -92,7 +100,7 @@ export class ConversationAssistant {
         for (const key of counters) this.used[key] += response[key];
         abort.signal.throwIfAborted();
         const message = response.message;
-        if (message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 16384) {
+        if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 16384) {
           throw new Error('ASSISTANT_MODEL_RESPONSE_INVALID');
         }
         const calls = message.tool_calls ?? [];
@@ -100,8 +108,27 @@ export class ConversationAssistant {
           throw new Error('ASSISTANT_TOOL_LIMIT');
         }
         // The entire batch is checked before any read, including source identity.
-        if (!calls.every(call => call?.function && this.sources.validate(call.function.name, call.function.arguments))) {
-          throw new Error('ASSISTANT_TOOL_REJECTED');
+        const valid = calls.map(call => !!call?.function && this.sources.validate(call.function.name, call.function.arguments));
+        if (valid.some(ok => !ok)) {
+          this.trace({ kind: 'tool_batch_rejected' });
+          if (batchCorrection || !calls.every(call => call?.function
+              && registered(this.sources.definitions, call.function.name))) {
+            throw new Error('ASSISTANT_TOOL_REJECTED');
+          }
+          // One fresh proposal may correct a known tool's arguments. None of the
+          // old batch executed. Never coerce fields, pick a source or grant access
+          // for the model; the new complete batch must pass the same validator.
+          batchCorrection = true;
+          this.history.push(copy(message));
+          for (let index = 0; index < calls.length; index++) {
+            const call = calls[index] as ToolCall;
+            this.history.push({ role: 'tool', tool_name: call.function.name, content: JSON.stringify({
+              error: valid[index] ? 'BATCH_NOT_EXECUTED' : 'CALL_ARGUMENTS_OR_SOURCE_INVALID',
+              performed: false,
+              note: 'No call in this batch executed. Generate a new proposal using exactly the declared required/optional arguments and source IDs returned by list_sources. Do not use source labels or paths as IDs, and do not add undeclared arguments. Permission and tool definitions are unchanged.',
+            }) });
+          }
+          continue;
         }
         if (calls.length) {
           this.history.push(copy(message));

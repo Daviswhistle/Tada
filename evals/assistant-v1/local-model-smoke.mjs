@@ -36,7 +36,14 @@ for (let index = 0; index < variants.length; index++) {
     await writeFile(join(root, projectDirectory, 'other-project.md'), '# Willow\nWillow is complete and has no pending action. Owner: Sam.\n');
     const sources = new NativeSources(binary, [root]);
     await sources.initialize();
-    const assistant = new ConversationAssistant(provider, sources, event => trace.push(event));
+    // Only this synthetic evaluator records proposed tool arguments, to diagnose
+    // rejected proposals. No prompt, reasoning text or oracle is logged/passed in.
+    const observedModel = { async chat(messages, tools, signal) {
+      const response = await provider.chat(messages, tools, signal);
+      trace.push({ kind: 'model_proposals', calls: response.message.tool_calls ?? [] });
+      return response;
+    } };
+    const assistant = new ConversationAssistant(observedModel, sources, event => trace.push(event));
     const first = await assistant.ask(utterance);
     const second = await assistant.ask(followup);
     const owner = new RegExp(expected.owner, 'iu');
