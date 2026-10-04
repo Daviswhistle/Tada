@@ -4,11 +4,11 @@
 
 An open-source, local-first desktop agent being built to execute work on your computer and return verified results. The intended architecture is a Rust daemon and authority broker, a TypeScript engine, and a Tauri desktop UI. Remote inference uses explicitly connected accounts; “local-first” does not mean all inference stays on-device.
 
-## Current status: foreground control and bounded mock model streams
+## Current status: foreground control, mock streams and durable inference records
 
-The repository has shared Rust/TypeScript contracts, a witnessed SQLite task/effect ledger, authenticated native control on Linux and Windows, persistent OS-vault installation identity, a durable queue, and a foreground host with opt-in separate-process probes. A bounded mock model controller now exercises full-stream validation, limited recovery and the actual TypeScript-to-Rust digest broker. Its model state is session-local; task acceptance remains separate from worker/checkpoint success. **There is no desktop UI, installed service, production model worker, model login or browser control yet.** These components have regression fixtures; live-provider safety and the design's release gates remain separate.
+The repository has shared Rust/TypeScript contracts, a witnessed SQLite task/effect ledger, authenticated native control on Linux and Windows, persistent OS-vault installation identity, a durable queue, and a foreground host with opt-in separate-process probes. A bounded mock model controller exercises full-stream validation, limited recovery and the actual TypeScript-to-Rust digest broker. A separate Rust inference ledger now persists request admissions, reservations, usage and observation checkpoints across restart; connecting that ledger to the TypeScript controller is the next integration boundary. Task acceptance remains separate from worker/checkpoint success. **There is no desktop UI, installed service, production model worker, model login or browser control yet.** These components have regression fixtures; live-provider safety and the design's release gates remain separate.
 
-The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. Implementation decisions and boundaries: [contracts](docs/contracts-v1.md), [durable mock core](docs/core-02.md), [control protocol](docs/control-protocol.md), [native IPC](docs/native-ipc.md), [installation identity](docs/installation-identity.md), [queue/supervisor](docs/queue-supervisor.md), [foreground process host](docs/process-host.md), and [bounded model streams](docs/model-streams.md).
+The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. Implementation decisions and boundaries: [contracts](docs/contracts-v1.md), [durable mock core](docs/core-02.md), [control protocol](docs/control-protocol.md), [native IPC](docs/native-ipc.md), [installation identity](docs/installation-identity.md), [queue/supervisor](docs/queue-supervisor.md), [foreground process host](docs/process-host.md), [bounded model streams](docs/model-streams.md), and [durable inference records](docs/inference-ledger.md).
 
 ## Check the foundation
 
@@ -40,9 +40,10 @@ Every destination below must be a **new** directory. Examples write mock data an
 cargo run --locked -p tada-store --example recover_mock -- ./new-mock-demo
 cargo run --locked -p tada-store --example control_replay -- ./new-control-demo
 cargo run --locked -p tada-agentd --example supervisor_probe -- ./new-supervisor-demo
+cargo run --locked -p tada-store --example inference_recovery -- ./new-inference-demo
 ```
 
-`recover_mock` saves one independent mock effect, loses its reply, cancels, reopens the store and verifies the existing effect without resending it. `control_replay` authenticates in-process and replays submit/cancel. `supervisor_probe` restores a queue, respects a one-shot not-before time, checks immutable input hashes and writes two checkpoints while leaving user-task acceptance unmet. None manufactures a SUCCEEDED task.
+`recover_mock` saves one independent mock effect, loses its reply, cancels, reopens the store and verifies the existing effect without resending it. `control_replay` authenticates in-process and replays submit/cancel. `supervisor_probe` restores a queue, respects a one-shot not-before time, checks immutable input hashes and writes two checkpoints while leaving user-task acceptance unmet. `inference_recovery` explicitly enables storage v3 in its disposable directory, reserves 40 fixture units, cancels and reopens, then records a late charge of 17 without accepting the old output or restoring execution. None manufactures a SUCCEEDED task.
 
 On Linux or Windows, run the foreground host with one real child probe:
 
@@ -68,22 +69,24 @@ cargo test --locked -p tada-credential --features os-vault-tests os_tests:: -- -
 
 Linux CI runs its own isolated D-Bus/keyring session. macOS currently compiles the portable core and rejects unsupported native IPC/identity operations before creating endpoints; native macOS transport and Keychain integration remain future work.
 
-## Existing developer stores: explicit queue migration
+## Existing developer stores: explicit version transitions
 
-New stores use task-ledger schema v2. Existing v1 stores are not silently migrated: normal open returns `QUEUE_MIGRATION_REQUIRED`. Stop the old owner, reconcile pending effects with a compatible v1 build, retain the independent witness, and explicitly choose a new backup file:
+New ordinary stores use task-ledger schema v2. Existing v1 stores are not silently migrated: normal open returns `QUEUE_MIGRATION_REQUIRED`. Stop the old owner, reconcile pending effects with a compatible v1 build, retain the independent witness, and explicitly choose a new backup file:
 
 ```sh
 cargo run --locked -p tada-store --example migrate_queue_v2 -- /existing/store /new/location/v1-backup.sqlite
 ```
 
-Migration audits and backs up v1 before creating queue/checkpoint tables and committing a checksum/version marker. It refuses unresolved external work/publication and an occupied backup destination. A witness/state mismatch requires read-only recovery. Full constraints and interrupted-migration behavior are in [CORE-06](docs/queue-supervisor.md); this is not a general restore wizard. CORE-07 and the mock model slice add no further schema migration.
+Migration audits and backs up v1 before creating queue/checkpoint tables and committing a checksum/version marker. It refuses unresolved external work/publication and an occupied backup destination. A witness/state mismatch requires read-only recovery. Full constraints and interrupted-migration behavior are in [CORE-06](docs/queue-supervisor.md); this is not a general restore wizard.
+
+The [durable inference ledger](docs/inference-ledger.md) requires a separate explicit v2 → v3 transition through the trusted-host `Store::enable_mock_inference(NEW_BACKUP_PATH)` API. It requires a safe point and backup even though the table layout is unchanged: older binaries must not ignore model reservations when calculating a task's remaining budget. Normal startup does not silently enable inference or migrate v2. These APIs and version changes do not enable a real provider or a production model serving mode.
 
 ## Modules
 
 | Path | Responsibility |
 | --- | --- |
 | `packages/contracts/`, `crates/contracts/`, `fixtures/` | Versioned source schemas, generated types and shared conformance cases |
-| `crates/store/` | Task/action ledger, witness, control replay, queue, integer mock reservations, checkpoints and outbox |
+| `crates/store/` | Task/action ledger, witness, control replay, queue, shared action/model fixture reservations, inference observations, checkpoints and outbox |
 | `crates/local-ipc/` | Native socket/pipe peer checks, bounded authenticated I/O and cancellation-prioritized store admission |
 | `crates/credential/` | Explicit persistent installation enrollment, protected ledger directories, OS-vault adapters and generation-pinned discovery |
 | `crates/agentd/` | Supervisor, foreground CLI and bounded probe child lifecycle; no installed service or implicit tool worker |
@@ -119,11 +122,11 @@ cargo test --locked -p tada-store control::worker:: -- --nocapture
 
 [MODEL-01A / ENGINE-01B](docs/model-streams.md) adds generated model-event v1 types and a bounded collector/controller. Complete tool JSON, model terminal state and EOF are checked before any proposal. Two identical failures enter diagnosis; capacity/auth/network are classified separately; unknown tool outcomes are never blindly resent. Observed usage survives interrupted requests, and model prose cannot manufacture completion evidence.
 
-The feature-only `model-normal` and `model-repair-once` Node fixtures exercise the real Rust digest broker; nine failure scenarios verify no false checkpoint. Model counters and recovery state are session-local, not restart checkpoints or a durable dollar budget. Existing task/broker state remains Rust-owned; live provider support stays disabled.
+The feature-only `model-normal` and `model-repair-once` Node fixtures exercise the real Rust digest broker; nine failure scenarios verify no false checkpoint. Their controller counters remain session-local. The separate [MODEL-01B host ledger](docs/inference-ledger.md) persists lifetime turns, immutable request inputs, shared task reservations, cumulative usage and receipt checkpoints. Replayed IDs do not receive another execution ticket; late cancelled/old-generation responses are accounting observations, not permission to execute. The Rust ledger is not yet wired to the TypeScript model loop and does not persist a whole conversation, wakeup or provider continuation.
 
 ## Next gates
 
-The [roadmap](docs/roadmap.md) retains host-owned model request/checkpoint/budget admission, general process containment/recovery, installed-service integration, hierarchical/provider-aware budgets and recurring schedule contracts. Provider authentication, file tools and ART-01 result verification/publication require their own evidence. Persistent-key rotation and live revocation also remain separate. Do not enable live tools merely because mock/native tests pass.
+The [roadmap](docs/roadmap.md) now prioritizes the versioned Rust–TypeScript model request/observation/checkpoint boundary, committed evidence before the next turn, and persistent waiting/resumption. General process containment/recovery, installed-service integration, hierarchical/provider-aware budgets and recurring schedule contracts remain. Provider authentication, file tools and ART-01 result verification/publication require their own evidence. Persistent-key rotation and live revocation also remain separate. Do not enable live tools merely because mock/native tests pass.
 
 See [CONTRIBUTING](CONTRIBUTING.md), [agent instructions](AGENTS.md) and [security boundaries](docs/security.md). No maintainer sign-off, independent security review or response SLA is fabricated.
 
