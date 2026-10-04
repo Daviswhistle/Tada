@@ -101,8 +101,20 @@ test('cancelled and interrupted requests cannot silently restart or refund a ses
 test('context limits stop without silently trimming older conversation', async () => {
   const model = sequence(Array.from({ length: 10 }, () => answer('a'.repeat(3500))));
   const assistant = new ConversationAssistant(model, sources());
-  await assistant.ask('First.'); await assistant.ask('Second.'); await assistant.ask('Third.');
-  await assert.rejects(assistant.ask('Fourth.'), /ASSISTANT_CONTEXT_LIMIT/u);
+  let stopped = false;
+  for (let turn = 0; turn < 10; turn++) {
+    try { await assistant.ask(`Original message ${turn}.`); }
+    catch (error) { assert.match(error.message, /ASSISTANT_CONTEXT_LIMIT/u); stopped = true; break; }
+  }
+  assert.ok(stopped, 'growing input must reach the fixed byte cap');
+  assert.ok(model.seen.length >= 1 && model.seen.length < 10);
+  for (const messages of model.seen) {
+    assert.ok(messages.some(m => m.content === 'Original message 0.'), 'old user context was not silently dropped');
+    assert.ok(Buffer.byteLength(JSON.stringify({ messages, tools: discoveryTools })) <= 14000);
+  }
+  const count = model.seen.length;
+  await assert.rejects(assistant.ask('continue'), /ASSISTANT_SESSION_RESET_REQUIRED/u);
+  assert.equal(model.seen.length, count);
 });
 
 test('tool count and repeated failures stop before unbounded reads', async () => {

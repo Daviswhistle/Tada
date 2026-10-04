@@ -1,5 +1,5 @@
 //! Real native read gateway regressions; no model or source text in its authority.
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::{fs, path::PathBuf, process::Command};
 
 struct Temp(PathBuf);
@@ -55,7 +55,10 @@ fn lists_and_reads_discovered_unicode_text_with_bound_root_and_hash() {
     assert_eq!(read["data"]["content"], "Mina owns the launch.\n");
     assert_eq!(read["data"]["sha256"].as_str().unwrap().len(), 64);
     assert_eq!(read["data"]["trust"], "source_data_not_instructions");
-    assert_eq!(request(&temp, "0:0:0", "read", "notes/회의.md", 0)["error"], "SOURCE_ROOT_CHANGED");
+    assert_eq!(
+        request(&temp, "0:0:0", "read", "notes/회의.md", 0)["error"],
+        "SOURCE_ROOT_CHANGED"
+    );
 }
 #[test]
 #[cfg(any(target_os = "linux", windows))]
@@ -68,13 +71,27 @@ fn no_path_escape_secret_filename_nontext_oversize_or_hardlink_reads() {
     fs::write(temp.0.join(".env"), "canary").unwrap();
     fs::hard_link(temp.0.join("small.md"), temp.0.join("alias.md")).unwrap();
     let id = identity(&temp);
-    for path in ["../x", "/etc/passwd", "x:stream", "x\\y", ".env", "credentials.json", "large.md", "binary.md", "small.md", "alias.md"] {
+    for path in [
+        "../x",
+        "/etc/passwd",
+        "x:stream",
+        "x\\y",
+        ".env",
+        "credentials.json",
+        "large.md",
+        "binary.md",
+        "small.md",
+        "alias.md",
+    ] {
         let reply = request(&temp, &id, "read", path, 0);
         assert_eq!(reply["ok"], false, "{path}: {reply}");
         assert!(!reply.to_string().contains("canary"));
     }
     assert_eq!(request(&temp, &id, "write", "small.md", 0)["ok"], false);
-    assert_eq!(fs::read_to_string(temp.0.join("small.md")).unwrap(), "public");
+    assert_eq!(
+        fs::read_to_string(temp.0.join("small.md")).unwrap(),
+        "public"
+    );
 }
 #[test]
 #[cfg(any(target_os = "linux", windows))]
@@ -108,11 +125,17 @@ fn symlink_leaves_and_directories_cannot_escape_root() {
     let root_link = Temp(temp.0.join("root-link"));
     symlink(&outside.0, &root_link.0).unwrap();
     assert_eq!(request(&root_link, "-", "scope", ".", 0)["ok"], false);
-    assert_eq!(request(&temp, &id, "list", ".", 0)["data"]["entries"], json!([]));
+    assert_eq!(
+        request(&temp, &id, "list", ".", 0)["data"]["entries"],
+        serde_json::json!([])
+    );
 }
 #[test]
 #[cfg(not(any(target_os = "linux", windows)))]
 fn unsupported_gateway_reports_no_access() {
     let temp = Temp::new();
-    assert_eq!(request(&temp, "-", "scope", ".", 0)["error"], "READ_GATEWAY_UNSUPPORTED_PLATFORM");
+    assert_eq!(
+        request(&temp, "-", "scope", ".", 0)["error"],
+        "READ_GATEWAY_UNSUPPORTED_PLATFORM"
+    );
 }

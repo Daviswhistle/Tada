@@ -3,8 +3,10 @@
 //! There is intentionally no write, shell, network, credential or policy operation.
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+#[cfg(any(target_os = "linux", windows))]
+use std::fs::OpenOptions;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, File},
     io::{self, Read, Write},
     path::{Component, Path, PathBuf},
     time::UNIX_EPOCH,
@@ -61,7 +63,14 @@ fn relative(s: &str) -> Result<Vec<&str>> {
 }
 fn text_name(s: &str) -> bool {
     let s = s.to_ascii_lowercase();
-    let denied = ["credentials", "secrets", "password", "token", "id_rsa", "id_ed25519"];
+    let denied = [
+        "credentials",
+        "secrets",
+        "password",
+        "token",
+        "id_rsa",
+        "id_ed25519",
+    ];
     !denied.iter().any(|word| s.contains(word))
         && [".txt", ".md", ".csv", ".json", ".log", ".rst"]
             .iter()
@@ -136,7 +145,9 @@ fn run(args: &[String]) -> Result<Value> {
                 return Err("DIRECTORY_CURSOR_STALE");
             }
             let end = (offset + PAGE).min(names.len());
-            Ok(json!({"entries":names[offset..end],"next_offset":if end<names.len(){Some(end)}else{None},"listing_only":true}))
+            Ok(
+                json!({"entries":names[offset..end],"next_offset":if end<names.len(){Some(end)}else{None},"listing_only":true}),
+            )
         }
         "read" => {
             if offset != 0 || !parts.last().is_some_and(|name| text_name(name)) {
@@ -162,11 +173,16 @@ fn run(args: &[String]) -> Result<Value> {
                 return Err("SOURCE_CHANGED_DURING_READ");
             }
             let content = std::str::from_utf8(&bytes).map_err(|_| "NOT_UTF8_TEXT")?;
-            if content.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t')) {
+            if content
+                .chars()
+                .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+            {
                 return Err("NOT_PLAIN_TEXT");
             }
             let hash = format!("{:x}", Sha256::digest(&bytes));
-            Ok(json!({"path":args[3],"content":content,"sha256":hash,"bytes":bytes.len(),"modified_ms":after.modified().ok().and_then(|t|t.duration_since(UNIX_EPOCH).ok()).map(|t|t.as_millis()),"trust":"source_data_not_instructions"}))
+            Ok(
+                json!({"path":args[3],"content":content,"sha256":hash,"bytes":bytes.len(),"modified_ms":after.modified().ok().and_then(|t|t.duration_since(UNIX_EPOCH).ok()).map(|t|t.as_millis()),"trust":"source_data_not_instructions"}),
+            )
         }
         _ => Err("UNKNOWN_READ_OPERATION"),
     }
@@ -276,7 +292,9 @@ fn open_root(path: &Path) -> Result<Vec<File>> {
     let mut held = Vec::new();
     for part in path.components() {
         match part {
-            Component::Prefix(p) if matches!(p.kind(), Prefix::Disk(_)) => prefix.push(p.as_os_str()),
+            Component::Prefix(p) if matches!(p.kind(), Prefix::Disk(_)) => {
+                prefix.push(p.as_os_str())
+            }
             Component::RootDir => {
                 prefix.push(part.as_os_str());
                 held.push(windows_open(&prefix, true)?);
@@ -310,10 +328,14 @@ fn descend(root: &Path, _: &[File], parts: &[&str], directory: bool) -> Result<V
 }
 #[cfg(windows)]
 fn directory_path(root: &Path, parts: &[&str], _: &File) -> PathBuf {
-    parts.iter().fold(root.to_path_buf(), |p, part| p.join(part))
+    parts
+        .iter()
+        .fold(root.to_path_buf(), |p, part| p.join(part))
 }
 #[cfg(windows)]
-fn file_info(file: &File) -> Result<windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION> {
+fn file_info(
+    file: &File,
+) -> Result<windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION> {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Storage::FileSystem::{
         GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
@@ -329,7 +351,10 @@ fn file_info(file: &File) -> Result<windows_sys::Win32::Storage::FileSystem::BY_
 #[cfg(windows)]
 fn identity(file: &File) -> Result<String> {
     let i = file_info(file)?;
-    Ok(format!("{}:{}:{}", i.dwVolumeSerialNumber, i.nFileIndexHigh, i.nFileIndexLow))
+    Ok(format!(
+        "{}:{}:{}",
+        i.dwVolumeSerialNumber, i.nFileIndexHigh, i.nFileIndexLow
+    ))
 }
 #[cfg(windows)]
 fn links(file: &File) -> Result<u64> {
@@ -362,7 +387,20 @@ mod tests {
     use super::*;
     #[test]
     fn relative_paths_do_not_accept_escape_namespace_hidden_or_control() {
-        for path in ["../x", "/etc", "x/../y", "x//y", "x/./y", "x\\y", "x:y", ".env", "x/.ssh/a", "x. ", "x\n", "x/\u{202e}y"] {
+        for path in [
+            "../x",
+            "/etc",
+            "x/../y",
+            "x//y",
+            "x/./y",
+            "x\\y",
+            "x:y",
+            ".env",
+            "x/.ssh/a",
+            "x. ",
+            "x\n",
+            "x/\u{202e}y",
+        ] {
             assert!(relative(path).is_err(), "{path:?}");
         }
         assert!(relative("notes/회의.md").is_ok());
@@ -370,7 +408,13 @@ mod tests {
     }
     #[test]
     fn read_filter_excludes_obvious_secret_names_and_nontext() {
-        for name in ["a.exe", "passwords.txt", "credentials.json", "private.pem", "tokens.md"] {
+        for name in [
+            "a.exe",
+            "passwords.txt",
+            "credentials.json",
+            "private.pem",
+            "tokens.md",
+        ] {
             assert!(!text_name(name));
         }
         assert!(text_name("agenda.md"));
