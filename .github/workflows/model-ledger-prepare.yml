@@ -1,0 +1,32 @@
+name: Prepare durable inference branch
+on:
+  push:
+    branches: [codex/model-02-durable-ledger]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.actor == 'Daviswhistle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Apply exact-base integration
+        run: python3 scripts/inference-prepare.py
+      - name: Format using repository toolchain
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+          cargo fmt --all
+      - name: Save only this branch integration and remove its preparation files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$GITHUB_REF" = refs/heads/codex/model-02-durable-ledger
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- crates/store/src/model_ledger.rs crates/store/src/model_ledger/tests.rs crates/store/src/lib.rs crates/store/src/queue.rs crates/store/src/control/mod.rs crates/store/examples/inference_recovery.rs scripts/inference-prepare.py .github/workflows/model-ledger-prepare.yml
+          git commit -m 'chore(model): integrate and format the durable inference ledger'
+          AUTH=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w 0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $AUTH" push origin HEAD:refs/heads/codex/model-02-durable-ledger
