@@ -483,7 +483,9 @@ impl Store {
         self.transact("queue_defer", |tx| {
             if let Some(run) = lease.run() {
                 admit_lease(tx, run, tick)?;
-                if !pending(tx, lease.task_id())?.is_empty() {
+                if !pending(tx, lease.task_id())?.is_empty()
+                    || crate::model_ledger::pending(tx, lease.task_id())?
+                {
                     return Err(Error::Denied("RECONCILIATION_REQUIRED"));
                 }
                 tx.execute("UPDATE runs SET active=0 WHERE id=?1", [run.run_id])?;
@@ -518,7 +520,7 @@ impl Store {
         }
         self.transact("queue_checkpoint",|tx| {
             admit_lease(tx,run,tick)?;
-            if !pending(tx,lease.task_id())?.is_empty() { return Err(Error::Denied("RECONCILIATION_REQUIRED")); }
+            if !pending(tx,lease.task_id())?.is_empty() || crate::model_ledger::pending(tx,lease.task_id())? { return Err(Error::Denied("RECONCILIATION_REQUIRED")); }
             let checkpoint=json!({"format":1,"kind":"immutable_input_probe","task_id":lease.task_id(),"contract_hash":entry.contract_hash,"generation":entry.lease_generation,"queue_fence":entry.fence,"run_id":run.run_id,"task_success":false});
             let raw=serde_json::to_string(&checkpoint)?; let hash=digest(raw.as_bytes());
             tx.execute("INSERT INTO work_checkpoints(hash,task_id,record) VALUES(?1,?2,?3)",params![hash,lease.task_id(),raw])?;

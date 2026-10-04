@@ -41,6 +41,8 @@ jobs:
         run: cargo test --locked -p tada-agentd --features process-fixtures -- --nocapture
       - name: Run disposable mock recovery example
         run: cargo run --locked -p tada-store --example recover_mock -- "${{ runner.temp }}/tada-core02-demo"
+      - name: Run durable inference reservation and late-observation example
+        run: cargo run --locked -p tada-store --example inference_recovery -- "${{ runner.temp }}/tada-model-ledger-demo"
       - name: Run authenticated control replay example
         run: cargo run --locked -p tada-store --example control_replay -- "${{ runner.temp }}/tada-core03-demo"
       - name: Run two-process native IPC example

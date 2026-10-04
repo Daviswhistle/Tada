@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use tada_contracts::{CompletionStatus, ExecutionStatus};
 
 pub mod auth;
-mod json_input;
+pub(crate) mod json_input;
 // Separate host-bound worker API; never routed through the UI control methods.
 pub mod worker;
 use auth::{identifier, Access, Credential, Pending, ServerSession, MAX_BODY};

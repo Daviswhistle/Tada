@@ -14,6 +14,8 @@ use tada_contracts::{ActionRecord, SafeInteger, TaskContract, TaskSnapshot};
 
 pub mod control;
 pub mod mock;
+pub mod model_ledger;
+mod model_migration;
 pub mod priority;
 pub mod queue;
 mod queue_migration;
@@ -367,8 +369,10 @@ impl Store {
                 return Err(Error::RecoveryRequired);
             }
         }
-        if version == 2 {
+        model_migration::audit(&self.conn)?;
+        if matches!(version, 2 | 3) {
             queue::audit(self)?;
+            model_ledger::audit(&self.conn)?;
         }
         Ok(())
     }
@@ -477,6 +481,7 @@ impl Store {
                 }
             }
             queue::recover(tx)?;
+            model_ledger::recover(tx)?;
             event(
                 tx,
                 "supervisor",
@@ -839,7 +844,10 @@ fn scope(tx: &Transaction<'_>, id: &str, target: &str) -> Result<()> {
     Ok(())
 }
 fn committed_budget(conn: &Connection, id: &str) -> Result<i64> {
-    Ok(conn.query_row("SELECT coalesce(sum(CASE WHEN status='settled' THEN charged ELSE reserved END),0) FROM reservations WHERE task_id=?1",[id],|r|r.get(0))?)
+    let actions: i64 = conn.query_row("SELECT coalesce(sum(CASE WHEN status='settled' THEN charged ELSE reserved END),0) FROM reservations WHERE task_id=?1",[id],|r|r.get(0))?;
+    let models = model_ledger::committed(conn, id)?;
+    counter(actions.checked_add(models).ok_or(Error::RecoveryRequired)?)
+        .map_err(|_| Error::RecoveryRequired)
 }
 fn bind_receipt(value: &Value, receipt: &Receipt) -> Result<()> {
     if text(value, "action_id")? != receipt.action_id

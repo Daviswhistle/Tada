@@ -13,6 +13,14 @@ pub(crate) fn schema_hash(version: i64) -> Result<String> {
         2 => Ok(digest(
             format!("{SCHEMA}\n{}", crate::queue::SCHEMA).as_bytes(),
         )),
+        3 => Ok(digest(
+            format!(
+                "{SCHEMA}\n{}\n{}",
+                crate::queue::SCHEMA,
+                crate::model_migration::FORMAT
+            )
+            .as_bytes(),
+        )),
         _ => Err(Error::RecoveryRequired),
     }
 }
