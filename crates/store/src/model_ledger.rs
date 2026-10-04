@@ -704,16 +704,19 @@ impl Store {
                 if !live(tx, &record.binding, clock)? {
                     return Err(Error::Denied("MODEL_AUTHORITY_CHANGED"));
                 }
-                let total = checked_add(
-                    crate::committed_budget(tx, lease.task_id())?,
-                    spec.reserve_micro_usd,
-                )?;
+                let used = crate::committed_budget(tx, lease.task_id())?;
                 let budget: i64 = tx.query_row(
                     "SELECT budget_micro_usd FROM tasks WHERE id=?1",
                     [lease.task_id()],
                     |r| r.get(0),
                 )?;
-                if total > budget {
+                if used > budget {
+                    return Err(Error::RecoveryRequired);
+                }
+                // Both stored amounts are bounded nonnegative integers. Compare
+                // against the remaining balance BEFORE adding caller input:
+                // an oversized request is a denial, not database corruption.
+                if spec.reserve_micro_usd > budget - used {
                     return Err(Error::Denied("MODEL_BUDGET_EXHAUSTED"));
                 }
                 tx.execute(
