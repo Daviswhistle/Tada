@@ -14,7 +14,10 @@ impl Temp {
     fn new() -> Self {
         let mut random = [0; 16];
         getrandom::fill(&mut random).unwrap();
-        let id = random.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let id = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         let root = std::env::temp_dir().join(format!("tada-inference-edges-{id}"));
         fs::create_dir(&root).unwrap();
         Self(root)
@@ -27,7 +30,9 @@ impl Drop for Temp {
 }
 fn setup(temp: &Temp, budget: i64) -> (Store, WorkLease) {
     let mut store = Store::open(&temp.0).unwrap();
-    store.enable_mock_inference(&temp.0.join("v2.sqlite")).unwrap();
+    store
+        .enable_mock_inference(&temp.0.join("v2.sqlite"))
+        .unwrap();
     let contract = tada_contracts::decode(&json!({
         "task_id":"edge-task","contract_version":1,"goal":"mock boundary regression",
         "inputs":[],"deliverables":[],"acceptance":["independent-verifier"],
@@ -52,7 +57,10 @@ fn spec(id: &str, previous: Option<String>, amount: i64) -> InferenceSpec {
     }
 }
 fn finish_first(store: &mut Store, lease: &WorkLease) -> Option<String> {
-    let ticket = match store.admit_mock_inference(lease, &spec("r1", None, 1)).unwrap() {
+    let ticket = match store
+        .admit_mock_inference(lease, &spec("r1", None, 1))
+        .unwrap()
+    {
         InferenceAdmission::Fresh(ticket) => ticket,
         InferenceAdmission::Recorded(_) => panic!("first request must be fresh"),
     };
@@ -88,9 +96,14 @@ fn oversized_sum_is_budget_denial_not_poison_and_a_smaller_request_still_works()
         Err(Error::Denied("MODEL_BUDGET_EXHAUSTED"))
     ));
     let after = serde_json::to_value(store.inference_checkpoint("edge-task").unwrap()).unwrap();
-    assert_eq!(before, after, "denial must not consume a turn or modify observations");
+    assert_eq!(
+        before, after,
+        "denial must not consume a turn or modify observations"
+    );
     assert!(matches!(
-        store.admit_mock_inference(&lease, &spec("r2", previous, 99)).unwrap(),
+        store
+            .admit_mock_inference(&lease, &spec("r2", previous, 99))
+            .unwrap(),
         InferenceAdmission::Fresh(_)
     ));
     assert_eq!(store.budget_committed("edge-task").unwrap(), 100);
@@ -106,7 +119,9 @@ fn safe_integer_boundary_preserves_exact_remaining_capacity_across_reopen() {
         Err(Error::Denied("MODEL_BUDGET_EXHAUSTED"))
     ));
     assert!(matches!(
-        store.admit_mock_inference(&lease, &spec("r2", previous, maximum - 1)).unwrap(),
+        store
+            .admit_mock_inference(&lease, &spec("r2", previous, maximum - 1))
+            .unwrap(),
         InferenceAdmission::Fresh(_)
     ));
     drop(store);
@@ -122,13 +137,18 @@ fn cancellation_before_first_model_admission_never_consumes_a_turn() {
     let temp = Temp::new();
     let (mut store, lease) = setup(&temp, 100);
     store.cancel("edge-task").unwrap();
-    assert!(store.admit_mock_inference(&lease, &spec("r1", None, 40)).is_err());
+    assert!(store
+        .admit_mock_inference(&lease, &spec("r1", None, 40))
+        .is_err());
     let checkpoint = store.inference_checkpoint("edge-task").unwrap();
     assert_eq!(checkpoint.turns_used, 0);
     assert_eq!(checkpoint.committed_micro_usd, 0);
     assert_eq!(store.task("edge-task").unwrap().cancel_epoch.get(), 1);
     drop(store);
     let mut store = Store::open(&temp.0).unwrap();
-    assert_eq!(store.inference_checkpoint("edge-task").unwrap().turns_used, 0);
+    assert_eq!(
+        store.inference_checkpoint("edge-task").unwrap().turns_used,
+        0
+    );
     assert_eq!(store.task("edge-task").unwrap().cancel_epoch.get(), 1);
 }
