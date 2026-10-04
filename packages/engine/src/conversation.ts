@@ -81,12 +81,16 @@ export class ConversationAssistant {
           this.used.unknown_requests++;
           throw error;
         }
-        abort.signal.throwIfAborted();
-        for (const key of ['input_tokens', 'output_tokens'] as const) {
-          if (!Number.isSafeInteger(response[key]) || response[key] < 0
-              || !Number.isSafeInteger(this.used[key] + response[key])) throw new Error('ASSISTANT_USAGE_INVALID');
-          this.used[key] += response[key];
+        // Account for a completed observation even when cancellation won the
+        // output-admission race. Validate both counters before updating either.
+        const counters = ['input_tokens', 'output_tokens'] as const;
+        if (!response || !counters.every(key => Number.isSafeInteger(response[key]) && response[key] >= 0
+            && Number.isSafeInteger(this.used[key] + response[key]))) {
+          this.used.unknown_requests++;
+          throw new Error('ASSISTANT_USAGE_INVALID');
         }
+        for (const key of counters) this.used[key] += response[key];
+        abort.signal.throwIfAborted();
         const message = response.message;
         if (message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 16384) {
           throw new Error('ASSISTANT_MODEL_RESPONSE_INVALID');
