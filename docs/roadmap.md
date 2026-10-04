@@ -1,85 +1,65 @@
-# Implementation gates
+# Current roadmap — an assistant, not another layer of mock infrastructure
 
-This is an execution order, not a release-date promise. The supplied design's §32 and Appendix F remain the basis. CORE-03 through CORE-07 are implementation substeps; they do not rename the original work breakdown or complete its entire stage 1.
+Revised 2026-10-04 following the user's explicit correction. [Product contract](product-contract.md) is the current behavior specification. The preserved design remains a historical source and its safety invariants remain in force; its old examples and implementation ordering are not the active priority list.
 
-## CORE 01 — contract foundation
+## Next delivery: one continuous delegation experience
 
-Schema and transition sources, generated Rust/TypeScript types, fail-closed value validation, shared fixtures, preserved design, and CI. Provider authentication evidence and an independent threat-boundary review remain separate from the green contract suite.
+The next working build must accept ordinary conversation, discover the relevant context and sources, perform useful work through general tools, verify the result, and accept a follow-up without requiring the user to restate everything. Use the same assistant path for research without attachments, “This isn't working” in the current environment, and “Make the earlier one simpler.” Do not implement three phrase-to-script routes.
 
-## CORE 02 — durable mock execution
+**Live provider proof, conversational intake, context discovery and a minimal conversation/result surface start now, together with the first real tools.** They are no longer deferred until every infrastructure follow-through is finished. Existing authorization, cancellation, durability and process boundaries are reused. Fix a concrete blocker on this path rather than requiring a new series of stand-alone abstraction PRs before any user-visible work.
 
-`crates/store` owns SQLite state/event CAS, a separately durable restore witness, OS store ownership, supervisor-generation leases, cancellation/dispatch serialization, an independent non-idempotent mock, exact integer fixture reservations and a stopped/decision outbox. See [CORE-02](core-02.md) for original boundaries and fixed fault cases.
+| Work inside this delivery | Observable acceptance evidence |
+| --- | --- |
+| Natural conversation entry and ongoing-work links | Accept a raw message without required attachment, path, task ID or completed TaskContract; follow-up refers to the correct prior work/result. |
+| Authorized real model route | One actual selected provider or local-model route reasons over the observed input; credentials, capabilities and costs are explicit. A deterministic mock is not this proof. |
+| Relevant context and source discovery | Retrieve conversation/results/preferences, observe the current target when permitted, and search permitted local/connected/public sources without tester-supplied source paths. |
+| General tools and result verification | Use reusable file/search/browser/app or explicitly authorized process tools; demonstrate the user's original action or a usable sourced result, not a contract-digest receipt. |
+| Evidence-backed continuation | Commit observations and actual tool evidence through the existing ledger; retain limits and current user edits across follow-up and safe restart. |
+| Narrow questions and permission handling | Resolve discoverable facts independently, ask for a genuine missing choice/access, and remain useful when one source is unavailable. |
 
-The original review scope remains:
+These are workstreams within one user-facing milestone, not six new complete subsystems that must each be generalized before integration. Split commits for review where useful, but report the unfinished end-to-end outcome honestly. Thin UI and CLI are both acceptable development entry points; raw JSON or manual technical context preparation is not the product interface.
 
-1. WAL/FULL, state/version CAS and event append in one transaction, foreign keys and state constraints, one active run, and read-only recovery when invariants fail.
-2. Single daemon ownership, scoped leases and monotonic-time fencing. Stale owners cannot admit new dispatch. Current recovery conservatively invalidates all prior generations, including the same OS boot.
-3. Durable cancellation serialized with dispatch admission. Already-admitted operations may finish after cancellation; observation may continue, new effects may not.
-4. Immutable payloads, append-only attempts/receipts and explicit reconciliation. Response loss must neither cause a second effect nor fabricate success.
-5. Reservations including uncertain usage, checkpoints and result outbox. Do not implement a floating-point money ledger from the illustrative wire budget.
+### Execution order inside the slice
 
-Required faults include process kill around admission, response loss, revoked cached grant, concurrent cancellation, stale fence, applied mismatch, unknown outcome after cancellation, disk-write failure and restoring a backup after an external effect. Preserve fixed denominators. Safe quarantine is not successful automatic recovery, and regression samples are not the 1,000-injection release gate or hardware power-loss qualification.
+Start with a raw conversation plus one authorized real inference route and request-scoped context reads. Connect dynamic source discovery and the first useful general tool as soon as that path exists. Add actual-result verification and same-conversation revision while closing only the durability/permission gaps exercised by those actions. Require the relevant fault checks before enabling effects; this priority change never licenses skipping them.
 
-## CORE 03 / CORE 04 — authenticated control and native transports
+A discovery phase can start with an unresolved subject and no user-supplied source. It must inherit bounded approved reads and cost limits, not unrestricted authority. The engine creates/revises internal execution contracts from observed evidence. Exact target/precondition/approval checks apply before the corresponding mutation, not as a reason to reject the initial utterance. Any necessary wire/version changes ship with the actual intake integration; do not weaken existing v1 validators or mutate an already bound contract hash.
 
-[CORE-03](control-protocol.md) supplies bounded authenticated commands and atomic logical-request replay. [CORE-04](native-ipc.md) binds them to Linux Unix sockets and Windows named pipes with peer checks, absolute I/O deadlines, bounded sessions and a separate-process fixture. Session-only bootstrap remains available through an inherited anonymous pipe. Unsupported native platforms reject before creating endpoints while the portable workspace still compiles.
+For a live route, confirm official current eligibility and serialization contracts at implementation time. Use explicitly authorized credentials; never reuse another application's tokens, invent account access or silently choose a paid fallback. No specific provider policy is reverified by this documentation change. If live access cannot be exercised, record that blocker and continue independently implementable integration; do not label a mock run as live proof.
 
-## CORE 05 — persistent installation identity
+## Product acceptance, separate from component regression
 
-[CORE-05](installation-identity.md) adds explicit RESERVED/ACTIVE enrollment, Linux Secret Service and Windows Credential Manager adapters, private installation metadata, a daemon lifetime lock, authenticated discovery and generation-pinned native connection. Missing or altered active keys block new load/bind/reconnect; interrupted reservation requires explicit finish with lookup before creation. Tests distinguish mock-vault behavior from isolated real-vault process tests.
+The [assistant-v1 suite](../evals/assistant-v1/README.md) contains 16 fixed scenario specifications covering discovery, situated reference resolution, follow-up, memory, access, ambiguity, freshness, trust, privacy and ordinary personal work. Run the same wording against different environments and unseen paraphrases against changed names/paths. The evaluator's setup, oracle and expected outputs never enter the assistant prompt.
 
-Human-facing enrollment/recovery, stable default launcher paths, key rotation, live durable revocation, stale-runtime retention and reboot qualification remain. Deleting an OS-vault key does not instantly revoke cached sessions. Installation credentials never constitute worker tool grants.
+The current baseline is **not run**. Scenario validity, mock success and CI success do not qualify the assistant. Record actual model/route, implementation revision, observable source/tool evidence, user preparation and questions, outcome verification and remaining failures. Unavailable environments stay in the denominator as blocked/unrun, not removed. Success is completing the delegated goal within current permissions; “zero questions” achieved by guessing a target is failure.
 
-## CORE 06 — durable queue and cooperative supervisor
+First inspect A01/A02/A04 as discovery, current-situation work and follow-up probes, alongside the necessary ambiguity/access/trust controls A06/A07/A10/A16. This is a development order, not a reduced published denominator: report all 16, and do not claim the initial product gate until every case has been evaluated and satisfied its rubric. Physical reboot, broad native-app coverage and the original release/security evaluation remain separate gates.
 
-[CORE-06](queue-supervisor.md) stores queue registration and updates with authoritative tasks/events in one witnessed transaction. It adds one-shot UTC not-before scheduling, reconciliation/deadline/ordinary ordering, opaque owner/generation/fence leases, safe explicit yield, immutable probe checkpoints, and a host supervisor with bounded active assignments. Idle polling makes no journal writes. Cancelled execution does not resume; unresolved effects retain observation-only work and their cost reservations.
+## Development admission rule
 
-Native control registers authenticated cancellation at a shared priority gate before blocking-worker scheduling. Queued cancellation precedes ordinary worker completion; the store rechecks session revocation, expiry and generation after admission. Already-entered transactions are not preempted. The native regression proves this order over actual sockets/pipes, without claiming a measured p95 latency or resolving pre-authentication connection exhaustion.
+Every feature PR states the user's original utterance, what the assistant discovered rather than being handed, the observed outcome, and the next incomplete part of the same user experience. A maintenance/security fix may be component-only but must say so. Test/PR counts are engineering evidence, not product completion percentages.
 
-Task-ledger schema v2 uses an explicit backed-up migration from the unchanged v1 source. Normal v1 open requests migration instead of silently changing data. Unresolved effects/publication block migration; witness/state gaps require read-only recovery. The independent installation-identity schema and task/control wire contracts remain unchanged.
+Do not add empty packages, hardcoded phrase routers, another synthetic digest feature, or a generalized framework without a demonstrated blocker in the current delegation slice. Use the [PR template](../.github/PULL_REQUEST_TEMPLATE.md) and [repository instructions](../AGENTS.md).
 
-The supervisor's executable fixture is an immutable-input probe, not a model worker: checkpointed tasks retain unmet user acceptance criteria and never become SUCCEEDED. Nine added process-kill boundaries exercise claim, yield, checkpoint and migration without replacing earlier faults.
+## Existing implementation to reuse
 
-## CORE 07 — foreground host and fixed child lifecycle
+These are implemented component boundaries through PR #11, not a usable assistant and not instructions to keep extending each independently.
 
-[CORE-07](process-host.md) composes protected ledger directories, explicit enrollment, authenticated native control and an optional separate-process fixed probe in the `tada-agentd` executable. The private single-request worker protocol bounds input/output and binds task, nonce, fence and contract hash. A complete reply and actual owned-process exit/cleanup are both required before checkpointing or safe retirement. Graceful shutdown may yield this known pure worker; faults park it without automatic respawn. Cancellation after spawn but before admission sends no assignment, confirms cleanup and leaves unrelated control available.
+| Component | Reuse and current boundary |
+| --- | --- |
+| [CORE-01 contracts](contracts-v1.md) | Cross-language schemas/fixtures; an internal execution contract is not a user intake form. |
+| [CORE-02 store](core-02.md) | Witnessed SQLite state/effects, cancellation, reservations and outbox; recovery gaps quarantine rather than guess. |
+| [CORE-03 control](control-protocol.md), [CORE-04 IPC](native-ipc.md) | Authenticated command replay, Linux sockets and Windows pipes; no natural-conversation endpoint yet. |
+| [CORE-05 identity](installation-identity.md) | Explicit OS-vault enrollment and authenticated discovery; not provider login or screen consent. |
+| [CORE-06 queue](queue-supervisor.md), [CORE-07 host](process-host.md) | Durable scheduling and owned fixed-child lifecycle; not a general task solver or universal sandbox. |
+| [SEC-01A authority](worker-authority.md), [ENGINE-01A pipes](engine-duplex.md) | Exact-scope broker and Rust/TypeScript exchange; only the assigned contract-digest tool is exercised. |
+| [MODEL-01A streams](model-streams.md) | Normalized stream validation and bounded mock controller; session-local model state. |
+| [MODEL-01B ledger](inference-ledger.md) | Durable host admission/accounting and v3 version barrier; not yet connected to the TypeScript loop or resumable conversation. |
 
-The Windows demo retains normal local-drive path syntax without relaxing existing namespace/owner/ACL checks. Linux parent-death handling and Windows Job Objects cover this trusted fixed worker's lifecycle, not a universal filesystem sandbox or arbitrary process-tree recovery. Normal and feature-only lifecycle regressions are both required in Linux/Windows CI. The thirteen-case fault matrix remains fixed, with extra exact-boundary cancellation and output-limit tests; per-commit results and any failures are recorded in the PR rather than inferred from compilation.
+The currently immutable execution contract is an identified integration mismatch for progressive understanding, not a reason to ask the user for a complete specification. Preserve existing records and grants when introducing revisions; make stale bindings unusable rather than silently updating them.
 
-Public task/control contracts, the preserved design and task/identity schema versions are unchanged by CORE-07. The ordinary foreground demo uses session-only authentication. Existing real-vault suites do not establish every persistent CLI flow, physical reboot behavior or end-user service installation.
+## After the first delegation experience
 
-## Next core / SEC-01 integration
+Broaden source/connectors and reusable tools, whole-computer control, native OS coverage, personal-work scenarios and long-lived memory. Add installed-service delivery, runtime packaging/integrity, key rotation/revocation, broader containment, richer restore handling, recurring schedules and hierarchical budgets where the actual product needs them. Maintain capability-specific limitations instead of treating one unsupported adapter as total assistant failure.
 
-The reviewed worker-scoped policy/grant admission and versioned Rust/TypeScript digest interface are implemented in SEC-01A and ENGINE-01A. Keep CPU-heavy work and external I/O outside store locks and preserve cancellation-first admission when adding real tools. General workers need independently verified containment and stop/reaping recovery; the fixed probe's retirement rule is not a license to steal expired live assignments. Installed-service packaging remains separate from explicit foreground operation.
-
-Follow-through includes recurring IANA-time-zone/occurrence/catch-up contracts, decision-response priority, general resource locks, rich engine checkpoints, production recovery export/restore, parent/child and provider-aware budgets, and notifications coupled to ART-01 publication. None is implied by the fixed probe or in-process admission gate.
-
-## Provider proof — separate gate
-
-With explicit user authorization, verify official app/account eligibility, authentication, one inference request, tool-call completion, refresh/re-authentication and cancellation. Subscription and API-key paths remain distinct. Do not silently use another CLI's token, browser cookies, a borrowed client ID or a paid fallback. Record official source/version/date and observable evidence without credentials.
-
-## ART 01 — first user result end to end
-
-Input snapshot → isolated staging → file generation → independent verification → immutable artifact → durable publish intent → destination re-read → result/outbox commit. Kill at every boundary. Detect original-file changes and preserve user edits. A verified action or supervisor checkpoint is not a verified, published user artifact. Connect the TypeScript model loop and request/result UI through these existing boundaries.
-
-## Later product scope
-
-Managed browser, Windows native automation, Linux core parity, optional macOS bridge, signed packaging/updates and full safety/quality evaluations follow their original dependencies. No empty placeholder package stands in for implementation or evidence.
-
-## ENGINE-01A — duplex digest integration
-
-The actual Rust and TypeScript process paths are specified in [engine-duplex.md](engine-duplex.md). This joins the existing host-owned channel to a bounded propose/authorize/invoke/replay/final exchange without replacing the task/control/worker schemas. It remains a model-free fixed read probe; general model planning, provider adapters, file actions, artifact verification/publication, packaged runtime integrity and independent security review are separate gates.
-
-## MODEL-01A / ENGINE-01B — normalized mock streams and bounded controller
-
-[Model streams](model-streams.md) adds a separately versioned event schema with generated Rust/TypeScript types and shared conformance fixtures. The collector withholds calls until completion and EOF; the controller enforces finite requests/tools/recovery/time, rejects changed scope, preserves observed/unknown usage, distinguishes waiting reasons and refuses automatic retry of ambiguous tool outcomes. A feature-only actual Node path uses the unchanged Rust digest broker and preserves committed evidence when a later model stream fails. No real provider account or inference is used.
-
-These controller meters and classifications are session-local. The Rust admission/storage portion of the next gate is implemented separately below; the controller has not yet been connected to it. Persisted WAITING wake conditions, encrypted continuation and live provider serializers/conformance must be connected before production inference. A mock stream parser and a pure-probe checkpoint do not complete the original MODEL 01 or ENGINE 01 release gates.
-
-## MODEL-01B — durable host inference observations
-
-[Inference ledger](inference-ledger.md) persists exact mock inputs, lifetime model-turn admission, shared action/model cost reservations, cumulative usage, immutable receipts and predecessor-linked observation checkpoints. Same-ID replays return stored observations rather than another execution ticket. Reopen retains unfinished requests as unknown and blocks fresh inference until observation. Late receipts can settle cost without accepting cancelled, expired, policy-invalid or previous-generation output.
-
-A separate explicit backed-up v2 → v3 semantic transition protects the new budget calculation from older binaries. Ordinary stores remain v2 until enabled by the trusted host; task/control/worker/model wire schemas and installation identity are unchanged. The fixed inference route does not execute a provider or tool, and no new operation is exposed through current UI/worker RPC. Nine inference and three migration kill boundaries exercise commit gaps without weakening earlier regression gates. Over-budget caller input is rejected without poisoning a valid store or consuming a turn; maximum-safe-integer accounting and pre-admission cancellation have public-API regressions.
-
-Next integrate the existing TypeScript controller through separately versioned model-request/observation/checkpoint envelopes. Require acknowledged durable observations before the next model turn, bind actual tool-result lineage, and persist waiting/wakeup, failure state and active-time accounting. Then verify live-provider credentials, prices, hard/soft limits, encrypted context and continuation under explicit authorization. The current ledger is not a resumable conversation, a general cost estimator, an installed model daemon or ART-01 publication.
+Result verification/publication, signed distribution, security review, original fault and adversarial evaluations, privacy controls and platform qualification remain release requirements. They do not replace user-experience acceptance. No deadline or percentage-complete claim is implied by this ordering.

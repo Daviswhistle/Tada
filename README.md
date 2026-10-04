@@ -2,17 +2,33 @@
 
 **Ask. Go live your life. Tada.**
 
-An open-source, local-first desktop agent being built to execute work on your computer and return verified results. The intended architecture is a Rust daemon and authority broker, a TypeScript engine, and a Tauri desktop UI. Remote inference uses explicitly connected accounts; “local-first” does not mean all inference stays on-device.
+Tada is being built as a personal AI assistant you can delegate to in ordinary language. You should not have to collect the documents, name the project, diagnose the error, or write a complete task specification first. The assistant should find the relevant context, work out what is needed, gather information, act through available tools, and check the result.
 
-## Current status: foreground control, mock streams and durable inference records
+“Look into that company”, “This isn't working”, and “Make the earlier one simpler” are product acceptance requests, not shortcuts for prewritten workflows. The same request can mean different things in different conversations or screens. File, terminal, browser and app tools are means to do the work, not the product definition.
 
-The repository has shared Rust/TypeScript contracts, a witnessed SQLite task/effect ledger, authenticated native control on Linux and Windows, persistent OS-vault installation identity, a durable queue, and a foreground host with opt-in separate-process probes. A bounded mock model controller exercises full-stream validation, limited recovery and the actual TypeScript-to-Rust digest broker. A separate Rust inference ledger now persists request admissions, reservations, usage and observation checkpoints across restart; connecting that ledger to the TypeScript controller is the next integration boundary. Task acceptance remains separate from worker/checkpoint success. **There is no desktop UI, installed service, production model worker, model login or browser control yet.** These components have regression fixtures; live-provider safety and the design's release gates remain separate.
+## Current product contract
 
-The supplied [design v1.0 (Korean)](docs/design/source-2026-09-30.md) is preserved byte-for-byte. Implementation decisions and boundaries: [contracts](docs/contracts-v1.md), [durable mock core](docs/core-02.md), [control protocol](docs/control-protocol.md), [native IPC](docs/native-ipc.md), [installation identity](docs/installation-identity.md), [queue/supervisor](docs/queue-supervisor.md), [foreground process host](docs/process-host.md), [bounded model streams](docs/model-streams.md), and [durable inference records](docs/inference-ledger.md).
+The user's 2026-10-04 correction is recorded in the [current product contract](docs/product-contract.md) and [revised roadmap](docs/roadmap.md). It changes the interpretation and development priorities of the preserved [2026-09-30 design](docs/design/source-2026-09-30.md), which remains byte-identical. Cancellation, authorization, original-file protection and verified completion still apply.
 
-## Check the foundation
+The intended experience is:
 
-Use the toolchain versions in `.node-version` and `rust-toolchain.toml`:
+- **Understand and discover:** connect the request to relevant conversation, ongoing work, prior results, confirmed preferences and permitted current observations; find missing information rather than asking the user to prepare it.
+- **Act and check:** choose and compose available tools, resolve recoverable problems, and verify the user's actual goal rather than only process exit or file existence.
+- **Continue naturally:** understand follow-up references, preserve current user edits, and ask only for a real choice, needed access, or consequential ambiguity that available context cannot resolve.
+
+Context access is scoped and permission-aware. This does not require continuous screen recording, unrestricted private-data collection, guessed approvals, or a promise to understand information the assistant cannot observe. Full-computer control remains a planned explicit mode, with its real limits disclosed.
+
+## What works today
+
+**There is not yet a usable general-purpose assistant.** The current implementation has a Rust execution and recovery core, authenticated Linux/Windows local control, OS-vault installation identity, a durable queue, bounded child processes, a TypeScript mock-model loop and a separate durable inference ledger. The only broker-backed tool currently exercised is `task.contract_digest`.
+
+Real model integration, conversational intake, active-context collection, autonomous source discovery, general file/browser/app work, and a user-facing conversation/result screen are not yet connected into a working assistant. The TypeScript loop is not wired to the durable inference ledger. These are the next user-experience milestones, not features proven by component CI.
+
+The [assistant acceptance suite](evals/assistant-v1/README.md) defines 16 natural-delegation scenarios. Its [baseline](evals/assistant-v1/baseline.json) is explicitly **not run**: component tests and scripted digest demonstrations are not assistant success evidence. The new suite-integrity tests only validate that specification.
+
+## Development
+
+Use the versions in `.node-version` and `rust-toolchain.toml`:
 
 ```sh
 npm ci --ignore-scripts
@@ -20,114 +36,28 @@ npm run check
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
-```
-
-Ordinary tests use fixtures, no provider credentials, model inference or OS-vault writes. Initial dependency installation downloads packages; contract validation does not fetch external schema references. These are developer prerequisites, not requirements for an eventual end-user installer.
-
-On Linux and Windows, also run the complete process-lifecycle failure suite. CI requires it in addition to the ordinary workspace tests:
-
-```sh
 cargo test --locked -p tada-agentd --features process-fixtures -- --nocapture
 ```
 
-This enables only test fixtures, including parent-death, malformed output and a synchronized startup-cancellation race. The normal build does not accept those fault commands. Passing the fixed probe suite does not qualify arbitrary host processes or a production model engine.
+Ordinary tests use fixtures, not live paid inference or OS-vault enrollment. The process-fixture suite requires the pinned Node runtime and locked Node dependencies. It remains mandatory in Linux/Windows CI. These are developer prerequisites, not the intended end-user experience.
 
-## Disposable demonstrations
-
-Every destination below must be a **new** directory. Examples write mock data and install no service or automatic-start entry.
-
-```sh
-cargo run --locked -p tada-store --example recover_mock -- ./new-mock-demo
-cargo run --locked -p tada-store --example control_replay -- ./new-control-demo
-cargo run --locked -p tada-agentd --example supervisor_probe -- ./new-supervisor-demo
-cargo run --locked -p tada-store --example inference_recovery -- ./new-inference-demo
-```
-
-`recover_mock` saves one independent mock effect, loses its reply, cancels, reopens the store and verifies the existing effect without resending it. `control_replay` authenticates in-process and replays submit/cancel. `supervisor_probe` restores a queue, respects a one-shot not-before time, checks immutable input hashes and writes two checkpoints while leaving user-task acceptance unmet. `inference_recovery` explicitly enables storage v3 in its disposable directory, reserves 40 fixture units, cancels and reopens, then records a late charge of 17 without accepting the old output or restoring execution. None manufactures a SUCCEEDED task.
-
-On Linux or Windows, run the foreground host with one real child probe:
+Disposable component examples require a destination that does not exist:
 
 ```sh
 cargo run --locked -p tada-agentd --bin tada-agentd -- demo ./new-process-demo
+cargo run --locked -p tada-store --example inference_recovery -- ./new-inference-demo
 ```
 
-The demo uses authenticated native control with a session-only credential, preserves request replay and queued cancellation, and requires a matching bounded worker reply plus confirmed process exit before its checkpoint. It does not access an OS vault or run a model/tool. The [foreground command reference](docs/process-host.md) explains explicit persistent enrollment, `serve` versus `serve-probe`, `request`, protected paths and shutdown behavior.
+The first checks native control and a fixed child probe. The second preserves a mock inference reservation through cancellation/reopen and records a late observation. Neither performs a real user task or produces a completed assistant result.
 
-The earlier distinct-process native-control client example remains available:
+## Implementation references
 
-```sh
-cargo run --locked -p tada-local-ipc --bin tada-ipc-demo -- ./new-native-demo
-```
+[Contracts](docs/contracts-v1.md), [durable core](docs/core-02.md), [control replay](docs/control-protocol.md), [native IPC](docs/native-ipc.md), [installation identity](docs/installation-identity.md), [queue/supervisor](docs/queue-supervisor.md), [foreground host](docs/process-host.md), [worker authority](docs/worker-authority.md), [duplex engine](docs/engine-duplex.md), [mock model streams](docs/model-streams.md), and [inference ledger](docs/inference-ledger.md) document implemented boundaries and remaining limits. Older “next step” sections are historical; the current roadmap governs priorities.
 
-That parent owns a fixture store/listener and supplies its client child a session-only random key through an anonymous pipe. The client reconnects and replays submit/cancel. No key goes into argv, environment, RPC or plaintext files; both processes exit. Unlike that client, the fixed probe worker receives no installation credential at all.
+Existing developer data has explicit version transitions. Ordinary new stores use schema v2; v1 queue migration and optional v2-to-v3 mock inference require a safe point and a new backup. See the queue and inference documents before opening or migrating existing data. No example is an installer or restore wizard.
 
-Persistent identity uses explicit enrollment and the current user's Linux Secret Service or Windows Credential Manager. It has no plaintext-file fallback. Ordinary and process-fixture tests do not access those vaults. The following **opt-in** native integration command writes unique disposable fixture entries, so use an isolated test account/session with the actual backend available:
+Linux Secret Service and Windows Credential Manager tests are separately opt-in and write disposable entries. Use an isolated test session and the [identity test instructions](docs/installation-identity.md). macOS currently has static portability and unsupported-native checks, not native engine/Keychain support.
 
-```sh
-cargo test --locked -p tada-credential --features os-vault-tests os_tests:: -- --nocapture --test-threads=1
-```
-
-Linux CI runs its own isolated D-Bus/keyring session. macOS currently compiles the portable core and rejects unsupported native IPC/identity operations before creating endpoints; native macOS transport and Keychain integration remain future work.
-
-## Existing developer stores: explicit version transitions
-
-New ordinary stores use task-ledger schema v2. Existing v1 stores are not silently migrated: normal open returns `QUEUE_MIGRATION_REQUIRED`. Stop the old owner, reconcile pending effects with a compatible v1 build, retain the independent witness, and explicitly choose a new backup file:
-
-```sh
-cargo run --locked -p tada-store --example migrate_queue_v2 -- /existing/store /new/location/v1-backup.sqlite
-```
-
-Migration audits and backs up v1 before creating queue/checkpoint tables and committing a checksum/version marker. It refuses unresolved external work/publication and an occupied backup destination. A witness/state mismatch requires read-only recovery. Full constraints and interrupted-migration behavior are in [CORE-06](docs/queue-supervisor.md); this is not a general restore wizard.
-
-The [durable inference ledger](docs/inference-ledger.md) requires a separate explicit v2 → v3 transition through the trusted-host `Store::enable_mock_inference(NEW_BACKUP_PATH)` API. It requires a safe point and backup even though the table layout is unchanged: older binaries must not ignore model reservations when calculating a task's remaining budget. Normal startup does not silently enable inference or migrate v2. These APIs and version changes do not enable a real provider or a production model serving mode.
-
-## Modules
-
-| Path | Responsibility |
-| --- | --- |
-| `packages/contracts/`, `crates/contracts/`, `fixtures/` | Versioned source schemas, generated types and shared conformance cases |
-| `crates/store/` | Task/action ledger, witness, control replay, queue, shared action/model fixture reservations, inference observations, checkpoints and outbox |
-| `crates/local-ipc/` | Native socket/pipe peer checks, bounded authenticated I/O and cancellation-prioritized store admission |
-| `crates/credential/` | Explicit persistent installation enrollment, protected ledger directories, OS-vault adapters and generation-pinned discovery |
-| `crates/agentd/` | Supervisor, foreground CLI and bounded probe child lifecycle; no installed service or implicit tool worker |
-| `packages/providers/` | Versioned model-event collection and deterministic no-I/O mock streams |
-| `packages/engine/` | Broker-bound TypeScript sessions and session-local bounded mock recovery controller |
-| `scripts/`, `docs/` | Deterministic generation, source fidelity, implementation decisions and remaining gates |
-
-Change schemas only through their source, then regenerate and validate:
-
-```sh
-npm run generate
-npm run check
-cargo test --workspace --locked
-```
-
-Do not hand-edit generated contracts. Validation is not authorization; queue ownership is not a tool grant; an acknowledged effect is not verified; verified actions and checkpoints are not whole-task completion. Cancellation preserves uncertain external effects and does not authorize automatic compensation.
-
-## Worker authority admission
-
-[SEC-01A](docs/worker-authority.md) adds a host-bound, exact-scope policy and one-call grant broker. It evaluates DENY/ALLOW/REQUIRE_DECISION/HANDOFF, rechecks cancellation, revocation, generation, fence, scope and monotonic expiry at admission, and records read-only invocation results in the existing witnessed ledger. Rust and TypeScript validate the same separate worker-v1 schema and 41 fixtures; existing task/control v1 is unchanged.
-
-The only registered tool is `task.contract_digest`, which reads the immutable digest of its own assigned task. ENGINE-01A connects the serialized worker library boundary to actual child pipes as described below. Policy/channel creation stays on the trusted host, never in the UI or model RPC router. There is no file, shell, network, credential-export or task-completion capability in this slice.
-
-```sh
-cargo test --locked -p tada-store control::worker:: -- --nocapture
-```
-
-## Duplex engine integration
-
-[ENGINE-01A](docs/engine-duplex.md) connects the SEC-01A broker to actual child pipes. `demo-engine NEW_DIRECTORY` uses the built-in Rust reference; `demo-typescript NEW_DIRECTORY ABS_NODE` uses the checked-in deterministic TypeScript worker with the exact `.node-version` runtime supplied explicitly. Both authorize and invoke only the current task contract-digest read, preserve one committed result on replay, revoke their host-owned channel, and require confirmed process cleanup before a probe checkpoint. They do not call models or complete user tasks. The mandatory process-fixture suite requires the pinned Node executable on the developer test PATH in addition to `npm ci`; production commands never resolve a runtime from PATH.
-
-## Bounded mock model loop
-
-[MODEL-01A / ENGINE-01B](docs/model-streams.md) adds generated model-event v1 types and a bounded collector/controller. Complete tool JSON, model terminal state and EOF are checked before any proposal. Two identical failures enter diagnosis; capacity/auth/network are classified separately; unknown tool outcomes are never blindly resent. Observed usage survives interrupted requests, and model prose cannot manufacture completion evidence.
-
-The feature-only `model-normal` and `model-repair-once` Node fixtures exercise the real Rust digest broker; nine failure scenarios verify no false checkpoint. Their controller counters remain session-local. The separate [MODEL-01B host ledger](docs/inference-ledger.md) persists lifetime turns, immutable request inputs, shared task reservations, cumulative usage and receipt checkpoints. Replayed IDs do not receive another execution ticket; late cancelled/old-generation responses are accounting observations, not permission to execute. The Rust ledger is not yet wired to the TypeScript model loop and does not persist a whole conversation, wakeup or provider continuation.
-
-## Next gates
-
-The [roadmap](docs/roadmap.md) now prioritizes the versioned Rust–TypeScript model request/observation/checkpoint boundary, committed evidence before the next turn, and persistent waiting/resumption. General process containment/recovery, installed-service integration, hierarchical/provider-aware budgets and recurring schedule contracts remain. Provider authentication, file tools and ART-01 result verification/publication require their own evidence. Persistent-key rotation and live revocation also remain separate. Do not enable live tools merely because mock/native tests pass.
-
-See [CONTRIBUTING](CONTRIBUTING.md), [agent instructions](AGENTS.md) and [security boundaries](docs/security.md). No maintainer sign-off, independent security review or response SLA is fabricated.
+See [AGENTS.md](AGENTS.md) for development priorities and invariants, [CONTRIBUTING.md](CONTRIBUTING.md), and [security boundaries](docs/security.md). Local-first means execution/state ownership on the user's device; remote inference may transmit permitted context to the chosen provider. No live account route or undocumented credential reuse is implied.
 
 Licensed under [Apache-2.0](LICENSE).
