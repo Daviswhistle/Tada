@@ -41,6 +41,9 @@ fn task(turns: i64) -> tada_contracts::TaskContract {
 }
 fn setup(root: &Path, turns: i64, cap: i64) -> (Store, WorkLease) {
     let mut store = Store::open(root).unwrap();
+    store
+        .enable_mock_inference(&root.join("before-model-v3.sqlite"))
+        .unwrap();
     store.create_task(&task(turns), cap).unwrap();
     let lease = store
         .claim_work("model-test", utc_now_ms().unwrap(), Duration::from_secs(60))
@@ -875,4 +878,33 @@ fn nine_real_process_kills_preserve_inference_or_quarantine_witness_gap() {
         pending_task(&store);
         println!("inference fault {phase}: preserved, no retransmission");
     }
+}
+
+#[test]
+fn next_model_request_waits_for_tool_result_lineage_not_merely_a_proposal() {
+    let temp = Temp::new();
+    let (mut store, lease) = setup(&temp.0, 4, 100);
+    let ticket = fresh(&mut store, &lease, &spec("r1", None, 40));
+    let h = ticket.observer();
+    let proposal=tada_contracts::decode(&json!({"schema_version":1,"call_id":"call-1","task_id":"task-a","tool":"task.contract_digest","tool_version":1,"resource":"task://task-a/contract","purpose":"verify_input_snapshot","arguments":{"expected_hash":lease.contract_hash()}})).unwrap();
+    let mut received = receipt(&h, Some(17));
+    received.finish = InferenceFinish::ToolCalls;
+    received.proposals = vec![proposal];
+    let saved = store.finish_mock_inference(&h, &received).unwrap();
+    assert!(matches!(
+        store.admit_mock_inference(&lease, &spec("r2", saved.checkpoint_ref, 40)),
+        Err(Error::Denied("MODEL_TOOL_OBSERVATION_REQUIRED"))
+    ));
+    assert_eq!(count(&store, "model.admitted"), 1);
+    assert_eq!(count(&store, "worker.call_completed"), 0);
+}
+#[test]
+fn unknown_task_checkpoint_is_not_an_empty_successful_snapshot() {
+    let temp = Temp::new();
+    let (mut store, _) = setup(&temp.0, 4, 100);
+    assert!(matches!(
+        store.inference_checkpoint("missing"),
+        Err(Error::Denied("MODEL_TASK_NOT_FOUND"))
+    ));
+    assert!(!store.poisoned);
 }

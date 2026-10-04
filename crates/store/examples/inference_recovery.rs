@@ -27,6 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         "on_budget_exhaustion":"save_and_request_decision","assumptions":[]
     }))?;
     let mut store = Store::open(&root)?;
+    store.enable_mock_inference(&root.join("before-model-v3.sqlite"))?;
     store.create_task(&contract, 100)?;
     let lease = store
         .claim_work("demo", utc_now_ms()?, Duration::from_secs(60))?

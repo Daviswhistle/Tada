@@ -289,7 +289,7 @@ fn validate_receipt(entry: &Entry, receipt: &InferenceReceipt) -> Result<()> {
     if receipt.request_hash != entry.view.request_hash
         || !receipt.usage.follows(&entry.view.usage)
         || receipt.usage.output_tokens > entry.admission.spec.max_output_tokens
-        || (receipt.finish == InferenceFinish::ToolCalls) != !receipt.proposals.is_empty()
+        || (receipt.finish == InferenceFinish::ToolCalls) == receipt.proposals.is_empty()
         || receipt.proposals.len() > 1
         || receipt.retry_after_ms.is_some_and(|n| {
             receipt.finish != InferenceFinish::Capacity || !(1..=86_400_000).contains(&n)
@@ -616,6 +616,9 @@ impl Store {
     ) -> Result<InferenceAdmission> {
         self.inference_operation(|s| {
             spec.validate()?;
+            if crate::queue_migration::version(&s.conn)? != 3 {
+                return Err(Error::Denied("MODEL_MIGRATION_REQUIRED"));
+            }
             s.check_work_lease(lease)?;
             if lease.kind() != WorkKind::Advance {
                 return Err(Error::Denied("MODEL_OBSERVATION_ONLY_LEASE"));
@@ -636,6 +639,11 @@ impl Store {
                 return Err(Error::Denied("MODEL_CHECKPOINT_STALE"));
             }
             if let Some(last) = previous.last().and_then(|e| e.receipt.as_ref()) {
+                if last.finish == InferenceFinish::ToolCalls {
+                    // Until the engine checkpoint binds committed tool receipts,
+                    // a model proposal is not an observation for the next turn.
+                    return Err(Error::Denied("MODEL_TOOL_OBSERVATION_REQUIRED"));
+                }
                 if !matches!(
                     last.finish,
                     InferenceFinish::Stop | InferenceFinish::ToolCalls | InferenceFinish::Protocol
@@ -833,6 +841,14 @@ impl Store {
     /// mutate task acceptance, issue a retry, or rehydrate a model conversation.
     pub fn inference_checkpoint(&mut self, task: &str) -> Result<InferenceCheckpoint> {
         self.inference_operation(|s| {
+            let exists: bool = s.conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM tasks WHERE id=?1)",
+                [task],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                return Err(Error::Denied("MODEL_TASK_NOT_FOUND"));
+            }
             let values = ordered(load(&s.conn, task)?);
             let mut checkpoint = InferenceCheckpoint {
                 format: 1,

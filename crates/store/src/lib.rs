@@ -15,6 +15,7 @@ use tada_contracts::{ActionRecord, SafeInteger, TaskContract, TaskSnapshot};
 pub mod control;
 pub mod mock;
 pub mod model_ledger;
+mod model_migration;
 pub mod priority;
 pub mod queue;
 mod queue_migration;
@@ -368,7 +369,8 @@ impl Store {
                 return Err(Error::RecoveryRequired);
             }
         }
-        if version == 2 {
+        model_migration::audit(&self.conn)?;
+        if matches!(version, 2 | 3) {
             queue::audit(self)?;
             model_ledger::audit(&self.conn)?;
         }
