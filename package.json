@@ -8,6 +8,7 @@
     "node": ">=22.16.0 <25"
   },
   "scripts": {
+    "assistant": "node --experimental-strip-types packages/engine/src/assistant-cli.mjs",
     "generate": "node scripts/generate-contracts.mjs && node scripts/generate-worker-contracts.mjs && node scripts/generate-model-contracts.mjs",
     "generate:check": "node scripts/generate-contracts.mjs --check && node scripts/generate-worker-contracts.mjs --check && node scripts/generate-model-contracts.mjs --check",
     "typecheck": "tsc --noEmit",

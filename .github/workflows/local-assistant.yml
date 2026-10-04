@@ -1,0 +1,63 @@
+name: Real local assistant smoke
+on:
+  pull_request:
+    paths:
+      - 'packages/engine/**'
+      - 'packages/providers/**'
+      - 'crates/agentd/**'
+      - 'evals/assistant-v1/local-model-smoke.mjs'
+      - '.github/workflows/local-assistant.yml'
+permissions:
+  contents: read
+concurrency:
+  group: local-assistant-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  local-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OLLAMA_HOST: '127.0.0.1:11434'
+      OLLAMA_NO_CLOUD: '1'
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - name: Check sources before downloading model weights
+        run: |
+          rustup toolchain install 1.98.1 --profile minimal --component rustfmt
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          cargo fmt --all -- --check
+          cargo build --locked -p tada-agentd --bin tada-read-broker
+      - name: Download checked Ollama runtime into this disposable runner only
+        run: |
+          mkdir -p "$RUNNER_TEMP/ollama-runtime" "$RUNNER_TEMP/ollama-home" "$RUNNER_TEMP/ollama-models"
+          curl --fail --location --proto '=https' --retry 2 \
+            https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-linux-amd64.tar.zst \
+            -o "$RUNNER_TEMP/ollama.tar.zst"
+          echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama.tar.zst" | sha256sum -c -
+          tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C "$RUNNER_TEMP/ollama-runtime"
+      - name: Exercise actual local inference and follow-up on both predefined variants
+        run: |
+          export HOME="$RUNNER_TEMP/ollama-home"
+          export OLLAMA_MODELS="$RUNNER_TEMP/ollama-models"
+          OLLAMA="$RUNNER_TEMP/ollama-runtime/bin/ollama"
+          "$OLLAMA" serve > "$RUNNER_TEMP/ollama-server.log" 2>&1 &
+          SERVER=$!
+          trap 'kill "$SERVER" 2>/dev/null || true; wait "$SERVER" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:11434/api/version; then break; fi
+            sleep 1
+          done
+          "$OLLAMA" pull qwen3:4b
+          node --experimental-strip-types evals/assistant-v1/local-model-smoke.mjs \
+            "$PWD/target/debug/tada-read-broker" qwen3:4b
+      - name: Preserve source cleanliness
+        run: git diff --exit-code
