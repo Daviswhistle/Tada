@@ -561,16 +561,30 @@ test('messaging consent accepts only explicit YES and input closure aborts witho
 });
 
 test('running contact loops accept ordinary messages and deliver the saved reply while no browser is open', async () => {
-  const env = setup(), f = await fixture(); let seen = 0;
+  const env = setup(), f = await fixture(); let seen = 0, delayedReceipt = false;
   const service = new ContactService(env.store, { async chat() { seen++; return response('대화 창 없이도 답변을 돌려드렸어요.'); } }, noSources);
   const bridge = new TelegramContact(env.store, service, f.api());
   try {
     await bridge.initialize(); await pair(bridge, f);
+    // Keep the remote effect and local receipt commit observably distinct.
+    // The old assertion raced on f.effects and could see only one sent receipt.
+    const delayReply = (_req, _res, input, json) => {
+      f.effects.push(input);
+      const result = { message_id: f.effects.length, chat: { id: Number(input.chat_id), type: 'private' }, from: f.me, text: input.text };
+      if (input.text.includes('대화 창 없이도 답변을 돌려드렸어요.')) {
+        delayedReceipt = true;
+        setTimeout(() => json({ ok: true, result }), 75);
+      } else { f.nextSend = delayReply; json({ ok: true, result }); }
+    };
+    f.nextSend = delayReply;
     f.updates.push(message(2, '밖에 있는데 이 생각을 같이 정리해줘.'));
     bridge.start(); // No manual pollOnce/deliverOnce after startup.
-    for (let n = 0; n < 500 && !f.effects.some(m => m.text.includes('답변을 돌려드렸어요')); n++) await pause(10);
+    for (let n = 0; n < 500 && (!f.effects.some(m => m.text.includes('답변을 돌려드렸어요'))
+      || env.store.messagingStatus().deliveries.sent !== 2); n++) await pause(10);
     assert.equal(seen, 1); assert.equal(env.store.page().turns[0].state, 'answered');
     assert.ok(f.effects.some(m => m.text.includes('답변을 돌려드렸어요')));
+    assert.equal(delayedReceipt, true);
+    assert.equal(f.effects.length, 2); // no duplicate upstream effect
     assert.equal(env.store.messagingStatus().deliveries.sent, 2); // welcome + actual reply
   } finally { await bridge.close(); await service.close(); env.close(); await f.close(); }
 });
