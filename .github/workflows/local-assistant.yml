@@ -5,6 +5,9 @@ on:
       - 'packages/engine/**'
       - 'packages/providers/**'
       - 'crates/agentd/**'
+      - 'apps/contact/**'
+      - 'evals/assistant-v1/contact-*.mjs'
+      - 'evals/assistant-v1/model-diagnostics.mjs'
       - 'evals/assistant-v1/local-model-smoke.mjs'
       - 'evals/assistant-v1/ollama-protocol-probe.mjs'
       - '.github/workflows/local-assistant.yml'
@@ -45,7 +48,7 @@ jobs:
             -o "$RUNNER_TEMP/ollama.tar.zst"
           echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama.tar.zst" | sha256sum -c -
           tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C "$RUNNER_TEMP/ollama-runtime"
-      - name: Diagnose native tool calling then run both unchanged delegation variants
+      - name: Qualify contact continuity and reviews plus inherited delegation checks
         run: |
           export HOME="$RUNNER_TEMP/ollama-home"
           export OLLAMA_MODELS="$RUNNER_TEMP/ollama-models"
@@ -61,8 +64,16 @@ jobs:
           # Prior qwen3:4b and 4b-instruct failures remain in the PR evidence.
           # https://ollama.com/library/qwen3:8b
           "$OLLAMA" pull qwen3:8b
-          node --experimental-strip-types evals/assistant-v1/ollama-protocol-probe.mjs qwen3:8b
+          # Run all independent checks once. A failure remains a job failure;
+          # do not retry or suppress it, and do not skip the inherited checks.
+          status=0
+          node --experimental-strip-types evals/assistant-v1/contact-model-smoke.mjs qwen3:8b || status=1
+          node --experimental-strip-types evals/assistant-v1/contact-review-model-smoke.mjs \
+            "$PWD/target/debug/tada-read-broker" qwen3:8b || status=1
+          node --experimental-strip-types evals/assistant-v1/ollama-protocol-probe.mjs qwen3:8b || status=1
           node --experimental-strip-types evals/assistant-v1/local-model-smoke.mjs \
-            "$PWD/target/debug/tada-read-broker" qwen3:8b
+            "$PWD/target/debug/tada-read-broker" qwen3:8b || status=1
+          exit "$status"
       - name: Preserve source cleanliness
+        if: ${{ !cancelled() }}
         run: git diff --exit-code

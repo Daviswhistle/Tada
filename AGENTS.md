@@ -1,5 +1,23 @@
 # Repository instructions
 
+## Current user priority — 2026-10-05
+
+Read `docs/contact-assistant.md` first for the later correction: Tada is one continuing personal secretary reachable across devices, not a collection of task-specific chatbots. Reachability, natural conversation, durable memory/work, useful execution and appropriate follow-up belong to the first product experience. Source search and “this is broken” are examples of abilities, not the center of development. The original design's deferred mobile priority is superseded; its permission/cancellation/verification boundaries are retained.
+
+The contact host adds a browser entry and shared durable conversation; the optional Telegram private-contact adapter in `docs/telegram-contact.md` uses that SAME service and history, with durable replies/notifications. This is not a deployed always-on service, live-account-qualified messaging, voice/phone support or general task execution. Telegram is a contact channel, not a new product definition or a second assistant. Tests use a local HTTP simulator and synthetic model, never an owned bot token without explicit authorization. Keep these distinctions visible. Reuse the same ongoing conversation as actual tasks, connected accounts and delivery channels are integrated; do not start another series of unrelated mock layers. A phone-like viewport is not a physical mobile or internet deployment test.
+
+## Current follow-through implementation
+
+`docs/contact-followups.md` adds saved commitments and owner-confirmed one-time check-ins to the SAME contact service, encrypted journal and channels. The model can retrieve current work or stage a version-bound proposal from the user message; it cannot activate it, invent verified completion, or make an email watcher exist. Proposals plus answer/checkpoint commit together. Confirmation, changes, cancellation, due notices and delivery all reread current authority/state; stale callbacks and retryable delivery errors must not revive old work. Keep product limitations explicit: one confirmation is still required, device lifetime bounds reminders, and live model/phone/account validation remains unrun. Extend useful delegated work rather than adding another channel or isolated mock subsystem.
+
+## One-time local work review — 2026-10-07
+
+`docs/contact-reviews.md` extends the same follow-through path with explicit owner-approved, version-bound, one-time local read-only reviews. Saving a reminder alone is not permission to call a model later. The existing conversation loop, source gateway, encrypted journal, request ledger and Telegram outbox remain the execution path; no second assistant or unrestricted scheduler is added. A review cannot publish, send to a third party, write, change commitments or mark its task complete. Keep the existing journal limits; new providers/tools do not extend an old grant. Preserve v1-v3 schema strings and require explicit backup migration to contact DB v4.
+
+Review every task-version and device boundary before dispatch, between observations and at result admission. Canceled/stale/expired work cannot return late output or leak through a retryable delivery. Do not retry interrupted or ambiguous requests. An older terminal review must not cancel the next version. Storage/link checks do not imply OS-admin or rollback protection.
+
+Current verification includes local SQLite/HTTP/timer regressions with synthetic models and Telegram. The new Chromium review test could not navigate because the managed browser returned `net::ERR_BLOCKED_BY_ADMINISTRATOR`; do not disable or work around that policy or claim the UI passed. Full-repository Rust/Node integration, live model/account and physical-device proof remain required.
+
 ## Product direction and reading order
 
 Read `docs/product-contract.md`, `docs/roadmap.md`, and `README.md` first. The user's 2026-10-04 correction supersedes the old folder/fully-specified-task interpretation and the sequence in earlier PR “next step” sections. Read `docs/contracts-v1.md` and relevant preserved design sections for existing implementation constraints. Preserve `docs/design/source-2026-09-30.md` byte-for-byte; record refinements separately.
