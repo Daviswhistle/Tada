@@ -1,0 +1,36 @@
+name: Contact browser
+on:
+  pull_request:
+    paths:
+      - 'apps/contact/**'
+      - 'packages/engine/**'
+      - 'evals/assistant-v1/contact-*-smoke.mjs'
+      - '.node-version'
+      - '.github/workflows/contact-browser.yml'
+permissions:
+  contents: read
+concurrency:
+  group: contact-browser-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - name: Check paired conversation and explicit review controls in Chromium
+        run: |
+          # Uses the browser supplied by this disposable hosted runner. No
+          # policy changes, private accounts, deployment or paid model calls.
+          status=0
+          node --experimental-strip-types evals/assistant-v1/contact-browser-smoke.mjs || status=1
+          node --experimental-strip-types evals/assistant-v1/contact-review-browser-smoke.mjs || status=1
+          exit "$status"
+      - name: Preserve source cleanliness
+        if: ${{ !cancelled() }}
+        run: git diff --exit-code
