@@ -65,12 +65,21 @@ async function until(page, expression) {
     try { if (await evaluate(page, expression)) return; } catch { /* navigation may replace the execution context */ }
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw Error(`BROWSER_CHECK_TIMEOUT:${expression}`);
+  let state;
+  try { state = await evaluate(page, `({ ready: document.readyState,
+    pair_handler: typeof document.getElementById('pair-form')?.onsubmit,
+    composer_hidden: document.getElementById('composer')?.hidden,
+    connection: document.getElementById('connection')?.textContent,
+    notice: document.getElementById('notice')?.textContent })`); }
+  catch { state = 'execution_context_unavailable'; }
+  throw Error(`BROWSER_CHECK_TIMEOUT:${expression}; ${JSON.stringify({ state, exceptions, ...browserDiagnostics() })}`);
 }
 async function open(page, url) {
   const result = await command('Page.navigate', { url }, page.sessionId);
   assert.equal(result.errorText, undefined);
-  await until(page, '!!document.getElementById("pair-form")');
+  // A parsed form can exist before its deferred app script has installed the
+  // handlers. Do not race a default form submission against application startup.
+  await until(page, 'typeof document.getElementById("pair-form")?.onsubmit === "function"');
 }
 async function pair(page, label) {
   await open(page, host.pair());

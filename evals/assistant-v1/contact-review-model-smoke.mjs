@@ -1,6 +1,7 @@
 // Live-model qualification of the contact path, not an assistant-v1 acceptance
 // substitute. Fixture facts/oracles are never injected as system instructions.
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
@@ -14,6 +15,7 @@ import { serveContact } from '../../packages/engine/src/contact-http.mjs';
 
 const [binary, model] = process.argv.slice(2);
 assert.ok(binary && isAbsolute(binary) && model, 'Choose the absolute read broker and installed local model explicitly');
+const RealDate = Date;
 const root = mkdtempSync(join(tmpdir(), 'tada-live-review-'));
 const directory = join(root, 'journal'), documents = join(root, 'notes');
 mkdirSync(documents);
@@ -22,10 +24,11 @@ writeFileSync(file, '# Launch notes\nThe release gate has not been assigned.\n')
 const sha = text => createHash('sha256').update(text).digest('hex');
 const passphrase = randomBytes(32).toString('base64url');
 const origin = 'http://127.0.0.1:9179';
-let store, service, host, stage = 'setup';
+let store, service, host, stage = 'setup', clockAdvanced = false;
 const observed = [], checks = {}, evidence = {
   kind: 'real_local_contact_review', commit: process.env.GITHUB_SHA ?? 'local-unrecorded',
-  fixture_data: true, due_clock: 'explicit_test_tick', physical_phone: false,
+  fixture_data: true, due_clock: 'consistent_Date_only_fixture', io_deadlines: 'real_timers',
+  wall_clock_started: new RealDate().toISOString(), physical_phone: false,
   telegram: 'not_run', broad_assistant_suite: 'not_run',
 };
 async function rpc(path, body, cookie = '') {
@@ -71,6 +74,13 @@ const check = (name, value) => { checks[name] = !!value; assert.equal(checks[nam
 try {
   const provider = new OllamaLocal({ model });
   const runtime = await provider.inspect(AbortSignal.timeout(20000)); evidence.runtime = runtime;
+  const observedModel = { chat: async (messages, tools, signal) => {
+    if (stage === 'scheduled_review') {
+      const times = /Host time: (\S+)\. Due time: (\S+)\./u.exec(messages[0].content);
+      check('scheduled_model_sees_due_time', !!times && Date.parse(times[1]) >= Date.parse(times[2]));
+    }
+    return provider.chat(messages, tools, signal);
+  } };
   const native = new NativeSources(binary, [documents]);
   await native.initialize(AbortSignal.timeout(20000));
   const scope = await runReadGateway(binary, documents, '-', 'scope');
@@ -93,7 +103,7 @@ try {
   };
   store = new ContactStore({ directory, passphrase, route, initialize: true, reviews: true });
   const identity = store.id;
-  await start(provider, sources);
+  await start(observedModel, sources);
   const phone = await pair('Phone HTTP client'), pc = await pair('PC HTTP client');
   const due = new Date(Date.now() + 3600000).toISOString().replace(/\.\d{3}Z$/u, 'Z');
   const utterance = `Remember to check the launch status at ${due} and tell me the blocker, its exact release gate, and the next action. Do not check it yet.`;
@@ -120,11 +130,16 @@ try {
   writeFileSync(file, updated);
   await stop();
   store = new ContactStore({ directory, passphrase, route });
-  await start(provider, sources); await service.idle();
+  await start(observedModel, sources); await service.idle();
   check('same_assistant_after_restart', store.id === identity);
   check('no_early_or_replayed_inference', store.usage().requests === before);
   stage = 'scheduled_review';
-  service.tickFollowups(Date.parse(due)); service.start(); await service.idle();
+  // Advance this evaluator's Date consistently, not just reviewTick's argument.
+  // Otherwise the model sees a future appointment while being asked to execute
+  // it now. Network deadlines and the host interval keep their real timers.
+  mock.timers.enable({ apis: ['Date'], now: Date.parse(due) }); clockAdvanced = true;
+  evidence.simulated_host_time = new Date().toISOString();
+  service.tickFollowups(); service.start(); await service.idle();
   const review = store.reviewState(saved.commitment, saved.version);
   evidence.review = review;
   check('review_answered', review.state === 'answered');
@@ -140,7 +155,7 @@ try {
   check('no_duplicate_due_turn', store.reviewTick(Date.parse(due) + 1000) === 0);
   await stop();
   store = new ContactStore({ directory, passphrase, route });
-  stage = 'followup'; await start(provider, sources); await service.idle();
+  stage = 'followup'; await start(observedModel, sources); await service.idle();
   check('completed_review_not_replayed', store.usage().requests === before + reviewRequests);
   const followup = 'What is the exact release gate we just found? One short sentence.';
   evidence.followup_utterance = followup;
@@ -154,6 +169,7 @@ try {
   process.exitCode = 1;
 } finally {
   evidence.checks = checks; evidence.observations = observed;
+  evidence.wall_clock_finished = new RealDate().toISOString();
   if (store) {
     try {
       evidence.turns = store.page().turns.map(t => ({ text: t.text, state: t.state, answer: t.answer, error: t.error }));
@@ -161,5 +177,5 @@ try {
     } catch { evidence.store_readback = 'unavailable'; }
   }
   console.log(JSON.stringify(evidence, null, 2));
-  await stop(); rmSync(root, { recursive: true, force: true });
+  try { await stop(); } finally { if (clockAdvanced) mock.timers.reset(); rmSync(root, { recursive: true, force: true }); }
 }
