@@ -2,6 +2,7 @@
 // substitute. Fixture facts/oracles are never injected as system instructions.
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
+import { modelDiagnostics } from './model-diagnostics.mjs';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, isAbsolute } from 'node:path';
@@ -25,6 +26,8 @@ const sha = text => createHash('sha256').update(text).digest('hex');
 const passphrase = randomBytes(32).toString('base64url');
 const origin = 'http://127.0.0.1:9179';
 let store, service, host, stage = 'setup', clockAdvanced = false;
+const diagnostics = modelDiagnostics();
+let modelRequest = 0;
 const observed = [], checks = {}, evidence = {
   kind: 'real_local_contact_review', commit: process.env.GITHUB_SHA ?? 'local-unrecorded',
   fixture_data: true, due_clock: 'consistent_Date_only_fixture', io_deadlines: 'real_timers',
@@ -75,11 +78,23 @@ try {
   const provider = new OllamaLocal({ model });
   const runtime = await provider.inspect(AbortSignal.timeout(20000)); evidence.runtime = runtime;
   const observedModel = { chat: async (messages, tools, signal) => {
+    const request = ++modelRequest;
+    diagnostics.record({ request, stage, kind: 'request',
+      registered_tools: tools.map(tool => tool.function?.name),
+      recent_tool_results: messages.filter(message => message.role === 'tool').slice(-8) });
     if (stage === 'scheduled_review') {
       const times = /Host time: (\S+)\. Due time: (\S+)\./u.exec(messages[0].content);
       check('scheduled_model_sees_due_time', !!times && Date.parse(times[1]) >= Date.parse(times[2]));
     }
-    return provider.chat(messages, tools, signal);
+    try {
+      const response = await provider.chat(messages, tools, signal);
+      diagnostics.record({ request, stage, kind: 'response', message: response.message,
+        input_tokens: response.input_tokens, output_tokens: response.output_tokens });
+      return response;
+    } catch (error) {
+      diagnostics.record({ request, stage, kind: 'error', code: /^[A-Z_]+$/u.test(error.message) ? error.message : 'PROVIDER_FAILURE' });
+      throw error;
+    }
   } };
   const native = new NativeSources(binary, [documents]);
   await native.initialize(AbortSignal.timeout(20000));
@@ -169,6 +184,7 @@ try {
   process.exitCode = 1;
 } finally {
   evidence.checks = checks; evidence.observations = observed;
+  evidence.model_diagnostics = diagnostics.snapshot();
   evidence.wall_clock_finished = new RealDate().toISOString();
   if (store) {
     try {
