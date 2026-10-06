@@ -41,9 +41,9 @@ chrome.stdio[4].on('data', chunk => {
 });
 chrome.on('error', error => { for (const item of pending.values()) { clearTimeout(item.timer); item.no(error); } pending.clear(); });
 chrome.on('exit', () => { for (const item of pending.values()) { clearTimeout(item.timer); item.no(Error('BROWSER_EXITED')); } pending.clear(); });
-function command(method, params = {}, sessionId) {
+function command(method, params = {}, sessionId, timeoutMs = 10000) {
   return new Promise((yes, no) => {
-    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}; ${JSON.stringify(browserDiagnostics())}`)); }, 10000);
+    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}; ${JSON.stringify(browserDiagnostics())}`)); }, timeoutMs);
     pending.set(id, { yes, no, timer }); chrome.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
   });
 }
@@ -101,7 +101,12 @@ async function confirmButton(page, accept) {
   await command('Page.handleJavaScriptDialog', { accept }, page.sessionId); await clicked;
 }
 try {
-  const version = await command('Browser.getVersion');
+  // Give cold process bootstrap its own bounded budget. Screen actions keep
+  // their existing 10s command / 8s condition limits and all assertions.
+  // Reference: https://playwright.dev/docs/api/class-browsertype#browser-type-launch
+  const startupStarted = performance.now();
+  const version = await command('Browser.getVersion', {}, undefined, 30000);
+  const browserStartupMs = Math.round(performance.now() - startupStarted);
   const firstContext = (await command('Target.createBrowserContext')).browserContextId;
   const secondContext = (await command('Target.createBrowserContext')).browserContextId;
   let phone = await page(firstContext, 390); const pc = await page(secondContext, 1280);
@@ -147,6 +152,7 @@ try {
     writeFileSync(process.env.TADA_REVIEW_SCREENSHOT, Buffer.from(result.data, 'base64'));
   }
   console.log(JSON.stringify({ kind: 'actual_browser_scheduled_review_regression', browser: version.product,
+    browser_startup_ms: browserStartupMs, startup_timeout_ms: 30000, command_timeout_ms: 10000,
     independent_browser_contexts: 2, viewports: [390, 1280], exact_dialog_decline_and_accept: true,
     closed_page_review_completed: true, rejoined_shared_conversation: true, work_not_marked_done: true,
     model_text_not_executed: true, horizontal_overflow: false, model_calls: requests,

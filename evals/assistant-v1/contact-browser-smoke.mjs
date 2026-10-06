@@ -36,9 +36,9 @@ chrome.stdio[4].on('data', chunk => {
 });
 chrome.on('error', error => { for (const item of pending.values()) { clearTimeout(item.timer); item.no(error); } pending.clear(); });
 chrome.on('exit', () => { for (const item of pending.values()) { clearTimeout(item.timer); item.no(Error('BROWSER_EXITED')); } pending.clear(); });
-function command(method, params = {}, sessionId) {
+function command(method, params = {}, sessionId, timeoutMs = 10000) {
   return new Promise((yes, no) => {
-    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}; ${JSON.stringify(browserDiagnostics())}`)); }, 10000);
+    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}; ${JSON.stringify(browserDiagnostics())}`)); }, timeoutMs);
     pending.set(id, { yes, no, timer }); chrome.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
   });
 }
@@ -85,7 +85,12 @@ async function send(page, text) {
   await evaluate(page, `document.getElementById('message').value=${JSON.stringify(text)};document.getElementById('send').click()`);
 }
 try {
-  const version = await command('Browser.getVersion');
+  // Give cold process bootstrap its own bounded budget. Screen actions keep
+  // their existing 10s command / 8s condition limits and all assertions.
+  // Reference: https://playwright.dev/docs/api/class-browsertype#browser-type-launch
+  const startupStarted = performance.now();
+  const version = await command('Browser.getVersion', {}, undefined, 30000);
+  const browserStartupMs = Math.round(performance.now() - startupStarted);
   const firstContext = (await command('Target.createBrowserContext')).browserContextId;
   const secondContext = (await command('Target.createBrowserContext')).browserContextId;
   let phone = await page(firstContext, 390); const pc = await page(secondContext, 1280);
@@ -124,6 +129,7 @@ try {
   await evaluate(pc, 'refresh()'); await until(pc, '!document.getElementById("composer").hidden');
   assert.equal(requests, 2); assert.deepEqual(exceptions, []);
   console.log(JSON.stringify({ kind: 'actual_browser_contact_regression', browser: version.product,
+    browser_startup_ms: browserStartupMs, startup_timeout_ms: 30000, command_timeout_ms: 10000,
     independent_browser_contexts: 2, viewports: [390, 1280], closed_page_work_completed: true,
     rejoined_shared_conversation: true, single_device_revocation: true, new_draft_preserved: true, model_text_not_executed: true,
     model: 'synthetic', physical_devices: false, remote_vpn: 'not_run', public_deployment: false }));
