@@ -5,6 +5,7 @@ on:
       - 'apps/contact/**'
       - 'packages/engine/**'
       - 'evals/assistant-v1/contact-*-smoke.mjs'
+      - 'evals/assistant-v1/browser-diagnostics.mjs'
       - '.node-version'
       - '.github/workflows/contact-browser.yml'
 permissions:

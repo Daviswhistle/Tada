@@ -104,10 +104,17 @@ $('pair-form').onsubmit = async event => {
 };
 $('message-form').onsubmit = async event => {
   event.preventDefault();
+  if ($('send').disabled) return;
   const text = $('message').value.trim(); if (!text) return;
   if (!pending || pending.text !== text) pending = { request_id: crypto.randomUUID(), text };
   $('send').disabled = true;
-  try { await api('/api/turns', pending); pending = null; $('message').value = ''; notice(''); await refresh(); }
+  try {
+    await api('/api/turns', pending); pending = null;
+    // Admission may finish after the owner has started composing another turn.
+    // Clear only the submitted text, never a newer draft.
+    if ($('message').value.trim() === text) $('message').value = '';
+    notice(''); await refresh();
+  }
   catch (error) { notice(`${error.message} 같은 내용을 다시 보내면 같은 요청 ID로 접수 여부를 확인합니다.`); }
   finally { $('send').disabled = false; }
 };

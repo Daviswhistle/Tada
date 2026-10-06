@@ -1,3 +1,4 @@
+import { drainBrowserStderr } from './browser-diagnostics.mjs';
 // Scheduled-review browser regression, with synthetic model replies and test-owned work fixtures. No product tool or hidden
 // runtime fixture mode is added. CDP is connected to this owned test child by pipe.
 import assert from 'node:assert/strict';
@@ -26,6 +27,7 @@ const service = new ContactService(store, { async chat(messages) {
 } }, sources);
 const host = await serveContact({ store, service, origin: 'http://127.0.0.1:9188', port: 9188 });
 const chrome = spawn(executable, ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-pipe', `--user-data-dir=${join(root, 'browser')}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+const browserDiagnostics = drainBrowserStderr(chrome);
 let sequence = 0, buffered = Buffer.alloc(0); const pending = new Map(), exceptions = [], dialogs = [];
 chrome.stdio[4].on('data', chunk => {
   buffered = Buffer.concat([buffered, chunk]);
@@ -41,7 +43,7 @@ chrome.on('error', error => { for (const item of pending.values()) { clearTimeou
 chrome.on('exit', () => { for (const item of pending.values()) { clearTimeout(item.timer); item.no(Error('BROWSER_EXITED')); } pending.clear(); });
 function command(method, params = {}, sessionId) {
   return new Promise((yes, no) => {
-    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}`)); }, 10000);
+    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}; ${JSON.stringify(browserDiagnostics())}`)); }, 10000);
     pending.set(id, { yes, no, timer }); chrome.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
   });
 }

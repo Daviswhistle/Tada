@@ -1,3 +1,4 @@
+import { drainBrowserStderr } from './browser-diagnostics.mjs';
 // Browser UI regression only, with synthetic replies. No product tool or hidden
 // runtime fixture mode is added. CDP is connected to this owned test child by pipe.
 import assert from 'node:assert/strict';
@@ -22,6 +23,7 @@ const service = new ContactService(store, { async chat() {
 } }, sources);
 const host = await serveContact({ store, service, origin: 'http://127.0.0.1:9187', port: 9187 });
 const chrome = spawn(executable, ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-pipe', `--user-data-dir=${join(root, 'browser')}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+const browserDiagnostics = drainBrowserStderr(chrome);
 let sequence = 0, buffered = Buffer.alloc(0); const pending = new Map(), exceptions = [];
 chrome.stdio[4].on('data', chunk => {
   buffered = Buffer.concat([buffered, chunk]);
@@ -36,7 +38,7 @@ chrome.on('error', error => { for (const item of pending.values()) { clearTimeou
 chrome.on('exit', () => { for (const item of pending.values()) { clearTimeout(item.timer); item.no(Error('BROWSER_EXITED')); } pending.clear(); });
 function command(method, params = {}, sessionId) {
   return new Promise((yes, no) => {
-    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}`)); }, 10000);
+    const id = ++sequence, timer = setTimeout(() => { pending.delete(id); no(Error(`CDP_TIMEOUT:${method}; ${JSON.stringify(browserDiagnostics())}`)); }, 10000);
     pending.set(id, { yes, no, timer }); chrome.stdio[3].write(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }) + '\0');
   });
 }
@@ -79,7 +81,23 @@ try {
   const secondContext = (await command('Target.createBrowserContext')).browserContextId;
   let phone = await page(firstContext, 390); const pc = await page(secondContext, 1280);
   await pair(phone, '휴대폰'); await pair(pc, 'PC');
+  // Delay the already-real HTTP admission response in this test page only.
+  // The user can type the next draft before the first admission settles.
+  await evaluate(phone, `(() => {
+    const original = window.fetch;
+    window.fetch = async (...args) => {
+      const response = await original(...args);
+      if (args[0] === '/api/turns') await new Promise(resolve => {
+        window.fixtureReleaseAdmission = () => { window.fetch = original; resolve(); };
+      });
+      return response;
+    };
+  })()`);
   await send(phone, '오늘 이야기할 것을 같이 정리하자.');
+  await until(phone, "typeof window.fixtureReleaseAdmission === 'function'");
+  await evaluate(phone, "document.getElementById('message').value='아직 쓰고 있는 다음 메시지';window.fixtureReleaseAdmission()");
+  await until(phone, "!document.getElementById('send').disabled");
+  assert.equal(await evaluate(phone, "document.getElementById('message').value"), '아직 쓰고 있는 다음 메시지');
   await until(pc, 'document.querySelectorAll(".turn").length===1');
   assert.ok(release, 'model request must already be owned by the host');
   await command('Target.closeTarget', { targetId: phone.target });
@@ -98,7 +116,7 @@ try {
   assert.equal(requests, 2); assert.deepEqual(exceptions, []);
   console.log(JSON.stringify({ kind: 'actual_browser_contact_regression', browser: version.product,
     independent_browser_contexts: 2, viewports: [390, 1280], closed_page_work_completed: true,
-    rejoined_shared_conversation: true, single_device_revocation: true, model_text_not_executed: true,
+    rejoined_shared_conversation: true, single_device_revocation: true, new_draft_preserved: true, model_text_not_executed: true,
     model: 'synthetic', physical_devices: false, remote_vpn: 'not_run', public_deployment: false }));
 } finally {
   release?.();
