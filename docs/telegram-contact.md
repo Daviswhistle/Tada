@@ -23,7 +23,7 @@
 
 ```sh
 npm ci --ignore-scripts
-npm run contact -- --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --telegram
+npm run contact -- --provider ollama --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --telegram
 ```
 
 소유자가 [Telegram 공식 봇 생성 안내](https://core.telegram.org/bots/features#botfather)에 따라 **자신만 사용하는 봇**을 준비한다. 토큰은 이 채팅이나 명령행에 붙이지 않고 실행 중인 Tada 호스트의 숨김 입력란에 입력한다. Tada는 다른 프로그램·환경변수에서 봇 토큰을 찾거나 봇 계정을 자동으로 만들지 않는다. 토큰은 이번 프로세스의 신뢰된 통신 객체에만 보관하며 자동 시작용 영속 비밀 저장은 아직 없다.
@@ -41,7 +41,7 @@ npm run contact -- --data ./tada-contact-private --init --model YOUR_INSTALLED_L
 재시작 때는 같은 데이터·모델·자료 범위로 `--init` 없이 시작하고 암호와 토큰을 다시 입력한다. 봇 ID가 바뀌어도 기존 채팅을 새 봇으로 자동 이전하지 않는다. `--telegram` 없이 실행하면 브라우저는 계속 쓸 수 있지만 Telegram 수신·알림 전송은 하지 않는다.
 
 ```sh
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --telegram
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --telegram
 ```
 
 **Telegram 경로는 호스트의 외부로 나가는 HTTPS 연결만 사용한다.** 휴대폰용 공개 HTTP 포트나 webhook/tunnel을 열지 않는다. 반면 기존 브라우저를 밖에서 열려면 별도로 준비한 사설 HTTPS/VPN 설정이 여전히 필요하다. 봇용 발송이 사용자 휴대폰 OS에서 알림으로 표시되는지는 Telegram·기기 알림 설정에 달려 있다. 코드가 알림 표시나 열람까지 확인했다고 기록하지 않는다.
@@ -51,7 +51,7 @@ npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MO
 직전 패키지의 연락 DB는 v1이다. 일반 시작은 그 기록을 계속 읽되, 메시징을 켜려면 명시적으로 백업·전환해야 한다.
 
 ```sh
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --upgrade-contact --telegram
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --upgrade-contact --telegram
 ```
 
 기존 파일과 동일한 암호로 연 뒤, 새로운 무작위 이름의 `before-messaging-…sqlite`에 SQLite online backup을 만들고 동기화한다. 이후 하나의 트랜잭션으로 메시징 테이블·schema hash·버전을 추가한다. 실행 중인 요청이 있으면 전환하지 않는다. v1 대화와 기기 ID를 보존하고 v2에서 이전 버전으로 몰래 내려가지 않는다. 이 연락 DB v2는 기존 Rust 작업 DB의 버전과 별개다.

@@ -42,11 +42,11 @@ Telegram의 명확한 429 거절 후 재시도하더라도 새 취소·업무 �
 npm ci --ignore-scripts
 npm run contact -- --help
 # 새 기록 디렉터리일 때만 --init
-npm run contact -- --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul
+npm run contact -- --provider ollama --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul
 # 기존 v1/v2/v3 기록: 백업 후 명시적 전환
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --upgrade-contact
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --upgrade-contact
 # 이후 재시작
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul
 ```
 
 자료를 읽으려면 기존 `tada-read-broker`와 최초 허용한 `--broker ABSOLUTE_READ_BROKER --allow-read DIRECTORY` 설정을 함께 사용한다. 동일 기록의 모델/자료 범위 지문을 임의로 바꾸지 않는다. 본인 Telegram 연결도 사용할 때만 기존 `--telegram` 옵션을 추가한다. 모델·토큰·VPN·서버를 자동으로 설치하거나 구입하지 않는다.

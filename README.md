@@ -8,7 +8,7 @@ Tada is being built as a personal AI assistant you can delegate to in ordinary l
 
 ## Continuing contact build
 
-The current development tip includes a [browser contact host](docs/contact-assistant.md) with an encrypted conversation shared across paired devices, optional [private Telegram contact](docs/telegram-contact.md), [saved work](docs/contact-followups.md) and [one-time local reviews](docs/contact-reviews.md). Start it with `npm run contact -- --help`. Setup still requires development runtimes, an explicitly selected installed local model and a host passphrase; this is not an installed or always-on product.
+The current development tip includes a [browser contact host](docs/contact-assistant.md) with an encrypted conversation shared across paired devices, optional [private Telegram contact](docs/telegram-contact.md), [saved work](docs/contact-followups.md) and [one-time local reviews](docs/contact-reviews.md). Start it with `npm run contact -- --help`. The default contact route now uses [official ChatGPT subscription sign-in](docs/chatgpt-subscription.md); `--provider ollama` retains local-model support. Setup still requires development runtimes and a host passphrase. The subscription implementation has local protocol/integration tests; live account qualification and installed/always-on delivery remain incomplete.
 
 The user requires a finished personal secretary with release quality. [The current completion target](docs/roadmap.md#completion-target--2026-10-07) includes real actions, installation, long-lived work and independent product acceptance. The developer previews below are narrower entry points, not the finished product.
 

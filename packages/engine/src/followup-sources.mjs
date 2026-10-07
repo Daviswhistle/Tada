@@ -25,15 +25,15 @@ export const FOLLOWUP_TOOLS = [
 ];
 
 export class FollowupSources {
-  #base; #store; #job; #proposals = new Map(); #timezone; #clock;
-  constructor(base, store, job, timezone, clock = Date.now) {
+  #base; #store; #job; #proposals = new Map(); #timezone; #clock; #localReviews;
+  constructor(base, store, job, timezone, clock = Date.now, localReviews = true) {
     this.#base = base; this.#store = store; this.#job = job;
-    this.#timezone = followupTimezone(timezone); this.#clock = clock;
+    this.#timezone = followupTimezone(timezone); this.#clock = clock; this.#localReviews = localReviews;
     const names = base.definitions.map(d => d?.function?.name);
     if (FOLLOWUP_TOOLS.some(d => names.includes(d.function.name))) throw new Error('CONTACT_TOOL_COLLISION');
   }
   get definitions() { return [...this.#base.definitions, ...structuredClone(FOLLOWUP_TOOLS)]; }
-  get hostContext() { return `Host time: ${new Date(this.#clock()).toISOString()}; owner display timezone: ${this.#timezone}. Saved follow-ups are available through list_followups. New/revised follow-ups require owner confirmation; only then does the host send one due notice. No repeat schedules or third-party reply watching is connected.${this.#store.contactVersion === 4 ? ' After a timed commitment is saved, the owner can separately authorize one read-only local review using its browser card or /review COMMITMENT_ID VERSION in the paired Telegram chat. You cannot approve that grant yourself. Check the current record review state before claiming it is scheduled; proposed or saved alone is not armed. A scheduled answer is not proof of task completion.' : ''}`; }
+  get hostContext() { return `Host time: ${new Date(this.#clock()).toISOString()}; owner display timezone: ${this.#timezone}. Saved follow-ups are available through list_followups. New/revised follow-ups require owner confirmation; only then does the host send one due notice. No repeat schedules or third-party reply watching is connected.${this.#store.contactVersion === 4 && this.#localReviews ? ' After a timed commitment is saved, the owner can separately authorize one read-only local review using its browser card or /review COMMITMENT_ID VERSION in the paired Telegram chat. You cannot approve that grant yourself. Check the current record review state before claiming it is scheduled; proposed or saved alone is not armed. A scheduled answer is not proof of task completion.' : ' Automatic source reviews are unavailable with this provider. A timed reminder does not run a model later. Offer source investigation in the current conversation or a reminder; never promise a later autonomous investigation.'}`; }
   validate(name, args) {
     if (name === 'list_followups') return args && Object.keys(args).sort().join(',') === 'offset,status'
       && ['active', 'all'].includes(args.status) && Number.isSafeInteger(args.offset) && args.offset >= 0 && args.offset <= 1000;

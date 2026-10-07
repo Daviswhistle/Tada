@@ -6,6 +6,7 @@ let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = 
 let turns = new Map();
 const notice = text => { $('notice').textContent = text; $('notice').hidden = !text; };
 const errors = {
+  CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED: '예약된 자료 재확인은 현재 로컬 모델에서만 지원합니다. 지금 대화로 자료 확인을 맡길 수 있습니다.',
   CONTACT_REVIEW_UPGRADE_REQUIRED: '이 호스트는 자동 확인용 기록 전환이 필요합니다. 호스트에서 --upgrade-contact로 백업 후 전환해 주세요.',
   CONTACT_REVIEW_CONSENT_REQUIRED: '일회성 로컬 확인 범위를 명시적으로 승인해야 합니다.',
   CONTACT_REVIEW_TIME_REQUIRED: '미래의 확인 시각이 있는 진행 중 업무에만 자동 확인을 맡길 수 있습니다.',
@@ -31,6 +32,7 @@ async function api(path, data) {
 }
 function paired(yes) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; if (!yes) $('followups').hidden = true;
+  if (!yes) { requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '연락 호스트의 /pair 명령으로 발급한 링크를 이 기기에서 열어 주세요.'; }
 }
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
@@ -63,6 +65,11 @@ function render() {
       }
     } else {
       const status = document.createElement('div'); status.className = 'status'; status.textContent = stateText[turn.state] ?? '상태 확인 중';
+      if (turn.error === 'CHATGPT_USAGE_LIMIT') status.textContent = 'Tada에서 사용할 수 있는 ChatGPT 한도에 도달했어요. ChatGPT 설정에서 사용량을 확인한 뒤 다시 말씀해 주세요. 자동 재요청하지 않았어요.';
+      if (turn.error === 'CHATGPT_USAGE_UNAVAILABLE') status.textContent = '지금 ChatGPT 사용 가능 여부를 확인하지 못했어요. 연결과 대화는 보존했어요. 잠시 후 다시 말씀해 주세요.';
+      if (turn.error === 'CHATGPT_TEMPORARILY_UNAVAILABLE') status.textContent = '지금 ChatGPT 연결 서비스를 사용할 수 없어요. 연결과 대화는 보존했어요. 잠시 후 다시 말씀해 주세요.';
+      if (['CHATGPT_PLAN_UNAVAILABLE', 'CHATGPT_PERMISSION_DENIED'].includes(turn.error)) status.textContent = '선택한 ChatGPT 계정이나 워크스페이스 정책에서 이 연결을 허용하지 않아요. 계정 설정을 확인해 주세요. 다른 결제 방식으로 전환하지 않았어요.';
+      if (['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN'].includes(turn.error)) status.textContent = 'ChatGPT 연결을 갱신해야 해요. 호스트에서 --login으로 다시 로그인해 주세요. 대화는 보존했어요.';
       if (['queued', 'running'].includes(turn.state)) {
         const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '취소';
         cancel.onclick = () => api('/api/cancel', { seq: turn.seq }).then(() => refresh()).catch(e => notice(e.message)); status.append(cancel);
@@ -86,6 +93,12 @@ async function refresh(older = false) {
     $('older').hidden = nextBefore === null;
     render();
     renderFollowups(result.followups);
+    $('provider-info').textContent = result.provider ? `${result.provider.provider === 'chatgpt-subscription' ? 'ChatGPT 구독' : '로컬 모델'} · ${result.provider.model}${result.provider.account ? ' · ' + result.provider.account : ''}` : '';
+    $('provider-info').hidden = !result.provider;
+    $('plan-usage').hidden = !result.provider?.usage_url;
+    $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 대화·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 예약된 자동 자료 확인은 아직 지원하지 않습니다.'
+      : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 대화·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
     const unknown = result.messaging?.deliveries?.unknown ?? 0;

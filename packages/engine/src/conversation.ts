@@ -1,6 +1,13 @@
 // One conversational reasoning/tool loop. No task-specific phrase router or evaluator data.
 export type ToolCall = { function: { name: string; arguments: Record<string, unknown> } };
-export type Message = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: ToolCall[]; tool_name?: string };
+export type ProviderState = { version: 1; provider: 'chatgpt-subscription'; items: Record<string, unknown>[] };
+export type Message = { role: 'system' | 'user' | 'assistant' | 'tool'; content: string; tool_calls?: ToolCall[]; tool_name?: string; provider_state?: ProviderState };
+function validProviderState(value: ProviderState): boolean {
+  return !!value && value.version === 1 && value.provider === 'chatgpt-subscription'
+    && Object.keys(value).every(key => ['version', 'provider', 'items'].includes(key))
+    && Array.isArray(value.items) && value.items.length <= 24
+    && value.items.every(item => !!item && typeof item === 'object' && ['reasoning', 'function_call', 'message'].includes(String(item.type)));
+}
 export interface ModelPort {
   chat(messages: Message[], tools: unknown[], signal: AbortSignal): Promise<{
     message: Message; input_tokens: number; output_tokens: number;
@@ -91,26 +98,27 @@ export class ConversationAssistant {
   // Trusted-host checkpoint API. Never accept these objects from a browser,
   // model or source file; the contact host authenticates encrypted storage and
   // binds it to the same model/read scope before restoring it.
-  checkpoint(): { version: 1; history: Message[]; evidence: Evidence[]; nextEvidence: number; usage: Answer['usage'] } {
+  checkpoint(): { version: 1 | 2; history: Message[]; evidence: Evidence[]; nextEvidence: number; usage: Answer['usage'] } {
     if (this.busy || this.blocked) throw new Error('ASSISTANT_CHECKPOINT_UNSAFE');
-    return copy({ version: 1, history: this.history.filter(message => message.role !== 'system'),
+    return copy({ version: this.history.some(message => message.provider_state) ? 2 : 1, history: this.history.filter(message => message.role !== 'system'),
       evidence: [...this.evidence.values()], nextEvidence: this.nextEvidence, usage: this.used });
   }
   restore(checkpoint: ReturnType<ConversationAssistant['checkpoint']>, usage: Answer['usage'] = checkpoint.usage): void {
     if (this.busy || this.history.length !== 1 || this.used.requests !== 0) throw new Error('ASSISTANT_RESTORE_NOT_EMPTY');
     const invalid = (): never => { throw new Error('ASSISTANT_CHECKPOINT_INVALID'); };
-    if (!checkpoint || checkpoint.version !== 1 || size(checkpoint) > 262144
+    if (!checkpoint || ![1, 2].includes(checkpoint.version) || size(checkpoint) > 262144
         || Object.keys(checkpoint).sort().join(',') !== 'evidence,history,nextEvidence,usage,version'
         || !Array.isArray(checkpoint.history) || checkpoint.history.length > 512
         || !Array.isArray(checkpoint.evidence) || checkpoint.evidence.length > 256
         || !Number.isSafeInteger(checkpoint.nextEvidence) || checkpoint.nextEvidence < 1) invalid();
     for (const item of checkpoint.history) {
       if (!item || !['user', 'assistant', 'tool'].includes(item.role) || typeof item.content !== 'string'
-          || size(item) > 65536 || Object.keys(item).some(key => !['role', 'content', 'tool_calls', 'tool_name'].includes(key))) invalid();
+          || size(item) > 65536 || Object.keys(item).some(key => !['role', 'content', 'tool_calls', 'tool_name', ...(checkpoint.version === 2 ? ['provider_state'] : [])].includes(key))) invalid();
       if (item.tool_calls !== undefined && (item.role !== 'assistant' || !Array.isArray(item.tool_calls)
           || item.tool_calls.length > 8 || item.tool_calls.some(call => !call?.function
             || typeof call.function.name !== 'string' || !call.function.arguments
             || typeof call.function.arguments !== 'object' || Array.isArray(call.function.arguments)))) invalid();
+      if (item.provider_state !== undefined && (item.role !== 'assistant' || !validProviderState(item.provider_state))) invalid();
       if (item.role === 'tool' && typeof item.tool_name !== 'string') invalid();
     }
     const seen = new Set<string>();
@@ -195,7 +203,8 @@ export class ConversationAssistant {
         for (const key of counters) this.used[key] += response[key];
         abort.signal.throwIfAborted();
         const message = response.message;
-        if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 16384) {
+        if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 16384
+            || (message.provider_state !== undefined && !validProviderState(message.provider_state))) {
           throw new Error('ASSISTANT_MODEL_RESPONSE_INVALID');
         }
         const calls = message.tool_calls ?? [];
@@ -286,7 +295,7 @@ export class ConversationAssistant {
           if (!await this.sources.verify(copy(evidence), abort.signal)) throw new Error('SOURCE_CHANGED_REOBSERVE_REQUIRED');
         }
         abort.signal.throwIfAborted();
-        this.history.push({ role: 'assistant', content: message.content });
+        this.history.push({ role: 'assistant', content: message.content, ...(message.provider_state ? { provider_state: copy(message.provider_state) } : {}) });
         // Rejected batches never executed, and rejected drafts were never
         // answers. Keep them during repair, but do not turn them into lasting
         // conversation or repeat their corrective instructions on later turns.

@@ -66,9 +66,10 @@ export class ContactService extends EventEmitter {
           return response;
         } };
         const review = this.#store.reviewForTurn(job.seq);
+        if (review && !this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
         const sources = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
-          ? new FollowupSources(this.#sources, this.#store, job, this.#timezone) : this.#sources;
+          ? new FollowupSources(this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : this.#sources;
         const assistant = new ConversationAssistant(metered, sources);
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
@@ -82,7 +83,9 @@ export class ContactService extends EventEmitter {
         if (proposals.length) {
           const notice = '\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.';
           answer.text += notice;
-          checkpoint.history[checkpoint.history.length - 1].content = answer.text;
+          const last = checkpoint.history[checkpoint.history.length - 1];
+          if (last.provider_state) checkpoint.history.push({ role: 'assistant', content: notice.trim() });
+          else last.content = answer.text;
         }
         this.#store.finish(job.seq, answer, checkpoint, proposals);
       } catch (error) {
@@ -100,6 +103,7 @@ export class ContactService extends EventEmitter {
   }
   armReview(device, commitment, version, consent) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
+    if (!this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
     const result = this.#store.armReview(device, commitment, version, consent);
     this.emit('change'); return result;
   }
@@ -112,9 +116,15 @@ export class ContactService extends EventEmitter {
   }
   tickFollowups(now = Date.now()) {
     if (this.#stopped || this.#store.contactVersion < 3) return 0;
-    const queued = this.#store.reviewTick(now);
+    const queued = this.localReviews ? this.#store.reviewTick(now) : 0;
     this.#abortStale();
     return queued + this.#store.followupTick(now);
+  }
+  get localReviews() { return !this.#model.identity || this.#model.identity.provider === 'ollama-local'; }
+  get providerStatus() {
+    const identity = this.#model.identity;
+    return identity ? { provider: identity.provider, model: identity.display_name ?? identity.model,
+      account: identity.account_label ?? null, usage_url: identity.provider === 'chatgpt-subscription' ? 'https://chatgpt.com/settings/usage' : null } : null;
   }
   get stopped() { return this.#stopped; }
   async idle() { await this.#drain; }

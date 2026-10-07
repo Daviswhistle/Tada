@@ -97,7 +97,8 @@ export class TelegramContact extends EventEmitter {
         this.#store.telegramNote(noteKey, result?.state === 'armed' ? '확정한 업무 버전을 약속한 시각에 한 번 로컬 자료로 확인하고 같은 대화로 결과를 알려드려요. 호스트가 실행 중이어야 합니다.'
           : '이 업무의 현재 자동 확인 상태를 연락 화면에서 확인할 수 있어요. 이미 처리한 예약은 재실행하지 않았어요.');
       } catch (error) {
-        if (/^CONTACT_(REVIEW|FOLLOWUP|DEVICE)_/u.test(safe(error))) this.#store.telegramNote(noteKey, '업무 버전·시각·접근권이 바뀌어 적용하지 않았어요. 연락 화면에서 현재 기록을 확인해 주세요.');
+        if (safe(error) === 'CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED') this.#store.telegramNote(noteKey, '예약된 자료 재확인은 현재 로컬 모델에서만 지원해요. 지금 이 대화로 자료 확인을 맡길 수 있어요.');
+        else if (/^CONTACT_(REVIEW|FOLLOWUP|DEVICE)_/u.test(safe(error))) this.#store.telegramNote(noteKey, '업무 버전·시각·접근권이 바뀌어 적용하지 않았어요. 연락 화면에서 현재 기록을 확인해 주세요.');
         else throw error;
       }
       return;
@@ -112,7 +113,7 @@ export class TelegramContact extends EventEmitter {
           text = `${result.replay ? '이 확인은 이미 처리됐어요.' : '확정한 내용을 같은 비서의 맡긴 일에 저장했어요.'} 현재 상태: ${{ open: '챙길 일', waiting: '회신·조건 대기', done: '사용자 확인 완료', cancelled: '취소' }[item.state]}.`;
           if (['open', 'waiting'].includes(item.state) && item.notify_at) text += ` 확인 시각: ${item.notify_at}. 실행 중인 호스트에서 한 번 알려드려요.`;
         }
-        if (result.status === 'approved' && this.#store.contactVersion === 4) {
+        if (result.status === 'approved' && this.#store.contactVersion === 4 && this.#service.localReviews) {
           const item = this.#store.followup(result.commitment);
           if (['open', 'waiting'].includes(item.state) && item.notify_at) text += `\n현재 허용된 로컬 자료와 로컬 모델 최대 8회 호출로 한 번 직접 확인하려면 /review ${item.id} ${item.version}\n메일·웹·파일 수정·타인 연락은 포함되지 않고, 기존 전체 사용 한도를 공유해요. 24시간 넘게 늦으면 실행하지 않아요. 취소: /review-cancel ${item.id} ${item.version}`;
         }

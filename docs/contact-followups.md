@@ -38,15 +38,15 @@ Telegram으로 맡기고 그 채팅에서 확정한 업무는 승인된 제목·
 npm ci --ignore-scripts
 npm run contact -- --help
 # 새 연락 기록일 때만 --init
-npm run contact -- --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --telegram
+npm run contact -- --provider ollama --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --telegram
 ```
 
 기존 연락 기록을 사용하는 경우, **초기화 대신 명시적 전환**을 한다. 기존 암호·모델·자료 범위를 유지한다.
 
 ```sh
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --upgrade-contact --telegram
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --upgrade-contact --telegram
 # 이후 정상 재시작: --init, --upgrade-contact 모두 제외
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --telegram
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --telegram
 ```
 
 새 연락 실행 파일은 **연락 DB v3**를 사용한다. v1은 메시징용 v2를 거친 뒤 v3로, v2는 v3로 전환한다. 각 전환 전에 새 파일로 일관된 SQLite 백업을 만들고 동기화하며, 테이블·버전·식별값 변경을 하나의 트랜잭션으로 기록한다. 이전 저장소를 일반 시작으로 몰래 전환하지 않는다. 처리 중인 요청 또는 보내는 중인 메시지가 있으면 전환을 막는다. 이 v3는 기존 Rust 작업 DB의 v3와 별개다.

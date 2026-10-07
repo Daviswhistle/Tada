@@ -320,7 +320,7 @@ export class ContactStore {
       this.#device(row.device);
       this.#assertReviewAuthority(seq);
       if (typeof answer?.text !== 'string' || !answer.text.trim() || !Array.isArray(answer.sources)
-          || !checkpoint || checkpoint.version !== 1) throw new Error('CONTACT_ANSWER_INVALID');
+          || !checkpoint || ![1, 2].includes(checkpoint.version)) throw new Error('CONTACT_ANSWER_INVALID');
       if (this.#version === 4 && this.reviewForTurn(seq) && proposals.length) throw new Error('CONTACT_REVIEW_READ_ONLY');
       this.#saveFollowupProposals(row, proposals);
       this.#db.prepare("UPDATE turns SET state='answered',answer=? WHERE seq=?").run(this.#seal(`answer:${row.request_id}`, answer), seq);

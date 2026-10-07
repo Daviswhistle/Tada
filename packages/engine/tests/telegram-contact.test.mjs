@@ -624,6 +624,25 @@ test('paired Telegram confirms and separately authorizes a review on the same se
   } finally { await bridge.close(); await service.close(); env.close(); await f.close(); }
 });
 
+test('subscription Telegram confirmations omit local review commands and explain unsupported requests', async () => {
+  const env = setup({ reviews: true }), f = await fixture(); let calls = 0;
+  const service = new ContactService(env.store, { identity: { provider: 'chatgpt-subscription' }, chat: async () => { calls++; return response('fixture'); } }, noSources);
+  const bridge = new TelegramContact(env.store, service, f.api());
+  try {
+    await bridge.initialize(); const device = await pair(bridge, f); const p = scheduledFixture(env.store, device);
+    f.updates.push(message(2, `/confirm ${p.id}`)); await bridge.pollOnce();
+    const w = env.store.followupPage('active').items[0], notices = deliverAll(env.store);
+    assert.ok(notices.some(x => x.text.includes('한 번 알려드려요')));
+    assert.ok(notices.every(x => !x.text.includes('/review')));
+    f.updates.push(message(3, `/review ${w.id} 1`)); await bridge.pollOnce();
+    const rejected = deliverAll(env.store);
+    assert.ok(rejected.some(x => x.text.includes('현재 로컬 모델에서만 지원')));
+    assert.ok(rejected.every(x => !x.text.includes('접근권이 바뀌어')));
+    service.tickFollowups(Date.parse(w.notify_at)); service.start(); await service.idle();
+    assert.equal(env.store.reviewState(w.id, 1), null); assert.equal(calls, 0);
+  } finally { await bridge.close(); await service.close(); env.close(); await f.close(); }
+});
+
 test('a cancelled review result is suppressed after a definite Telegram 429 rejection, not retried into changed authority', async () => {
   const env = setup({ reviews: true }), f = await fixture();
   const service = new ContactService(env.store, { chat: async () => response('REVIEW_PRIVATE_LATE_OUTPUT') }, noSources);

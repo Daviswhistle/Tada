@@ -4,6 +4,12 @@
 
 이 요구는 원문 §29의 모바일·원격 UI 후순위와 이전 로드맵의 특정 작업 예시 중심 개발 순서를 변경한다. 원문 파일은 보존한다. 실행 위치가 사용자 기기라는 선택과 항상 연락 가능한 비서라는 요구의 충돌은 숨기지 않는다. 최종 제품은 연락을 받는 항상 켜진 호스트와 필요한 기기에서 수행하는 작업을 분리할 수 있어야 한다. 이 구현은 호스트를 구입·배포하거나 항상 켜진 서비스를 운영하지 않는다.
 
+## 기본 모델 연결: 기존 ChatGPT 구독
+
+`npm run contact -- --data ./tada-contact-private --init`는 이제 공식 **Continue with ChatGPT** 연결을 기본으로 사용한다. 호스트 터미널에서 암호와 전송 동의를 입력하고, 출력된 공식 로그인 링크를 본인이 연다. 계정에서 실제 제공하는 모델 목록 중 하나를 고르면 아래와 같은 연락 화면이 열린다. 대화·자료 도구·기록은 같은 ContactService를 사용한다. [구독 연결 안내](chatgpt-subscription.md)에 재시작, 로그아웃과 검증 범위를 기록했다.
+
+아래 Ollama 설정은 선택 가능한 로컬 경로다. 예약 시각의 자동 자료 재확인은 기존 로컬 전용 승인 때문에 Ollama에서만 제공한다. 구독 연결의 현재 대화에서 자료 확인, 맡긴 일 보관과 단순 알림은 사용할 수 있다.
+
 ## 최신 연락 호스트: 기록한 일의 일회성 직접 확인
 
 [맡긴 일과 알림](contact-followups.md)에 이어 [일회성 로컬 재확인](contact-reviews.md)을 같은 서비스에 연결했다. 알림 시각이 있는 업무를 확정한 뒤, 소유자가 그 업무 버전의 로컬 재확인을 별도로 승인하면 약속한 시각에 허용된 자료를 한 번 확인하고 같은 대화로 답한다. 기존 모델·자료 범위·사용량·결과 저장·연락 경로를 재사용한다.
@@ -30,7 +36,7 @@
 
 ```sh
 npm ci --ignore-scripts
-npm run contact -- --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL
+npm run contact -- --provider ollama --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL
 ```
 
 호스트 터미널에서 16자 이상의 기록 암호를 숨김 입력한다. 암호를 두 번 확인한 뒤 일회용 연결 링크를 출력한다. 링크를 열고 기기 이름을 정하면 대화를 시작한다. `/pair`로 다른 기기용 링크를 발급하고 `/devices`, `/revoke DEVICE_ID`로 연결을 관리한다. `/quit`는 호스트를 안전하게 종료한다.
@@ -38,7 +44,7 @@ npm run contact -- --data ./tada-contact-private --init --model YOUR_INSTALLED_L
 재시작은 `--init` 없이 한다. 암호를 잊으면 저장된 문맥을 복호화할 수 없다. 임의로 새 암호나 새 저장소를 자동 생성하지 않는다.
 
 ```sh
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL
 ```
 
 로컬 자료 읽기를 허용하려면 기존 `tada-read-broker`를 빌드하고 `--broker ABSOLUTE_READ_BROKER --allow-read DIRECTORY`를 추가한다. 자료 범위는 최초 설정의 권한이며 매 질문의 필수 입력이 아니다. 원격 기기는 이 범위나 모델 계정을 바꾸지 못한다.
@@ -53,7 +59,7 @@ npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MO
 # 사용자가 이미 준비한 사설 프록시에서 별도로 실행하는 예시.
 tailscale serve --bg 8787
 # 프록시가 출력한 정확한 HTTPS origin을 사용한다.
-npm run contact -- --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --origin https://YOUR_HOST.YOUR_TAILNET.ts.net
+npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --origin https://YOUR_HOST.YOUR_TAILNET.ts.net
 ```
 
 프록시는 해당 origin의 Host/Origin을 보존해야 한다. Tada는 Forwarded/X-Forwarded-User 같은 헤더를 신원이나 권한으로 신뢰하지 않는다. 직접 TLS를 쓰는 경우 `--bind ADDRESS --origin https://HOST:PORT --port PORT --tls-cert FILE --tls-key FILE`을 명시한다. TLS키·암호·기기 토큰을 저장소에 올리지 않는다. 원격 운영 전 실제 모바일 브라우저·프록시·재연결·폐기 동작을 확인해야 한다.

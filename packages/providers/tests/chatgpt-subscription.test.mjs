@@ -1,0 +1,191 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { randomUUID, createHash } from 'node:crypto';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { ChatGPTSubscription, responsesInput } from '../src/chatgpt-subscription.mjs';
+import { ContactStore, contactRoute } from '../../engine/src/contact-store.mjs';
+import { ConversationAssistant } from '../../engine/src/conversation.ts';
+import { ContactService } from '../../engine/src/contact-service.mjs';
+import { NativeSources, discoveryTools, validCall } from '../../engine/src/native-sources.mjs';
+import { contactOptions } from '../../engine/src/contact-cli.mjs';
+const message = text => ({ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] });
+const call = (name, args, overrides = {}) => ({ type: 'function_call', namespace: 'tada', name, arguments: JSON.stringify(args), status: 'completed', call_id: `fake-call-${randomUUID()}`, ...overrides });
+const completed = output => ({ type: 'response.completed', response: { status: 'completed', output, usage: { input_tokens: 12, output_tokens: 8 } } });
+const frame = event => `data: ${JSON.stringify(event)}\n\n`;
+const tool = { type: 'function', function: { name: 'list_sources', description: 'List permitted sources', parameters: { type: 'object', properties: {}, required: [], additionalProperties: false } } };
+async function serverFixture(handler) {
+  const requests = [];
+  const server = createServer(async (req, res) => {
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const body = raw ? JSON.parse(raw) : null; requests.push(body);
+    assert.equal(req.headers.authorization, 'Bearer synthetic-fixture-access');
+    handler(body, res);
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const account = { profile: { client: 'fixture-client', subject: 'fixture-subject', email: 'fixture@example.invalid' },
+    models: async () => [{ slug: 'fixture-model', display_name: 'Fixture Model' }], accessToken: async () => 'synthetic-fixture-access' };
+  const fetcher = (url, options) => { assert.equal(url, 'https://api.openai.com/v1/responses'); assert.equal(options.redirect, 'error'); return fetch(`http://127.0.0.1:${server.address().port}`, options); };
+  const provider = new ChatGPTSubscription({ account, model: 'fixture-model', fetcher }); await provider.inspect();
+  return { provider, account, requests, close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } };
+}
+function stream(res, events) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(events.map(frame).join('')); }
+
+test('subscription is the explicit default, local compatibility requires a named local provider', () => {
+  assert.equal(contactOptions(['--data', 'fixture']).provider, 'chatgpt');
+  assert.equal(contactOptions(['--data', 'fixture', '--provider', 'ollama', '--model', 'm']).endpoint, 'http://127.0.0.1:11434');
+  for (const args of [['--endpoint', 'http://attacker.invalid'], ['--provider', 'unknown'], ['--provider', 'ollama'], ['--login', '--logout']]) assert.throws(() => contactOptions(['--data', 'fixture', ...args]));
+});
+
+test('complete subscription response uses the public protocol and discards private reasoning', async () => {
+  const env = await serverFixture((body, res) => stream(res, [completed([{ type: 'reasoning', summary: [{ text: 'private fixture reasoning' }] }, message('안녕하세요.')])]));
+  try {
+    const result = await env.provider.chat([{ role: 'system', content: 'host rules' }, { role: 'user', content: '안녕' }], [], new AbortController().signal);
+    assert.equal(result.message.content, '안녕하세요.'); assert.equal(result.input_tokens, 12);
+    const body = env.requests[0]; assert.deepEqual(Object.keys(body).sort(), ['input', 'model', 'store', 'stream']);
+    assert.equal(body.store, false); assert.equal(body.stream, true); assert.equal(body.input[0].role, 'developer');
+  } finally { await env.close(); }
+});
+
+test('tool batches use namespace and paired durable function outputs on the next request', async () => {
+  const env = await serverFixture((_body, res) => stream(res, [completed([call('list_sources', {})])]));
+  try {
+    const reply = await env.provider.chat([{ role: 'user', content: '자료 찾아줘' }], [tool], new AbortController().signal);
+    assert.deepEqual(reply.message.tool_calls, [{ function: { name: 'list_sources', arguments: {} } }]);
+    assert.equal(env.requests[0].tools[0].type, 'namespace');
+    const history = [{ role: 'user', content: '자료 찾아줘' }, reply.message, { role: 'tool', tool_name: 'list_sources', content: '{"sources":[]}' }];
+    await env.provider.chat(history, [tool], new AbortController().signal);
+    const items = env.requests[1].input;
+    assert.equal(items[1].namespace, 'tada'); assert.equal(items[1].call_id, items[2].call_id); assert.equal(items[2].type, 'function_call_output');
+    assert.deepEqual(responsesInput(history), items); // Restart reconstructs the same complete pairs.
+    assert.throws(() => responsesInput(history.slice(0, -1)), /HISTORY_INVALID/);
+  } finally { await env.close(); }
+});
+
+for (const [name, events] of [
+  ['late failure', [{ type: 'response.output_text.delta', delta: 'looks successful' }, { type: 'response.failed', response: { error: { code: 'subscription_sharing_usage_limit_exceeded' } } }]],
+  ['missing completion', [{ type: 'response.output_text.delta', delta: 'partial' }]],
+  ['incomplete', [{ type: 'response.incomplete' }]],
+  ['failure after completion', [completed([message('discard me')]), { type: 'response.failed' }]],
+  ['duplicate completion', [completed([message('discard me')]), completed([message('discard me')])]],
+  ['wrong namespace', [completed([call('list_sources', {}, { namespace: 'attacker' })])]],
+  ['unknown tool', [completed([call('send_money', {})])]],
+  ['duplicate JSON arguments', [completed([call('list_sources', {}, { arguments: '{"x":1,"x":2}' })])]],
+]) test(`${name} cannot release an answer or tool and never retries`, async () => {
+  const env = await serverFixture((_body, res) => stream(res, events));
+  try { await assert.rejects(env.provider.chat([{ role: 'user', content: 'hello' }], [tool], new AbortController().signal), /CHATGPT_/); assert.equal(env.requests.length, 1); }
+  finally { await env.close(); }
+});
+
+test('a cancelled stream closes and preserves no partial answer', async () => {
+  let began; const started = new Promise(resolve => { began = resolve; });
+  const env = await serverFixture((_body, res) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(frame({ type: 'response.output_text.delta', delta: 'partial' })); began(); });
+  try {
+    const abort = new AbortController(), pending = env.provider.chat([{ role: 'user', content: 'hello' }], [], abort.signal);
+    await started; abort.abort(); await assert.rejects(pending, /ASSISTANT_CANCELLED/); assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+test('HTTP redirects cannot forward credentials to another destination', async () => {
+  const env = await serverFixture((_body, res) => { res.writeHead(302, { Location: 'https://attacker.invalid' }); res.end(); });
+  try { await assert.rejects(env.provider.chat([{ role: 'user', content: 'hello' }], [], new AbortController().signal), /CHATGPT_NETWORK_FAILED/); assert.equal(env.requests.length, 1); }
+  finally { await env.close(); }
+});
+
+test('same contact conversation executes source tools, survives restart across devices and rejects remote review grants', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-subscription-contact-')), notes = join(root, 'notes'), directory = join(root, 'journal');
+  mkdirSync(notes); writeFileSync(join(notes, 'update.txt'), '미루 출시: 11월 2일. 남은 일: 계약 검토.');
+  let phase = 0;
+  const env = await serverFixture((body, res) => {
+    assert.equal(body.store, false);
+    assert.ok(body.input[0].content.includes('Automatic source reviews are unavailable'));
+    assert.equal(body.input[0].content.includes('separately authorize one read-only local review'), false);
+    const outputs = body.input.filter(item => item.type === 'function_call_output');
+    let output;
+    if (phase === 0) output = call('list_sources', {});
+    if (phase === 1) { const source = JSON.parse(outputs.at(-1).output).sources[0]; output = call('list_files', { source: source.source, directory: '.' }); }
+    if (phase === 2) { const listing = JSON.parse(outputs.at(-1).output); output = call('read_file', { source: listing.source, path: 'update.txt' }); }
+    if (phase === 3) output = message('미루 출시는 11월 2일이고, 남은 일은 계약 검토입니다. [S1]');
+    if (phase === 4) {
+      assert.ok(body.input.some(item => item.role === 'user' && item.content.includes('미루')));
+      assert.ok(outputs.some(item => item.output.includes('계약 검토')));
+      output = message('앞서 확인한 남은 일은 계약 검토입니다. [S1]');
+    }
+    phase++; stream(res, [completed([{ type: 'reasoning', id: `rs_fixture_${phase}`, encrypted_content: `opaque-encrypted-fixture-${phase}`, summary: [{ type: 'summary_text', text: 'private summary fixture' }] }, output])]);
+  });
+  const passphrase = 'synthetic contact encryption passphrase', route = contactRoute({ provider: env.provider.identity });
+  let store, service;
+  try {
+    const sources = process.env.TADA_TEST_READ_BROKER ? new NativeSources(process.env.TADA_TEST_READ_BROKER, [notes]) : {
+      definitions: discoveryTools,
+      validate: (name, args) => validCall(name, args) && (name === 'list_sources' || args.source === 's1'),
+      async execute(name) {
+        if (name === 'list_sources') return { sources: [{ source: 's1', label: 'fixture notes' }] };
+        if (name === 'list_files') return { source: 's1', files: ['update.txt'] };
+        const content = readFileSync(join(notes, 'update.txt'), 'utf8');
+        return { source: 's1', path: 'update.txt', content, sha256: createHash('sha256').update(content).digest('hex'), observed_at: new Date().toISOString() };
+      },
+      async verify(evidence) { return evidence.sha256 === (await this.execute('read_file')).sha256; },
+    };
+    if (sources.initialize) await sources.initialize(new AbortController().signal);
+    store = new ContactStore({ directory, passphrase, route, initialize: true, reviews: true });
+    const first = store.addDevice('fixture phone'), second = store.addDevice('fixture laptop');
+    service = new ContactService(store, env.provider, sources);
+    assert.equal(service.localReviews, false);
+    assert.throws(() => service.armReview(first.id, randomUUID(), 1, 'one_local_read_only_review'), /LOCAL_PROVIDER_REQUIRED/);
+    const accepted = service.submit(first.id, randomUUID(), '미루 출시 상황과 다음 할 일을 확인해줘.'); await service.idle();
+    assert.equal(store.turn(accepted.seq).state, 'answered', JSON.stringify(store.turn(accepted.seq)));
+    assert.equal(store.checkpoint().value.version, 2);
+    const oldEnvelope = { ...store.checkpoint().value, version: 1 };
+    assert.throws(() => new ConversationAssistant(env.provider, sources).restore(oldEnvelope), /ASSISTANT_CHECKPOINT_INVALID/);
+    assert.ok(JSON.stringify(store.checkpoint()).includes('opaque-encrypted-fixture'));
+    assert.equal(JSON.stringify(store.page()).includes('opaque-encrypted-fixture'), false);
+    assert.equal(JSON.stringify(store.checkpoint()).includes('private summary fixture'), false);
+    assert.ok(env.requests[1].input.some(item => item.type === 'reasoning' && item.encrypted_content === 'opaque-encrypted-fixture-1'));
+    assert.equal(env.requests[1].input.find(item => item.type === 'function_call').call_id, env.requests[1].input.find(item => item.type === 'function_call_output').call_id);
+    assert.ok(store.page().turns.some(turn => turn.answer?.text.includes('11월 2일')));
+    await service.close(); store.close();
+    store = new ContactStore({ directory, passphrase, route }); service = new ContactService(store, env.provider, sources);
+    const followup = service.submit(second.id, randomUUID(), '남은 일이 뭐였지?'); await service.idle();
+    assert.equal(store.turn(followup.seq).state, 'answered'); assert.equal(phase, 5); assert.equal(store.usage().requests, 5);
+    await service.close(); store.close();
+    assert.throws(() => new ContactStore({ directory, passphrase, route: contactRoute({ account: 'different' }) }), /CONTACT_ROUTE_CHANGED/);
+  } finally { await service?.close(); store?.close(); await env.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+
+test('completed refusals remain visible answers with known usage', async () => {
+  const env = await serverFixture((_body, res) => stream(res, [completed([{ type: 'message', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'refusal', refusal: '그 요청은 도와드릴 수 없습니다.' }] }])]));
+  try {
+    const result = await env.provider.chat([{ role: 'user', content: 'fixture' }], [], new AbortController().signal);
+    assert.equal(result.message.content, '그 요청은 도와드릴 수 없습니다.'); assert.equal(result.output_tokens, 8);
+    assert.equal(responsesInput([result.message])[0].phase, 'final_answer');
+  } finally { await env.close(); }
+});
+
+test('temporary usage checks are distinct from quota exhaustion and never auto-retried', async () => {
+  const env = await serverFixture((_body, res) => stream(res, [{ type: 'response.failed', response: { error: { code: 'subscription_sharing_usage_unavailable' } } }]));
+  try { await assert.rejects(env.provider.chat([{ role: 'user', content: 'fixture' }], [], new AbortController().signal), /CHATGPT_USAGE_UNAVAILABLE/); assert.equal(env.requests.length, 1); }
+  finally { await env.close(); }
+});
+
+
+for (const [status, errorBody, expected, shape] of [
+  [503, { error: { code: 'subscription_sharing_usage_unavailable', message: 'private fixture diagnostic' } }, 'CHATGPT_USAGE_UNAVAILABLE', 'error_object'],
+  [400, { error: { code: 'subscription_sharing_unsupported_capability', param: 'tools[0].type' } }, 'CHATGPT_CAPABILITY_UNAVAILABLE', 'error_object'],
+  [403, { error: { code: 'subscription_sharing_user_not_eligible' } }, 'CHATGPT_PLAN_UNAVAILABLE', 'error_object'],
+  [503, { detail: 'private fixture diagnostic' }, 'CHATGPT_TEMPORARILY_UNAVAILABLE', 'detail'],
+]) test(`pre-stream HTTP ${status} ${expected} keeps safe diagnostics and never retries`, async () => {
+  const env = await serverFixture((_body, res) => { res.writeHead(status, { 'content-type': 'application/json', 'x-request-id': 'req_fixture' }); res.end(JSON.stringify(errorBody)); });
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'fixture' }], [], new AbortController().signal), error => {
+      assert.equal(error.message, expected); assert.equal(error.status, status); assert.equal(error.body_shape, shape); assert.equal(error.request_id, 'req_fixture');
+      assert.equal(error.code, errorBody.error?.code); assert.equal(error.param, errorBody.error?.param);
+      assert.equal(JSON.stringify(error).includes('private fixture diagnostic'), false); return true;
+    });
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});

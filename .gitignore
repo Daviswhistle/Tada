@@ -8,3 +8,7 @@ coverage/
 !.env.example
 # Default private journal location used by the contact setup examples.
 tada-contact-private/
+
+# Encrypted subscription profiles used by the default contact launcher.
+*.chatgpt-private/
+tada-local-private/

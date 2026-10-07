@@ -13,10 +13,16 @@ import { followupTimezone } from './followup-contract.mjs';
 
 export const HELP = `Tada contact host — one continuing conversation across browsers and optional private messaging
 
-npm run contact -- --data DIRECTORY --init --model INSTALLED_LOCAL_MODEL
-npm run contact -- --data DIRECTORY --model INSTALLED_LOCAL_MODEL
+npm run contact -- --data DIRECTORY --init
+npm run contact -- --data DIRECTORY
+npm run contact -- --data DIRECTORY --logout
+npm run contact -- --provider ollama --data DIRECTORY --init --model INSTALLED_LOCAL_MODEL
 
-Optional: --telegram (explicit private Telegram contact, same conversation)
+Default: ChatGPT subscription via official Continue with ChatGPT login.
+Optional: --provider chatgpt|ollama --model MODEL
+          --chatgpt-profile DIRECTORY (default: DATA.chatgpt-private)
+          --login (reauthorize saved registration) --logout (stop and disconnect profile)
+          --telegram (explicit private Telegram contact, same conversation)
           --upgrade-contact (back up and upgrade an existing contact journal to v4)
           --timezone IANA_ZONE (display and resolve times, e.g. Asia/Seoul)
           --broker ABSOLUTE_READ_BROKER --allow-read DIRECTORY (repeatable)
@@ -30,8 +36,11 @@ certificate. Non-loopback plaintext listeners are rejected. No tunnel is install
 
 The owner enters an encryption passphrase here (hidden; at least 16 characters).
 --init creates a NEW private directory; later starts unlock the same journal.
-The selected local Ollama model must already be installed, with cloud disabled.
-No API key, paid inference, cloud host or model download is selected automatically.
+ChatGPT sends conversation and approved source observations to OpenAI using the
+selected account plan. Initial transmission consent is required. No API billing
+fallback. Model choices come from that account. OAuth credentials stay encrypted
+on this host; no other app credentials are used. Plan limits: https://chatgpt.com/settings/usage
+With --provider ollama, the local model must already be installed with cloud disabled.
 
 Host controls: /telegram-pair, /telegram-approve CANDIDATE_ID, /telegram-status,
 /pair (five-minute, one-use link), /devices, /revoke DEVICE_ID, /quit.
@@ -49,7 +58,7 @@ Saved work and one-time check-in reminders share this conversation. Proposed
 contents/times must first be confirmed in a browser or with /confirm PROPOSAL_ID
 in the paired Telegram chat. Reminders must fall within the approving device's
 remaining access lifetime (at most 30 days). After saving a timed commitment,
-a paired owner may SEPARATELY approve one local read-only review in its browser
+when using Ollama, a paired owner may SEPARATELY approve one local read-only review in its browser
 card or with /review COMMITMENT_ID VERSION in Telegram. This uses the SAME local
 model, allowed sources, conversation and usage ledger (up to eight requests per
 review, not a new allowance). /review-cancel COMMITMENT_ID VERSION cancels it.
@@ -64,21 +73,24 @@ context. No automatic history deletion, reset, hidden compaction or budget refil
 `;
 export function contactOptions(args) {
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) return { help: true };
-  const options = { roots: [], initialize: false, port: 8787, bind: '127.0.0.1', endpoint: 'http://127.0.0.1:11434' };
+  const options = { roots: [], initialize: false, port: 8787, bind: '127.0.0.1', provider: 'chatgpt' };
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
+    if (['--login', '--logout'].includes(key) && !options[key.slice(2)]) { options[key.slice(2)] = true; continue; }
     if (key === '--telegram' && !options.telegram) { options.telegram = true; continue; }
     if (key === '--upgrade-contact' && !options.upgrade) { options.upgrade = true; continue; }
     if (key === '--init' && !options.initialize) { options.initialize = true; continue; }
-    if (!['--data', '--model', '--broker', '--allow-read', '--endpoint', '--origin', '--bind', '--port', '--tls-cert', '--tls-key', '--timezone'].includes(key)
+    if (!['--provider', '--chatgpt-profile', '--data', '--model', '--broker', '--allow-read', '--endpoint', '--origin', '--bind', '--port', '--tls-cert', '--tls-key', '--timezone'].includes(key)
         || !args[i + 1] || args[i + 1].startsWith('--') || (key !== '--allow-read' && seen.has(key))) throw new Error('CONTACT_OPTIONS_INVALID');
     seen.add(key); const value = args[++i];
     if (key === '--allow-read') options.roots.push(resolve(value));
     else options[key.slice(2)] = value;
   }
-  if (!options.data || !options.model || options.roots.length > 8 || (options.roots.length && (!options.broker || !isAbsolute(options.broker)))
+  if (!options.data || !['chatgpt', 'ollama'].includes(options.provider) || (options.provider === 'ollama' && (!options.model || options.login || options.logout || options['chatgpt-profile'])) || (options.provider === 'chatgpt' && options.endpoint) || (options.login && options.logout) || (options.logout && options.initialize) || options.roots.length > 8 || (options.roots.length && (!options.broker || !isAbsolute(options.broker)))
       || (!!options['tls-cert'] !== !!options['tls-key']) || !/^[0-9]+$/u.test(String(options.port))) throw new Error('CONTACT_OPTIONS_INVALID');
+  if (options.provider === 'ollama') options.endpoint ??= 'http://127.0.0.1:11434';
+  else options.endpoint = 'https://api.openai.com/v1';
   options.timezone = followupTimezone(options.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
   options.port = Number(options.port);
   if (options.port < 1 || options.port > 65535) throw new Error('CONTACT_OPTIONS_INVALID');
@@ -103,31 +115,71 @@ export async function telegramConsent(input, output) {
     return await prompt.question('텔레그램 개인 채팅을 같은 비서에 연결합니다. 이 채팅으로 맡긴 일의 답변에는 기존 대화·허용된 자료 내용이 포함될 수 있으며 Telegram 서버를 거칩니다. 본인 전용 봇에 연결하려면 YES: ', { signal: abort.signal }) === 'YES';
   } finally { prompt.close(); }
 }
+const terminalText = value => String(value).replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/gu, '');
+async function ownerQuestion(label) {
+  const prompt = createInterface({ input: process.stdin, output: process.stdout, historySize: 0 });
+  const abort = new AbortController();
+  prompt.on('SIGINT', () => abort.abort()); prompt.on('close', () => abort.abort());
+  try { return await prompt.question(label, { signal: abort.signal }); } finally { prompt.close(); }
+}
 export async function main(args = process.argv.slice(2)) {
   const options = contactOptions(args);
   if (options.help) { process.stdout.write(HELP); return; }
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
-  const { OllamaLocal } = await import('../../providers/src/ollama-local.mjs');
-  const { NativeSources, runReadGateway } = await import('./native-sources.mjs');
-  const provider = new OllamaLocal({ model: options.model, endpoint: options.endpoint });
-  const signal = AbortSignal.timeout(20000);
-  const identity = await provider.inspect(signal);
-  const scopes = [];
-  let sources = { definitions: [], validate: () => false, execute: async () => { throw new Error('CONTACT_NO_SOURCE'); }, verify: async () => false };
-  if (options.roots.length) {
-    sources = new NativeSources(options.broker, options.roots); await sources.initialize(signal);
-    for (const root of options.roots) scopes.push({ path: root, identity: (await runReadGateway(options.broker, root, '-', 'scope', '.', 0, signal)).identity });
-  }
-  const route = contactRoute({ version: 1, provider: identity.provider, model: identity.model,
-    digest: identity.model_digest, endpoint: options.endpoint, scopes });
+  let accountStore, account, store, service, host, prompt, telegram;
   let passphrase = await hiddenPassphrase(process.stdin, process.stdout);
   if (options.initialize && passphrase !== await hiddenPassphrase(process.stdin, process.stdout, '같은 암호 다시 입력: ')) throw new Error('CONTACT_PASSPHRASE_MISMATCH');
-  let store;
-  try { store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize }); }
-  finally { passphrase = ''; } // JS string clearing is not guaranteed secure zeroization.
-  const service = new ContactService(store, provider, sources, { timezone: options.timezone });
-  let host, prompt, telegram;
   try {
+    const { NativeSources, runReadGateway } = await import('./native-sources.mjs');
+    let provider, identity;
+    const signal = AbortSignal.timeout(20000);
+    if (options.provider === 'chatgpt') {
+      const { ChatGPTStore } = await import('../../providers/src/chatgpt-store.mjs');
+      const { ChatGPTAccount } = await import('../../providers/src/chatgpt-account.mjs');
+      const { ChatGPTSubscription } = await import('../../providers/src/chatgpt-subscription.mjs');
+      accountStore = new ChatGPTStore({ directory: options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`, passphrase });
+      account = new ChatGPTAccount(accountStore);
+      if (options.logout) {
+        const result = await account.logout();
+        process.stdout.write(result.revoked ? 'ChatGPT 연결을 해제했습니다. 대화 기록은 보존됩니다.\n' : '이 호스트의 인증 정보를 지웠습니다. 서버 연결 해제는 확인하지 못했습니다. ChatGPT 설정에서 Tada 연결을 해제해 주세요.\n');
+        return;
+      }
+      if (!account.profile.connected || options.login) {
+        const accepted = await ownerQuestion('Continue with ChatGPT — Tada 대화와 허용한 자료의 조회 내용이 선택한 ChatGPT 계정으로 전송됩니다. 해당 계정의 구독 사용량과 본인이 허용한 크레딧 설정을 따르며 API 결제로 전환하지 않습니다. 크레딧 사용을 원하지 않으면 ChatGPT 동의 화면과 사용량 설정에서 허용하지 마세요. 연결하려면 YES: ');
+        if (accepted !== 'YES') throw Error('CHATGPT_CONSENT_REQUIRED');
+        const attempt = await account.beginLogin();
+        process.stdout.write(`본인 브라우저에서 로그인하세요 (5분 이내):\n${attempt.url}\n`);
+        await attempt.done;
+      }
+      const catalog = await account.models(AbortSignal.timeout(20000));
+      const saved = accountStore.read();
+      let model = options.model ?? saved.model;
+      if (!model) {
+        for (const [i, item] of catalog.entries()) process.stdout.write(`${i + 1}. ${terminalText(item.display_name)}\n`);
+        const choice = await ownerQuestion('사용할 모델 번호 (Enter: 1): ');
+        if (!/^(?:[1-9][0-9]*)?$/u.test(choice)) throw Error('CHATGPT_MODEL_UNAVAILABLE');
+        model = catalog[Number(choice || 1) - 1]?.slug;
+      }
+      provider = new ChatGPTSubscription({ account, model });
+      identity = await provider.inspect(AbortSignal.timeout(20000));
+      process.stdout.write(`ChatGPT · ${terminalText(provider.identity.account_label)} · ${terminalText(provider.identity.display_name)}\n`);
+    } else {
+      const { OllamaLocal } = await import('../../providers/src/ollama-local.mjs');
+      provider = new OllamaLocal({ model: options.model, endpoint: options.endpoint });
+      identity = await provider.inspect(signal);
+    }
+    const scopes = [];
+    let sources = { definitions: [], validate: () => false, execute: async () => { throw new Error('CONTACT_NO_SOURCE'); }, verify: async () => false };
+    if (options.roots.length) {
+      sources = new NativeSources(options.broker, options.roots); await sources.initialize(AbortSignal.timeout(20000));
+      for (const root of options.roots) scopes.push({ path: root, identity: (await runReadGateway(options.broker, root, '-', 'scope', '.', 0, AbortSignal.timeout(20000))).identity });
+    }
+    const route = contactRoute({ version: 1, provider: identity.provider, model: identity.model,
+      digest: identity.model_digest, endpoint: options.endpoint, scopes });
+    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize });
+    if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
+    passphrase = '';
+    service = new ContactService(store, provider, sources, { timezone: options.timezone });
     if (options.upgrade) {
       const messagingBackup = await store.upgradeMessaging();
       const followupBackup = await store.upgradeFollowups();
@@ -179,8 +231,8 @@ export async function main(args = process.argv.slice(2)) {
       } else if (/^\/revoke [a-f0-9-]{36}$/u.test(line)) service.revoke(line.slice(8));
       else process.stdout.write('대화는 연결한 브라우저에서 하세요. 호스트 명령: /pair, /devices, /revoke DEVICE_ID, /quit\n');
     }
-  } finally { prompt?.close(); await telegram?.close(); await host?.close(); await service.close(); store.close(); }
+  } finally { passphrase = ''; prompt?.close(); await telegram?.close(); await host?.close(); await service?.close(); store?.close(); await account?.stop(); accountStore?.close(); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { process.stderr.write(`${/^CONTACT_[A-Z_]+$/u.test(error.message) ? error.message : 'CONTACT_STARTUP_FAILED'}\n`); process.exitCode = 1; });
+  main().catch(error => { if (error.message === 'CONTACT_ROUTE_CHANGED') process.stderr.write('이 기록의 계정·모델·자료 범위가 다릅니다. 원래 설정으로 다시 열거나 새 --data 경로를 사용하세요. 기존 기록은 전송하지 않았습니다.\n'); process.stderr.write(`${/^(?:CONTACT|CHATGPT)_[A-Z_]+$/u.test(error.message) ? error.message : 'CONTACT_STARTUP_FAILED'}\n`); process.exitCode = 1; });
 }

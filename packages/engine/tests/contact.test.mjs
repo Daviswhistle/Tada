@@ -320,7 +320,7 @@ test('private root cannot be a symlink, shared directory or silently recreated e
 test('contact launcher help needs no provider and rejects implicit exposure, secret arguments and ambiguous initialization', async () => {
   const { contactOptions } = await import('../src/contact-cli.mjs');
   assert.deepEqual(contactOptions(['--help']), { help: true });
-  for (const args of [[], ['--data', 'x'], ['--data', 'x', '--model', 'm', '--bind', '0.0.0.0'],
+  for (const args of [[], ['--provider', 'ollama', '--data', 'x'], ['--data', 'x', '--model', 'm', '--bind', '0.0.0.0'],
     ['--data', 'x', '--model', 'm', '--passphrase', 'secret'], ['--data', 'x', '--model', 'm', '--port', '0'],
     ['--data', 'x', '--model', 'm', '--init', '--init']]) assert.throws(() => contactOptions(args));
   assert.equal(contactOptions(['--data', 'x', '--model', 'm', '--origin', 'https://private.example']).bind, '127.0.0.1');

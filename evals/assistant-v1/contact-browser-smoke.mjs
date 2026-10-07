@@ -16,8 +16,9 @@ if (!executable) throw Error('BROWSER_ENVIRONMENT_MISSING'); // never count miss
 const root = mkdtempSync(join(tmpdir(), 'tada-browser-'));
 const store = new ContactStore({ directory: join(root, 'journal'), passphrase: 'browser-only synthetic fixture secret', route: contactRoute({ fixture: 'browser' }), initialize: true });
 const sources = { definitions: [], validate: () => false, execute: async () => { throw Error('NO_SOURCE'); }, verify: async () => false };
+const subscriptionFixture = process.argv.includes('--subscription-fixture');
 let release, requests = 0;
-const service = new ContactService(store, { async chat() {
+const service = new ContactService(store, { ...(subscriptionFixture ? { identity: { provider: 'chatgpt-subscription', model: 'fixture-model', display_name: 'Fixture Model', account_label: 'fixture@example.invalid' } } : {}), async chat() {
   if (++requests === 1) await new Promise(resolve => { release = resolve; });
   return { message: { role: 'assistant', content: requests === 1 ? '첫 번째 기기의 답변입니다.' : '같은 대화를 이어서 답했어요. <script>window.injection=true</script>' }, input_tokens: 5, output_tokens: 8 };
 } }, sources);
@@ -95,6 +96,14 @@ try {
   const secondContext = (await command('Target.createBrowserContext')).browserContextId;
   let phone = await page(firstContext, 390); const pc = await page(secondContext, 1280);
   await pair(phone, '휴대폰'); await pair(pc, 'PC');
+  if (subscriptionFixture) {
+    for (const view of [phone, pc]) {
+      await until(view, 'document.getElementById("provider-info").textContent.includes("ChatGPT 구독")');
+      assert.equal(await evaluate(view, 'document.getElementById("plan-usage").hidden'), false);
+      assert.ok(await evaluate(view, 'document.documentElement.scrollWidth <= innerWidth'));
+    }
+    assert.equal(service.localReviews, false);
+  }
   // Delay the already-real HTTP admission response in this test page only.
   // The user can type the next draft before the first admission settles.
   await evaluate(phone, `(() => {
@@ -126,13 +135,32 @@ try {
   assert.ok((await evaluate(phone, 'document.querySelectorAll(".answer")[1].textContent')).includes('<script>'));
   const devices = store.devices(); service.revoke(devices.find(d => d.name === '휴대폰').id);
   await evaluate(phone, 'refresh()'); await until(phone, '!document.getElementById("pairing").hidden');
+  assert.equal(await evaluate(phone, 'document.getElementById("provider-info").textContent'), '');
+  assert.equal(await evaluate(phone, 'document.getElementById("plan-usage").hidden'), true);
   await evaluate(pc, 'refresh()'); await until(pc, '!document.getElementById("composer").hidden');
+  // A state response admitted before logout must not restore account metadata.
+  await evaluate(pc, `(() => {
+    const original = window.fetch; let held = false;
+    window.fetch = async (...args) => {
+      if (args[0] !== '/api/state' || held) return original(...args);
+      held = true; const response = await original(...args);
+      await new Promise(resolve => { window.fixtureReleaseState = () => { window.fetch = original; resolve(); }; });
+      return response;
+    };
+    window.fixtureRefresh = refresh();
+  })()`);
+  await until(pc, "typeof window.fixtureReleaseState === 'function'");
+  await evaluate(pc, "document.getElementById('logout').click()");
+  await until(pc, '!document.getElementById("pairing").hidden');
+  await evaluate(pc, 'window.fixtureReleaseState(); window.fixtureRefresh');
+  assert.equal(await evaluate(pc, 'document.getElementById("provider-info").textContent'), '');
+  assert.equal(await evaluate(pc, 'document.getElementById("provider-info").hidden && document.getElementById("plan-usage").hidden && !document.getElementById("pairing").hidden'), true);
   assert.equal(requests, 2); assert.deepEqual(exceptions, []);
   console.log(JSON.stringify({ kind: 'actual_browser_contact_regression', browser: version.product,
     browser_startup_ms: browserStartupMs, startup_timeout_ms: 30000, command_timeout_ms: 10000,
     independent_browser_contexts: 2, viewports: [390, 1280], closed_page_work_completed: true,
-    rejoined_shared_conversation: true, single_device_revocation: true, new_draft_preserved: true, model_text_not_executed: true,
-    model: 'synthetic', physical_devices: false, remote_vpn: 'not_run', public_deployment: false }));
+    rejoined_shared_conversation: true, single_device_revocation: true, account_cleared_on_disconnect: true, late_state_after_logout_rejected: true, new_draft_preserved: true, model_text_not_executed: true,
+    model: 'synthetic', subscription_ui_fixture: subscriptionFixture, physical_devices: false, remote_vpn: 'not_run', public_deployment: false }));
 } finally {
   release?.();
   try { await command('Browser.close'); } catch { /* child cleanup below */ }
