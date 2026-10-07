@@ -162,7 +162,7 @@ test('actual default CLI signs in, opens the shared host, restarts without login
       const available = createServer(); available.listen(0, '127.0.0.1'); await once(available, 'listening');
       const port = available.address().port; await new Promise(resolve => available.close(resolve));
       if (mode === 'wrong-model') env.mode = 'second-model';
-      const questions = mode === 'init' ? [passphrase, passphrase, 'YES'] : [passphrase];
+      const questions = mode === 'init' ? ['YES'] : [];
       const args = ['--data', mode === 'init' ? directory + '/' : directory, '--port', String(port), ...(mode === 'init' ? ['--model', 'fixture-model'] : mode === 'wrong-model' ? ['--model', 'alternative-model'] : []), ...(mode === 'init' ? ['--init'] : mode === 'logout' ? ['--logout'] : [])];
       const source = `
         import {createRequire,syncBuiltinESMExports} from 'node:module';
@@ -180,7 +180,7 @@ test('actual default CLI signs in, opens the shared host, restarts without login
           return nativeFetch('http://127.0.0.1:${upstream.address().port}/?target='+encodeURIComponent(url),options);
         };
         const {main}=await import(${JSON.stringify(new URL('../../engine/src/contact-cli.mjs', import.meta.url).href)});
-        await main(${JSON.stringify(args)});
+        await main(${JSON.stringify(args)}, {keyProvider:async()=>${JSON.stringify(passphrase)}});
         if(questions.length)throw Error('SETUP_NOT_CONSUMED'); console.log('CLI_FIXTURE_COMPLETE');
       `;
       const child = spawn(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', source], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -200,6 +200,7 @@ test('actual default CLI signs in, opens the shared host, restarts without login
       const [exit] = await once(child, 'exit'); clearTimeout(timer);
       if (mode === 'wrong-model') { assert.equal(exit, 1); assert.ok(stderr.includes('CONTACT_ROUTE_CHANGED')); continue; }
       assert.equal(exit, 0, stderr); assert.ok(stdout.includes('CLI_FIXTURE_COMPLETE'));
+      assert.ok(!stdout.includes('암호 (')); assert.ok(stdout.includes('별도 Tada 암호는 필요하지 않습니다'));
       if (mode !== 'logout') assert.ok(stdout.includes('Tada 연락 호스트가 열렸습니다'));
       assert.equal(callbackStarted, mode === 'init');
     }

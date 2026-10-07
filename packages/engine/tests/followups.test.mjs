@@ -555,8 +555,8 @@ test('actual CLI startup and reopen accept contact v4 with Telegram instead of r
     for (const initialize of [true, false]) {
       const available = createServer(); available.listen(0, '127.0.0.1'); await once(available, 'listening');
       const port = available.address().port; available.close(); await once(available, 'close');
-      const args = ['--provider', 'ollama', '--data', directory, ...(initialize ? ['--init'] : []), '--model', 'fixture', '--telegram', '--timezone', 'Asia/Seoul', '--port', String(port)];
-      const values = [passphrase, ...(initialize ? [passphrase] : []), 'YES', `33333:${'F'.repeat(24)}`];
+      const args = ['--provider', 'ollama', '--ask-passphrase', '--data', directory, ...(initialize ? ['--init'] : []), '--model', 'fixture', '--telegram', '--timezone', 'Asia/Seoul', '--port', String(port)];
+      const values = [...(initialize ? ['short', passphrase, 'mismatched confirmation'] : []), passphrase, ...(initialize ? [passphrase] : []), 'YES', `33333:${'F'.repeat(24)}`];
       const source = `
         import {createRequire,syncBuiltinESMExports} from 'node:module';
         import {EventEmitter} from 'node:events';

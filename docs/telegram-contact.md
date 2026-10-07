@@ -38,7 +38,7 @@ npm run contact -- --provider ollama --data ./tada-contact-private --init --mode
 
 `CANDIDATE_ID`는 호스트가 실제 표시한 값이다. 링크를 안다는 이유만으로 대화 접근권이나 실행권을 발급하지 않는다. 승인 후부터 해당 개인 사용자만 메시지를 맡길 수 있다. `/telegram-pair`는 새 연결 요청 링크, `/telegram-status`는 현재 연락 상태를 보여준다. 기존 `/devices`와 `/revoke DEVICE_ID`도 같은 연결에 적용된다. 접근 수명은 기존 기기와 같은 30일이며, 해제·만료 후에는 명시적으로 다시 연결한다.
 
-재시작 때는 같은 데이터·모델·자료 범위로 `--init` 없이 시작하고 암호와 토큰을 다시 입력한다. 봇 ID가 바뀌어도 기존 채팅을 새 봇으로 자동 이전하지 않는다. `--telegram` 없이 실행하면 브라우저는 계속 쓸 수 있지만 Telegram 수신·알림 전송은 하지 않는다.
+재시작 때는 같은 데이터·모델·자료 범위로 `--init` 없이 시작하고 봇 토큰을 다시 입력한다. Windows/WSL 기본 경로는 기록 암호를 묻지 않는다. 이전 수동 암호 기록만 `--ask-passphrase`와 같은 암호를 사용한다. 봇 ID가 바뀌어도 기존 채팅을 새 봇으로 자동 이전하지 않는다. `--telegram` 없이 실행하면 브라우저는 계속 쓸 수 있지만 Telegram 수신·알림 전송은 하지 않는다.
 
 ```sh
 npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --telegram
@@ -54,7 +54,7 @@ npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_
 npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --upgrade-contact --telegram
 ```
 
-기존 파일과 동일한 암호로 연 뒤, 새로운 무작위 이름의 `before-messaging-…sqlite`에 SQLite online backup을 만들고 동기화한다. 이후 하나의 트랜잭션으로 메시징 테이블·schema hash·버전을 추가한다. 실행 중인 요청이 있으면 전환하지 않는다. v1 대화와 기기 ID를 보존하고 v2에서 이전 버전으로 몰래 내려가지 않는다. 이 연락 DB v2는 기존 Rust 작업 DB의 버전과 별개다.
+기존 파일과 동일한 보호 키로 연 뒤(수동 암호 기록은 `--ask-passphrase`), 새로운 무작위 이름의 `before-messaging-…sqlite`에 SQLite online backup을 만들고 동기화한다. 이후 하나의 트랜잭션으로 메시징 테이블·schema hash·버전을 추가한다. 실행 중인 요청이 있으면 전환하지 않는다. v1 대화와 기기 ID를 보존하고 v2에서 이전 버전으로 몰래 내려가지 않는다. 이 연락 DB v2는 기존 Rust 작업 DB의 버전과 별개다.
 
 ## 실행·전송 기록의 의미
 

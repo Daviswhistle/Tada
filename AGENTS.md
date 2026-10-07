@@ -1,5 +1,9 @@
 # Repository instructions
 
+## No extra password by default — user correction, 2026-10-07
+
+The user rejects a mandatory separate Tada storage password. Windows/WSL now wraps an automatically generated storage key with Windows CurrentUser DPAPI, without changing the encrypted conversation/provider formats. Existing manual-password records remain explicitly accessible with `--ask-passphrase`; never silently migrate them, replace a missing key or fall back to plaintext. Native Linux/macOS automatic key protection remains unimplemented. This is storage protection, not provider login or OS permission expansion.
+
 ## Provider priority — user correction, 2026-10-07
 
 The user explicitly prefers using existing AI subscriptions as the default and also requires local-model support. Complete an official subscription connection on the same continuing assistant path first. API credentials and local runtimes remain selectable alternatives; never silently switch billing, accounts or data destinations. The inherited Ollama/Qwen 8B CI route is a local compatibility check, not the product's intelligence baseline. Stop expanding local-model comparisons as the main product work. Verify each provider's official integration and distribution eligibility; do not reuse another app's tokens. The first subscription implementation targets the documented Sign in with ChatGPT plan-usage flow for this open-source local application.

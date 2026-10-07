@@ -12,3 +12,6 @@ tada-contact-private/
 # Encrypted subscription profiles used by the default contact launcher.
 *.chatgpt-private/
 tada-local-private/
+
+# Automatically protected local-model storage keys.
+*.key-private/

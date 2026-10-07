@@ -10,6 +10,7 @@ import { ContactStore, contactRoute } from './contact-store.mjs';
 import { ContactService } from './contact-service.mjs';
 import { serveContact, validateContactAddress } from './contact-http.mjs';
 import { followupTimezone } from './followup-contract.mjs';
+import { contactStorageKey } from './contact-key.mjs';
 
 export const HELP = `Tada contact host — one continuing conversation across browsers and optional private messaging
 
@@ -22,6 +23,7 @@ Default: ChatGPT subscription via official Continue with ChatGPT login.
 Optional: --provider chatgpt|ollama --model MODEL
           --chatgpt-profile DIRECTORY (default: DATA.chatgpt-private)
           --login (reauthorize saved registration) --logout (stop and disconnect profile)
+          --ask-passphrase (explicit legacy/manual encryption mode)
           --telegram (explicit private Telegram contact, same conversation)
           --upgrade-contact (back up and upgrade an existing contact journal to v4)
           --timezone IANA_ZONE (display and resolve times, e.g. Asia/Seoul)
@@ -34,7 +36,9 @@ Default browser address: http://127.0.0.1:8787 on this computer only. For browse
 access from a phone outside your network, use an explicitly configured private HTTPS proxy/VPN, or your own TLS
 certificate. Non-loopback plaintext listeners are rejected. No tunnel is installed.
 
-The owner enters an encryption passphrase here (hidden; at least 16 characters).
+Windows/WSL protects the local encryption key with the signed-in Windows account.
+No extra Tada password is requested. Native Linux/macOS automatic protection is
+not yet supported. Existing password-protected records use --ask-passphrase.
 --init creates a NEW private directory; later starts unlock the same journal.
 ChatGPT sends conversation and approved source observations to OpenAI using the
 selected account plan. Initial transmission consent is required. No API billing
@@ -77,6 +81,7 @@ export function contactOptions(args) {
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
     const key = args[i];
+    if (key === '--ask-passphrase' && !options.askPassphrase) { options.askPassphrase = true; continue; }
     if (['--login', '--logout'].includes(key) && !options[key.slice(2)]) { options[key.slice(2)] = true; continue; }
     if (key === '--telegram' && !options.telegram) { options.telegram = true; continue; }
     if (key === '--upgrade-contact' && !options.upgrade) { options.upgrade = true; continue; }
@@ -122,13 +127,25 @@ async function ownerQuestion(label) {
   prompt.on('SIGINT', () => abort.abort()); prompt.on('close', () => abort.abort());
   try { return await prompt.question(label, { signal: abort.signal }); } finally { prompt.close(); }
 }
-export async function main(args = process.argv.slice(2)) {
+export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey } = {}) {
   const options = contactOptions(args);
   if (options.help) { process.stdout.write(HELP); return; }
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
   let accountStore, account, store, service, host, prompt, telegram;
-  let passphrase = await hiddenPassphrase(process.stdin, process.stdout);
-  if (options.initialize && passphrase !== await hiddenPassphrase(process.stdin, process.stdout, '같은 암호 다시 입력: ')) throw new Error('CONTACT_PASSPHRASE_MISMATCH');
+  const profile = options.provider === 'chatgpt' ? resolve(options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`) : undefined;
+  let passphrase;
+  if (options.askPassphrase) {
+    process.stdout.write('기존 암호 방식으로 기록을 엽니다. ChatGPT 비밀번호가 아닌 Tada 보관 암호이며, 입력은 화면에 표시되지 않습니다.\n');
+    for (;;) {
+      passphrase = await hiddenPassphrase(process.stdin, process.stdout, 'Tada 보관 암호 (16~1024자): ');
+      if (passphrase.length < 16 || passphrase.length > 1024) { process.stdout.write('암호는 16~1024자여야 합니다. 다시 입력해 주세요.\n'); continue; }
+      if (!options.initialize || passphrase === await hiddenPassphrase(process.stdin, process.stdout, '같은 암호 다시 입력: ')) break;
+      process.stdout.write('두 암호가 다릅니다. 처음부터 다시 입력해 주세요.\n');
+    }
+  } else {
+    passphrase = await keyProvider({ data: options.data, profile, initialize: options.initialize });
+    process.stdout.write('이 Windows 계정으로 대화와 연결 정보를 암호화해 보관합니다. 별도 Tada 암호는 필요하지 않습니다.\n');
+  }
   try {
     const { NativeSources, runReadGateway } = await import('./native-sources.mjs');
     let provider, identity;
@@ -137,7 +154,7 @@ export async function main(args = process.argv.slice(2)) {
       const { ChatGPTStore } = await import('../../providers/src/chatgpt-store.mjs');
       const { ChatGPTAccount } = await import('../../providers/src/chatgpt-account.mjs');
       const { ChatGPTSubscription } = await import('../../providers/src/chatgpt-subscription.mjs');
-      accountStore = new ChatGPTStore({ directory: options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`, passphrase });
+      accountStore = new ChatGPTStore({ directory: profile, passphrase });
       account = new ChatGPTAccount(accountStore);
       if (options.logout) {
         const result = await account.logout();
@@ -234,5 +251,19 @@ export async function main(args = process.argv.slice(2)) {
   } finally { passphrase = ''; prompt?.close(); await telegram?.close(); await host?.close(); await service?.close(); store?.close(); await account?.stop(); accountStore?.close(); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch(error => { if (error.message === 'CONTACT_ROUTE_CHANGED') process.stderr.write('이 기록의 계정·모델·자료 범위가 다릅니다. 원래 설정으로 다시 열거나 새 --data 경로를 사용하세요. 기존 기록은 전송하지 않았습니다.\n'); process.stderr.write(`${/^(?:CONTACT|CHATGPT)_[A-Z_]+$/u.test(error.message) ? error.message : 'CONTACT_STARTUP_FAILED'}\n`); process.exitCode = 1; });
+  main().catch(error => {
+    const messages = {
+      CHATGPT_CONSENT_REQUIRED: 'ChatGPT 연결을 진행하지 않았습니다. 다시 실행하면 연결할 수 있습니다.',
+      CHATGPT_PROFILE_UNLOCK_FAILED: '계정 연결 기록을 열지 못했습니다. 기존 보호 키 또는 수동 모드의 암호를 확인해 주세요. 기록을 새로 만들거나 덮어쓰지 않았습니다.',
+      CONTACT_KEY_PATH_REJECTED: '보호 키 위치의 접근 권한이나 파일 형식을 확인해야 합니다. 기존 파일을 삭제하지 말고 안전한 본인 전용 경로인지 확인해 주세요.',
+      CONTACT_STORAGE_KEY_MISSING: '기록의 보호 키를 찾지 못했습니다. 자동 보호로 만든 기록은 원래 보호 키 백업을 복원하세요. 이전에 직접 암호를 설정한 기록만 --ask-passphrase로 열 수 있습니다. 기존 기록은 변경하지 않았습니다.',
+      CONTACT_OS_PROTECTION_UNAVAILABLE: '이 환경에서는 Windows 계정의 자동 보호를 사용할 수 없습니다. Windows/WSL에서 실행해 주세요. 기존 수동 암호 기록은 --ask-passphrase로 열 수 있습니다.',
+      CONTACT_OS_PROTECTION_FAILED: 'Windows 계정으로 보호 키를 열지 못했습니다. 기록을 만든 Windows 계정으로 실행해 주세요. 새 키로 교체하지 않았습니다.',
+      CONTACT_STORAGE_KEY_UNAVAILABLE: '보호 키를 열지 못했습니다. 다른 Tada 실행이 있다면 종료 후 다시 시도해 주세요. 계속되면 보호 키 파일을 삭제하지 말고 오류를 확인해 주세요.',
+      CONTACT_STORAGE_KEY_INVALID: '보호 키 형식이 맞지 않거나 손상됐습니다. 기존 키를 덮어쓰지 않았습니다. 보호 키 백업을 확인해 주세요.',
+      CONTACT_ROUTE_CHANGED: '이 기록의 계정·모델·자료 범위가 다릅니다. 원래 설정으로 다시 열거나 새 --data 경로를 사용하세요. 기존 기록은 전송하지 않았습니다.',
+    };
+    process.stderr.write(`${error.name === 'AbortError' ? '입력을 취소했습니다. 다시 실행하면 이어서 설정할 수 있습니다.' : messages[error.message] ?? (/^(?:CONTACT|CHATGPT)_[A-Z_]+$/u.test(error.message) ? error.message : 'Tada를 시작하지 못했습니다.')}\n`);
+    process.exitCode = 1;
+  });
 }

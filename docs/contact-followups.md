@@ -41,7 +41,7 @@ npm run contact -- --help
 npm run contact -- --provider ollama --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --telegram
 ```
 
-기존 연락 기록을 사용하는 경우, **초기화 대신 명시적 전환**을 한다. 기존 암호·모델·자료 범위를 유지한다.
+기존 연락 기록을 사용하는 경우, **초기화 대신 명시적 전환**을 한다. 기존 보호 키·모델·자료 범위를 유지한다. 이전 수동 암호 기록에는 `--ask-passphrase`도 지정한다.
 
 ```sh
 npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL --timezone Asia/Seoul --upgrade-contact --telegram
@@ -51,7 +51,7 @@ npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_
 
 새 연락 실행 파일은 **연락 DB v3**를 사용한다. v1은 메시징용 v2를 거친 뒤 v3로, v2는 v3로 전환한다. 각 전환 전에 새 파일로 일관된 SQLite 백업을 만들고 동기화하며, 테이블·버전·식별값 변경을 하나의 트랜잭션으로 기록한다. 이전 저장소를 일반 시작으로 몰래 전환하지 않는다. 처리 중인 요청 또는 보내는 중인 메시지가 있으면 전환을 막는다. 이 v3는 기존 Rust 작업 DB의 v3와 별개다.
 
-암호와 봇 토큰은 실행 중 호스트 터미널에서 숨김 입력한다. 브라우저 접속은 기존과 같이 기본 loopback이며, 사설 HTTPS/VPN은 별도 운영 설정이다. Telegram은 선택적으로 켜며 기존 전용 봇 승인/연결 경로를 그대로 사용한다. 실제 실행 호스트가 켜져 있어야 알림을 보낼 수 있다.
+Windows/WSL 기본 경로는 별도 암호 없이 저장소를 연다. 봇 토큰과 명시적 수동 모드의 암호만 호스트 터미널에서 숨김 입력한다. 브라우저 접속은 기존과 같이 기본 loopback이며, 사설 HTTPS/VPN은 별도 운영 설정이다. Telegram은 선택적으로 켜며 기존 전용 봇 승인/연결 경로를 그대로 사용한다. 실제 실행 호스트가 켜져 있어야 알림을 보낼 수 있다.
 
 ## 날짜, 권한과 명확한 한도
 

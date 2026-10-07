@@ -6,7 +6,7 @@
 
 ## 기본 모델 연결: 기존 ChatGPT 구독
 
-`npm run contact -- --data ./tada-contact-private --init`는 이제 공식 **Continue with ChatGPT** 연결을 기본으로 사용한다. 호스트 터미널에서 암호와 전송 동의를 입력하고, 출력된 공식 로그인 링크를 본인이 연다. 계정에서 실제 제공하는 모델 목록 중 하나를 고르면 아래와 같은 연락 화면이 열린다. 대화·자료 도구·기록은 같은 ContactService를 사용한다. [구독 연결 안내](chatgpt-subscription.md)에 재시작, 로그아웃과 검증 범위를 기록했다.
+`npm run contact -- --data ./tada-contact-private --init`는 이제 공식 **Continue with ChatGPT** 연결을 기본으로 사용한다. Windows/WSL에서는 추가 Tada 암호 없이 호스트 터미널에서 전송 동의를 확인하고, 출력된 공식 로그인 링크를 본인이 연다. 계정에서 실제 제공하는 모델 목록 중 하나를 고르면 아래와 같은 연락 화면이 열린다. 대화·자료 도구·기록은 같은 ContactService를 사용한다. [구독 연결 안내](chatgpt-subscription.md)에 재시작, 로그아웃과 검증 범위를 기록했다.
 
 아래 Ollama 설정은 선택 가능한 로컬 경로다. 예약 시각의 자동 자료 재확인은 기존 로컬 전용 승인 때문에 Ollama에서만 제공한다. 구독 연결의 현재 대화에서 자료 확인, 맡긴 일 보관과 단순 알림은 사용할 수 있다.
 
@@ -39,9 +39,9 @@ npm ci --ignore-scripts
 npm run contact -- --provider ollama --data ./tada-contact-private --init --model YOUR_INSTALLED_LOCAL_MODEL
 ```
 
-호스트 터미널에서 16자 이상의 기록 암호를 숨김 입력한다. 암호를 두 번 확인한 뒤 일회용 연결 링크를 출력한다. 링크를 열고 기기 이름을 정하면 대화를 시작한다. `/pair`로 다른 기기용 링크를 발급하고 `/devices`, `/revoke DEVICE_ID`로 연결을 관리한다. `/quit`는 호스트를 안전하게 종료한다.
+Windows/WSL에서는 Windows 계정으로 로컬 보호 키를 자동 관리하며 별도 암호를 묻지 않는다. 초기 설정 후 일회용 연결 링크를 출력한다. 링크를 열고 기기 이름을 정하면 대화를 시작한다. `/pair`로 다른 기기용 링크를 발급하고 `/devices`, `/revoke DEVICE_ID`로 연결을 관리한다. `/quit`는 호스트를 안전하게 종료한다.
 
-재시작은 `--init` 없이 한다. 암호를 잊으면 저장된 문맥을 복호화할 수 없다. 임의로 새 암호나 새 저장소를 자동 생성하지 않는다.
+재시작은 `--init` 없이 한다. 보호 키가 없거나 현재 Windows 계정으로 열 수 없으면 새 키로 대체하지 않는다. 이전 수동 암호 기록은 `--ask-passphrase`로 열며 기존 암호가 필요하다. [자동 보호 범위와 복구 안내](chatgpt-subscription.md#별도-암호-없는-시작)를 따른다.
 
 ```sh
 npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_INSTALLED_LOCAL_MODEL
@@ -64,7 +64,7 @@ npm run contact -- --provider ollama --data ./tada-contact-private --model YOUR_
 
 프록시는 해당 origin의 Host/Origin을 보존해야 한다. Tada는 Forwarded/X-Forwarded-User 같은 헤더를 신원이나 권한으로 신뢰하지 않는다. 직접 TLS를 쓰는 경우 `--bind ADDRESS --origin https://HOST:PORT --port PORT --tls-cert FILE --tls-key FILE`을 명시한다. TLS키·암호·기기 토큰을 저장소에 올리지 않는다. 원격 운영 전 실제 모바일 브라우저·프록시·재연결·폐기 동작을 확인해야 한다.
 
-호스트가 자거나 꺼지면 접속과 실행도 멈춘다. 집 PC나 개인 서버 중 무엇을 계속 켜 둘지는 별도 운영 선택이다. 세션 암호를 사람이 입력하는 현재 호스트는 무인 부팅 서비스가 아니다. **항상 연락 가능함을 완성하려면 항상 켜진 호스팅·안전한 자동 기동·오프라인 접수 경로가 남아 있다.**
+호스트가 자거나 꺼지면 접속과 실행도 멈춘다. 집 PC나 개인 서버 중 무엇을 계속 켜 둘지는 별도 운영 선택이다. Windows/WSL의 저장소 암호 입력은 없어졌지만, 현재 호스트가 설치된 무인 부팅 서비스인 것은 아니다. **항상 연락 가능함을 완성하려면 항상 켜진 호스팅·안전한 자동 기동·오프라인 접수 경로가 남아 있다.**
 
 ## 개인정보와 실행 경계
 
