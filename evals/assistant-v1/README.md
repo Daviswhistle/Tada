@@ -53,3 +53,13 @@ node --experimental-strip-types evals/assistant-v1/contact-review-model-smoke.mj
 ```
 
 Select and record the actual runtime/model digest. These checks retain their existing assertions and do not stand in for the 16 product scenarios.
+
+## First scoped product probes
+
+`contact-acceptance-candidate.mjs` runs two fixed variants each of A10, A15 and A16 through the actual contact service with real local inference and synthetic files. It receives an absolute checkout path, selected model, explicit loopback endpoint and output report path. For example:
+
+```sh
+TADA_EVAL_SHA="$(git rev-parse HEAD)" node --experimental-strip-types evals/assistant-v1/contact-acceptance-candidate.mjs "$PWD" qwen3:8b http://127.0.0.1:11438 /tmp/tada-acceptance.json
+```
+
+The evaluator sets up ordinary prior dialogue and fixture files; it never sends scenario IDs, grading rules or the oracle to the product. A failed setup turn is retained, and the corresponding task is not falsely marked executed. Reports are written after every variant. `needs_semantic_review` is not a pass: apply every case's completion, failure and question criteria independently. Exit status is not a semantic verdict. The [2026-10-07 record](../../docs/qualification-2026-10-07.md) retains the failed 8B result and stopped 14B comparison. These routes do not decide the product's default provider; the user selected official existing-subscription integration as the priority.

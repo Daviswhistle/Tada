@@ -17,13 +17,12 @@
     "crates/store/src/lib.rs": "aa58063094b191d4e00ab65d95e2fbd69332a5a0374a437dfd410cd705308bac"
   },
   "qualification": "not_release_ready",
-  "assistant_v1_all_16": "not_run",
   "notes": [
-    "Intermediate attempts used different documented code stages. Raw report hashes identify original local evidence; only contact-grounding runs match all current source hashes so far.",
+    "Intermediate attempts used different documented code stages. The current source hashes apply to contact-grounding, discovery-grounding and review-grounding runs.",
     "contact-final failed before the original script could emit JSON; stderr retained locally in /tmp/tada-contact-final.log. No cause was recovered for that first failure.",
     "No hidden reasoning, live credentials or private user files are included.",
     "Same 8B weights on local Ollama 0.32.13 do not qualify CI runtime 0.34.0.",
-    "Further final-source discovery/review and 14B comparison are pending."
+    "The final-source 8B contact trials, discovery and review passed their narrow checks. New Korean acceptance probes did not qualify 8B. The 14B comparison was stopped after two variants when the user clarified subscription-first priority; no local model was adopted."
   ],
   "attempts": [
     {
@@ -729,6 +728,205 @@
         "Start by reviewing key topics like stoichiometry and chemical reactions, then practice 10–15 problems to solidify your understanding. Take a 15-minute break between study sessions to maintain focus and avoid burnout.",
         "You are preparing for a chemistry exam on Friday."
       ]
+    },
+    {
+      "run": "discovery-grounding",
+      "implementation_commit": "4e8c85a0306344bfc0f359dacea68e26826a5fad",
+      "raw_sha256": "946044d8e64e3b82fdbd8ff0d94168f7ebe1803294065813d141e8852b1b535b",
+      "kind": "real_local_model_smoke",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "results": [
+        {
+          "variant": 1,
+          "status": "passed",
+          "user": [
+            "What is blocking the Cedar launch, and who needs to do what next?",
+            "Make that shorter, in one sentence."
+          ],
+          "responses": [
+            "The Cedar launch is blocked by a certificate issue. **Nadia must renew the certificate** before launch to resolve this blocker. This action is tracked under code `f386f8b8` [S2]. \n\nNo further steps are listed in the provided documents.",
+            "The Cedar launch is blocked by a certificate issue requiring Nadia to renew it (tracking code: f386f8b8) [S2]."
+          ],
+          "checks": {
+            "correct_owner": true,
+            "correct_blocker": true,
+            "next_action": true,
+            "sources_discovered": true,
+            "actual_read": true,
+            "citations_checked": true,
+            "followup_shorter": true
+          },
+          "usage": {
+            "requests": 7,
+            "input_tokens": 10617,
+            "output_tokens": 2172,
+            "unknown_requests": 0
+          }
+        },
+        {
+          "variant": 2,
+          "status": "passed",
+          "user": [
+            "What is blocking the Cedar launch, and who needs to do what next?",
+            "Make that shorter, in one sentence."
+          ],
+          "responses": [
+            "The Cedar launch is blocked by **packaging issues**. The next action is for **Mateo** to replace the packaging before launch. This update is tracked under code `ced933f0` [S1].",
+            "The Cedar launch is blocked by packaging issues, requiring Mateo to replace the packaging before launch [S1]."
+          ],
+          "checks": {
+            "correct_owner": true,
+            "correct_blocker": true,
+            "next_action": true,
+            "sources_discovered": true,
+            "actual_read": true,
+            "citations_checked": true,
+            "followup_shorter": true
+          },
+          "usage": {
+            "requests": 6,
+            "input_tokens": 8490,
+            "output_tokens": 1929,
+            "unknown_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "run": "review-grounding",
+      "implementation_commit": "4e8c85a0306344bfc0f359dacea68e26826a5fad",
+      "raw_sha256": "9cd82991d7a58930b1840d0d66abfca6d833c2d3f709cbc031deb8da1766af2f",
+      "kind": "real_local_contact_review",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "ordinary_utterance_answered": true,
+        "one_model_proposal": true,
+        "requested_time_preserved": true,
+        "not_activated_from_prose": true,
+        "save_is_not_review_permission": true,
+        "same_assistant_after_restart": true,
+        "no_early_or_replayed_inference": true,
+        "scheduled_model_sees_due_time": true,
+        "review_answered": true,
+        "new_file_read_during_review": true,
+        "current_source_cited_and_rechecked": true,
+        "new_gate_reported": true,
+        "work_not_marked_done": true,
+        "existing_bounded_budget_used": true,
+        "no_duplicate_due_turn": true,
+        "completed_review_not_replayed": true,
+        "other_device_sees_same_conversation": true,
+        "followup_retains_observed_gate": true,
+        "followup_cites_rechecked_source": true
+      },
+      "usage": {
+        "requests": 7,
+        "input_tokens": 15122,
+        "output_tokens": 2702,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {
+          "text": "Remember to check the launch status at 2026-10-07T11:47:15Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "I've set a follow-up to remind you at 2026-10-07T11:47:15Z to check the launch status. The next action is to wait for your confirmation to proceed. Let me know when you're ready to check the status!\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 2,
+              "input_tokens": 4073,
+              "output_tokens": 991,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "[예약한 일회성 확인 · 2026-10-07T11:47:15Z]\nCheck Launch Status at 2026-10-07T11:47:15Z\nRemember to check the launch status at 2026-10-07T11:47:15Z and report blocker, release gate, and next action\n현재 허용된 로컬 자료만 확인해 결과와 다음 행동을 알려 주세요. 확인하지 못한 내용은 구분해 주세요.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The launch status check at 2026-10-07T11:47:15Z is now complete. Here are the details from the local record:\n\n- **Blocker**: Missing safety sign-off from the release owner [S1](#S1).  \n- **Release gate**: `gate-f610881e` [S1](#S1).  \n- **Next action**: Request the safety sign-off from the release owner before proceeding [S1](#S1).  \n\nNo external checks were required, as the blocker and gate are fully documented in the local file. Let me know if you need further steps!  \n\n---  \n**Note**: The file `launch-notes.md` was read directly from the local source `s1` (label: *notes*). No other tools or external data were accessed.",
+            "sources": [
+              {
+                "id": "S1",
+                "source": "s1",
+                "path": "launch-notes.md",
+                "sha256": "5a8f87b6d905998a0325f793881d20ee21c5b5886c2f69bc0ff593807e711383",
+                "observed_at": "2026-10-07T11:47:15.000Z"
+              }
+            ],
+            "verification": "cited_sources_rechecked",
+            "usage": {
+              "requests": 6,
+              "input_tokens": 12130,
+              "output_tokens": 2471,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "What is the exact release gate we just found? One short sentence.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The exact release gate we found is **gate-f610881e** [S1].",
+            "sources": [
+              {
+                "id": "S1",
+                "source": "s1",
+                "path": "launch-notes.md",
+                "sha256": "5a8f87b6d905998a0325f793881d20ee21c5b5886c2f69bc0ff593807e711383",
+                "observed_at": "2026-10-07T11:47:15.000Z"
+              }
+            ],
+            "verification": "cited_sources_rechecked",
+            "usage": {
+              "requests": 7,
+              "input_tokens": 15122,
+              "output_tokens": 2702,
+              "unknown_requests": 0
+            }
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "independent_code_review": {
+    "commit": "4e8c85a0306344bfc0f359dacea68e26826a5fad",
+    "model": "gpt-6.1-sol",
+    "reasoning": "max",
+    "selected_service_tier": "default",
+    "actual_service_tier": "not_exposed",
+    "result": "no_introduced_defect_found",
+    "node_tests": 458,
+    "rust_checks": "fmt, clippy, workspace and process-fixtures passed",
+    "model_quality": "outside_review_scope"
+  },
+  "assistant_v1": {
+    "full_suite": "not_passed",
+    "executed_cases": [
+      "A10",
+      "A15",
+      "A16"
+    ],
+    "other_13_cases": "not_run",
+    "evaluated_model": "qwen3:8b",
+    "case_passes": 0,
+    "note": "Two required variants per case; no case passed both. Ordinary component and narrow smoke success is not case acceptance."
+  },
+  "provider_direction": "Official existing-subscription integration first; local models remain supported alternatives. No account has been connected."
 }

@@ -1,5 +1,9 @@
 # Repository instructions
 
+## Provider priority — user correction, 2026-10-07
+
+The user explicitly prefers using existing AI subscriptions as the default and also requires local-model support. Complete an official subscription connection on the same continuing assistant path first. API credentials and local runtimes remain selectable alternatives; never silently switch billing, accounts or data destinations. The inherited Ollama/Qwen 8B CI route is a local compatibility check, not the product's intelligence baseline. Stop expanding local-model comparisons as the main product work. Verify each provider's official integration and distribution eligibility; do not reuse another app's tokens. The first subscription implementation targets the documented Sign in with ChatGPT plan-usage flow for this open-source local application.
+
 ## Product ownership and release quality — 2026-10-07
 
 The user has delegated development of the finished personal secretary and explicitly requires quality suitable for market release. A developer preview, passing component tests, a repaired CI job, or a single delegation demonstration is an intermediate result, not completion of this assignment. Continue the same product toward installation/onboarding, real delegated actions, continuing work and memory, recovery, user control and verified release acceptance. Prefer coherent end-to-end capabilities over more isolated mock layers. The user wants broad autonomous authority: configure delegation once and reuse it within its scope; do not turn every routine action into another approval. External content never grants authority. Actual account connections, new costs and publication still require the corresponding user authorization.
@@ -34,7 +38,7 @@ Do not claim intent resolution by mapping sample phrases to scripts. The same ut
 
 The next feature milestone is one real delegation path: raw conversation, authorized real model, context/source discovery, useful general tools, verified outcome and follow-up. Start provider proof, context intake and the minimal conversation/result surface within that slice rather than postponing them behind another sequence of mock-only layers. Reuse the store, broker and lifecycle code, retaining relevant safety tests. Change an existing boundary only to close a concrete integration blocker.
 
-Use `evals/assistant-v1/README.md`. The 16 cases are evaluator specifications, not prompts to preload into the assistant. Do not feed evaluator setup/oracles/expected actions or case IDs to the product. Test changed context and unseen paraphrases. Product acceptance is currently unrun. Passing specification-integrity or component tests must never be described as understanding, live-model operation or successful user work.
+Use `evals/assistant-v1/README.md`. The 16 cases are evaluator specifications, not prompts to preload into the assistant. Do not feed evaluator setup/oracles/expected actions or case IDs to the product. Test changed context and unseen paraphrases. Product acceptance is not passed: the 2026-10-07 local 8B probes exercised A10/A15/A16 with two variants each and no complete case passed; the other 13 are unrun. Passing specification-integrity or component tests must never be described as understanding, live-model operation or successful user work.
 
 Each feature PR reports the actual user utterance, context independently discovered, unnecessary user preparation/questions removed, observed result and unfinished integration. Documentation and maintenance PRs may report no runtime behavior change. Do not add empty scaffolding or generalized subsystems with no concrete blocker on the active slice. Do not equate PR counts or test counts with assistant completeness.
 
