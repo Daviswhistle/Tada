@@ -256,7 +256,7 @@ export class ContactStore {
     return this.#tx(() => Number(this.#db.prepare("UPDATE turns SET state='cancelled',error='USER_CANCELLED' WHERE seq=? AND state IN('queued','running')").run(seq).changes) > 0);
   }
   #turn(row) {
-    return { seq: row.seq, device: row.device, state: row.state, created: row.created,
+    return { seq: row.seq, request_id: row.request_id, device: row.device, state: row.state, created: row.created,
       text: this.#open(`turn:${row.request_id}`, row.payload).text,
       answer: row.answer ? this.#open(`answer:${row.request_id}`, row.answer) : null, error: row.error };
   }

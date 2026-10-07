@@ -90,7 +90,7 @@ export class ChatGPTAccount {
           // Let the success response flush before closing the listener.
           res.once('finish', () => settle(null, this.profile));
         } catch (error) {
-          send(400, 'Tada 로그인에 실패했습니다. 터미널에서 다시 시도해 주세요.');
+          send(400, 'Tada 로그인에 실패했습니다. Tada로 돌아가 다시 연결해 주세요.');
           res.once('finish', () => settle(Error(/^CHATGPT_[A-Z_]+$/u.test(error?.message) ? error.message : 'CHATGPT_LOGIN_FAILED')));
         }
       });

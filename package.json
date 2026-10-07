@@ -8,6 +8,7 @@
     "node": ">=22.16.0 <25"
   },
   "scripts": {
+    "start": "node --experimental-strip-types packages/engine/src/start-app.mjs",
     "contact": "node --experimental-strip-types packages/engine/src/contact-cli.mjs",
     "assistant": "node --experimental-strip-types packages/engine/src/assistant-cli.mjs",
     "generate": "node scripts/generate-contracts.mjs && node scripts/generate-worker-contracts.mjs && node scripts/generate-model-contracts.mjs",

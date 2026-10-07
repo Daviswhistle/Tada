@@ -1,5 +1,9 @@
 # Repository instructions
 
+## Human experience first — user correction, 2026-10-08
+
+The user rejected the developer-operated experience and asked to rebuild it for people. Judge each change by the effort and uncertainty it removes for the person using it. The normal entry is now `npm start`: a local browser setup leads into the existing continuing conversation. Keep account connection, model selection, retry and ordinary interaction on screen; retain `contact` as the advanced CLI. Do not present warm copy or a redesigned screen as completed assistant capability or release qualification. Preserve records, show meaningful recovery, keep management details secondary, and never make the user interpret an internal error code or prepare technical inputs the app can derive.
+
 ## No extra password by default — user correction, 2026-10-07
 
 The user rejects a mandatory separate Tada storage password. Windows/WSL now wraps an automatically generated storage key with Windows CurrentUser DPAPI, without changing the encrypted conversation/provider formats. Existing manual-password records remain explicitly accessible with `--ask-passphrase`; never silently migrate them, replace a missing key or fall back to plaintext. Native Linux/macOS automatic key protection remains unimplemented. This is storage protection, not provider login or OS permission expansion.

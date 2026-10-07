@@ -15,3 +15,5 @@ tada-local-private/
 
 # Automatically protected local-model storage keys.
 *.key-private/
+
+*.app-private/

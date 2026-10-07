@@ -6,6 +6,14 @@ Tada is being built as a personal AI assistant you can delegate to in ordinary l
 
 “Look into that company”, “This isn't working”, and “Make the earlier one simpler” are product acceptance requests, not shortcuts for prewritten workflows. The same request can mean different things in different conversations or screens. File, terminal, browser and app tools are means to do the work, not the product definition.
 
+## Open Tada
+
+On the currently supported Windows/WSL development host, run `npm start`. Tada opens a browser window, connects an existing ChatGPT subscription through its official login, and continues into the same saved conversation. No extra Tada password, terminal consent input, model number or device name is required. Connection failures can be retried in the window. Model choice is available on screen and saved for later starts.
+
+The conversation now puts your message and the assistant's answer first. Account details and notifications are in Settings; saved work is expandable. Suggestions fill a draft without sending it, interrupted requests can be brought back for editing, and uncertain message admission preserves the draft and checks the same request before sending again.
+
+This remains a development build requiring the repository's Node dependencies. It is not a signed installer or an always-on service. The new browser entry reuses the existing contact runtime, encrypted records and limits. It does not add general computer actions or qualify live subscription use. The advanced `npm run contact` entry remains available; `npm start -- --provider ollama --model YOUR_INSTALLED_LOCAL_MODEL` uses an explicitly selected installed local model. See [the experience and verification scope](docs/experience-2026-10-08.md).
+
 ## Continuing contact build
 
 The current development tip includes a [browser contact host](docs/contact-assistant.md) with an encrypted conversation shared across paired devices, optional [private Telegram contact](docs/telegram-contact.md), [saved work](docs/contact-followups.md) and [one-time local reviews](docs/contact-reviews.md). Start it with `npm run contact -- --help`. The default contact route now uses [official ChatGPT subscription sign-in](docs/chatgpt-subscription.md); `--provider ollama` retains local-model support. Setup still requires development runtimes. Windows/WSL now uses the signed-in Windows account to protect storage without a separate Tada password; existing manual-password records use `--ask-passphrase`. Native Linux/macOS automatic protection is not yet supported. The subscription implementation has local protocol/integration tests; live account qualification and installed/always-on delivery remain incomplete.

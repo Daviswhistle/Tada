@@ -127,10 +127,11 @@ async function ownerQuestion(label) {
   prompt.on('SIGINT', () => abort.abort()); prompt.on('close', () => abort.abort());
   try { return await prompt.question(label, { signal: abort.signal }); } finally { prompt.close(); }
 }
-export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey } = {}) {
+export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey, ui } = {}) {
   const options = contactOptions(args);
   if (options.help) { process.stdout.write(HELP); return; }
-  if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
+  if (!ui && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
+  if (ui && (options.askPassphrase || options.telegram || options.logout)) throw Error('CONTACT_APP_ADVANCED_MODE');
   let accountStore, account, store, service, host, prompt, telegram;
   const profile = options.provider === 'chatgpt' ? resolve(options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`) : undefined;
   let passphrase;
@@ -147,9 +148,11 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     process.stdout.write('이 Windows 계정으로 대화와 연결 정보를 암호화해 보관합니다. 별도 Tada 암호는 필요하지 않습니다.\n');
   }
   try {
+    ui?.signal.throwIfAborted();
+    const requestSignal = () => ui ? AbortSignal.any([ui.signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000);
     const { NativeSources, runReadGateway } = await import('./native-sources.mjs');
     let provider, identity;
-    const signal = AbortSignal.timeout(20000);
+    const signal = requestSignal();
     if (options.provider === 'chatgpt') {
       const { ChatGPTStore } = await import('../../providers/src/chatgpt-store.mjs');
       const { ChatGPTAccount } = await import('../../providers/src/chatgpt-account.mjs');
@@ -161,24 +164,25 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
         process.stdout.write(result.revoked ? 'ChatGPT 연결을 해제했습니다. 대화 기록은 보존됩니다.\n' : '이 호스트의 인증 정보를 지웠습니다. 서버 연결 해제는 확인하지 못했습니다. ChatGPT 설정에서 Tada 연결을 해제해 주세요.\n');
         return;
       }
-      if (!account.profile.connected || options.login) {
-        const accepted = await ownerQuestion('Continue with ChatGPT — Tada 대화와 허용한 자료의 조회 내용이 선택한 ChatGPT 계정으로 전송됩니다. 해당 계정의 구독 사용량과 본인이 허용한 크레딧 설정을 따르며 API 결제로 전환하지 않습니다. 크레딧 사용을 원하지 않으면 ChatGPT 동의 화면과 사용량 설정에서 허용하지 마세요. 연결하려면 YES: ');
+      if (!account.profile.connected || options.login || ui?.reauthorize) {
+        const accepted = ui ? (await ui.consent() ? 'YES' : '') : await ownerQuestion('Continue with ChatGPT — Tada 대화와 허용한 자료의 조회 내용이 선택한 ChatGPT 계정으로 전송됩니다. 해당 계정의 구독 사용량과 본인이 허용한 크레딧 설정을 따르며 API 결제로 전환하지 않습니다. 크레딧 사용을 원하지 않으면 ChatGPT 동의 화면과 사용량 설정에서 허용하지 마세요. 연결하려면 YES: ');
         if (accepted !== 'YES') throw Error('CHATGPT_CONSENT_REQUIRED');
-        const attempt = await account.beginLogin();
-        process.stdout.write(`본인 브라우저에서 로그인하세요 (5분 이내):\n${attempt.url}\n`);
+        const attempt = await account.beginLogin({ signal: ui?.signal });
+        if (ui) ui.login(attempt.url);
+        else process.stdout.write(`본인 브라우저에서 로그인하세요 (5분 이내):\n${attempt.url}\n`);
         await attempt.done;
       }
-      const catalog = await account.models(AbortSignal.timeout(20000));
+      const catalog = await account.models(requestSignal());
       const saved = accountStore.read();
       let model = options.model ?? saved.model;
       if (!model) {
         for (const [i, item] of catalog.entries()) process.stdout.write(`${i + 1}. ${terminalText(item.display_name)}\n`);
-        const choice = await ownerQuestion('사용할 모델 번호 (Enter: 1): ');
+        const choice = ui ? await ui.selectModel(catalog.map(item => ({ name: terminalText(item.display_name) }))) : await ownerQuestion('사용할 모델 번호 (Enter: 1): ');
         if (!/^(?:[1-9][0-9]*)?$/u.test(choice)) throw Error('CHATGPT_MODEL_UNAVAILABLE');
         model = catalog[Number(choice || 1) - 1]?.slug;
       }
       provider = new ChatGPTSubscription({ account, model });
-      identity = await provider.inspect(AbortSignal.timeout(20000));
+      identity = await provider.inspect(requestSignal());
       process.stdout.write(`ChatGPT · ${terminalText(provider.identity.account_label)} · ${terminalText(provider.identity.display_name)}\n`);
     } else {
       const { OllamaLocal } = await import('../../providers/src/ollama-local.mjs');
@@ -188,16 +192,18 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     const scopes = [];
     let sources = { definitions: [], validate: () => false, execute: async () => { throw new Error('CONTACT_NO_SOURCE'); }, verify: async () => false };
     if (options.roots.length) {
-      sources = new NativeSources(options.broker, options.roots); await sources.initialize(AbortSignal.timeout(20000));
-      for (const root of options.roots) scopes.push({ path: root, identity: (await runReadGateway(options.broker, root, '-', 'scope', '.', 0, AbortSignal.timeout(20000))).identity });
+      sources = new NativeSources(options.broker, options.roots); await sources.initialize(requestSignal());
+      for (const root of options.roots) scopes.push({ path: root, identity: (await runReadGateway(options.broker, root, '-', 'scope', '.', 0, requestSignal())).identity });
     }
+    ui?.signal.throwIfAborted();
     const route = contactRoute({ version: 1, provider: identity.provider, model: identity.model,
       digest: identity.model_digest, endpoint: options.endpoint, scopes });
     store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize });
+    if (options.initialize) ui?.initialized?.();
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone });
-    if (options.upgrade) {
+    if (options.upgrade || ui?.upgrade === true) {
       const messagingBackup = await store.upgradeMessaging();
       const followupBackup = await store.upgradeFollowups();
       const reviewBackup = await store.upgradeReviews();
@@ -220,6 +226,14 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     }
     const tls = options['tls-cert'] ? { cert: readFileSync(options['tls-cert']), key: readFileSync(options['tls-key']) } : undefined;
     host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, messaging: () => ({ enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
+    if (ui) {
+      service.on('fault', () => ui.fail());
+      ui.signal.throwIfAborted();
+      ui.ready(() => host.pair({ replaceApp: true }) + '&auto=1');
+      service.start();
+      await ui.wait();
+      return;
+    }
     process.stdout.write(`Tada 연락 호스트가 열렸습니다. 연결 링크는 본인 기기에서만 사용하세요.\n${host.pair()}\n`);
     process.stdout.write('/pair · /devices · /revoke DEVICE_ID · /quit\n');
     if (telegram) {

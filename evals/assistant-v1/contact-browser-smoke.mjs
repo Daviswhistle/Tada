@@ -2,13 +2,14 @@ import { drainBrowserStderr } from './browser-diagnostics.mjs';
 // Browser UI regression only, with synthetic replies. No product tool or hidden
 // runtime fixture mode is added. CDP is connected to this owned test child by pipe.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContactStore, contactRoute } from '../../packages/engine/src/contact-store.mjs';
 import { ContactService } from '../../packages/engine/src/contact-service.mjs';
+import { serveSetup } from '../../packages/engine/src/app-setup.mjs';
 import { serveContact } from '../../packages/engine/src/contact-http.mjs';
 
 const executable = ['/usr/bin/google-chrome', '/usr/bin/chromium'].find(path => existsSync(path));
@@ -22,8 +23,23 @@ const service = new ContactService(store, { ...(subscriptionFixture ? { identity
   if (++requests === 1) await new Promise(resolve => { release = resolve; });
   return { message: { role: 'assistant', content: requests === 1 ? '첫 번째 기기의 답변입니다.' : '같은 대화를 이어서 답했어요. <script>window.injection=true</script>' }, input_tokens: 5, output_tokens: 8 };
 } }, sources);
-const host = await serveContact({ store, service, origin: 'http://127.0.0.1:9187', port: 9187 });
-const chrome = spawn(executable, ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-pipe', `--user-data-dir=${join(root, 'browser')}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
+const tlsFixture = process.argv.includes('--tls-fixture');
+const origin = `${tlsFixture ? 'https' : 'http'}://127.0.0.1:9187`;
+let tls;
+if (tlsFixture) {
+  // Disposable certificate in the owned test directory; no system trust changes.
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(root, 'key.pem'), '-out', join(root, 'cert.pem'), '-days', '1', '-subj', '/CN=localhost'], { stdio: 'ignore' });
+  tls = { key: readFileSync(join(root, 'key.pem')), cert: readFileSync(join(root, 'cert.pem')) };
+}
+const host = await serveContact({ store, service, origin, port: 9187, tls });
+let finishSetupLogin;
+const setup = await serveSetup({ run: async ui => {
+  await ui.consent(); ui.login('https://auth.openai.com/fixture-not-opened');
+  await new Promise(resolve => { finishSetupLogin = resolve; ui.signal.addEventListener('abort', resolve, { once: true }); });
+  await ui.selectModel([{ name: 'Fixture Model' }]);
+  ui.ready(host.pair() + '&auto=1'); await ui.wait();
+} });
+const chrome = spawn(executable, ['--headless=new', ...(tlsFixture ? ['--ignore-certificate-errors'] : []), '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-pipe', `--user-data-dir=${join(root, 'browser')}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'] });
 const browserDiagnostics = drainBrowserStderr(chrome);
 let sequence = 0, buffered = Buffer.alloc(0); const pending = new Map(), exceptions = [];
 chrome.stdio[4].on('data', chunk => {
@@ -47,6 +63,7 @@ async function page(context, width) {
   const target = await command('Target.createTarget', { url: 'about:blank', browserContextId: context });
   const { sessionId } = await command('Target.attachToTarget', { targetId: target.targetId, flatten: true });
   await command('Runtime.enable', {}, sessionId);
+  await command('Page.enable', {}, sessionId);
   await command('Emulation.setDeviceMetricsOverride', { width, height: 844, mobile: width < 600, deviceScaleFactor: 1 }, sessionId);
   return { target: target.targetId, sessionId };
 }
@@ -70,6 +87,10 @@ async function until(page, expression) {
   throw Error(`BROWSER_CHECK_TIMEOUT:${expression}; ${JSON.stringify({ state, exceptions, ...browserDiagnostics() })}`);
 }
 async function open(page, url) {
+  // A new pair fragment on the same URL is otherwise only a same-document
+  // navigation and would not exercise startup again.
+  await command('Page.navigate', { url: 'about:blank' }, page.sessionId);
+  await until(page, "location.href === 'about:blank'");
   const result = await command('Page.navigate', { url }, page.sessionId);
   assert.equal(result.errorText, undefined);
   // A parsed form can exist before its deferred app script has installed the
@@ -95,7 +116,48 @@ try {
   const firstContext = (await command('Target.createBrowserContext')).browserContextId;
   const secondContext = (await command('Target.createBrowserContext')).browserContextId;
   let phone = await page(firstContext, 390); const pc = await page(secondContext, 1280);
-  await pair(phone, '휴대폰'); await pair(pc, 'PC');
+  await command('Page.navigate', { url: setup.url }, pc.sessionId);
+  await until(pc, '!document.getElementById("consent")?.hidden');
+  assert.equal(await evaluate(pc, 'location.hash'), '');
+  const setupShot = await command('Page.captureScreenshot', { format: 'png' }, pc.sessionId);
+  writeFileSync('/tmp/tada-experience-setup.png', Buffer.from(setupShot.data, 'base64'));
+  await evaluate(pc, 'document.getElementById("connect").click()');
+  await until(pc, '!document.getElementById("login").hidden');
+  finishSetupLogin();
+  await until(pc, '!document.getElementById("model").hidden');
+  await evaluate(pc, 'document.getElementById("model-next").click()');
+  await until(pc, 'document.getElementById("composer")?.hidden===false');
+  const deviceCount = store.devices().length;
+  await open(pc, host.pair() + '&auto=1');
+  await until(pc, '!document.getElementById("composer").hidden');
+  assert.equal(store.devices().length, deviceCount, 'reopening must reuse the current device');
+  await pair(phone, '휴대폰');
+  const filler = [];
+  while (store.devices().filter(device => !device.revoked).length < 8) filler.push(store.addDevice('Owned capacity fixture').id);
+  const fullDeviceCount = store.devices().length;
+  const retryScript = await command('Page.addScriptToEvaluateOnNewDocument', { source: `
+    const originalFetch = window.fetch; let lost = false; window.fixturePairRequests = 0;
+    window.fetch = (...args) => {
+      if (args[0] === '/api/state' && !lost) { lost = true; return Promise.reject(new TypeError('Failed to fetch')); }
+      if (args[0] === '/api/pair') window.fixturePairRequests++;
+      return originalFetch(...args);
+    };
+  ` }, pc.sessionId);
+  await open(pc, host.pair() + '&auto=1');
+  await until(pc, '!document.getElementById("composer").hidden');
+  assert.equal(await evaluate(pc, 'window.fixturePairRequests'), 0);
+  assert.equal(store.devices().length, fullDeviceCount, 'a lost state response must not replace the valid device');
+  await command('Page.removeScriptToEvaluateOnNewDocument', { identifier: retryScript.identifier }, pc.sessionId);
+  for (const id of filler) service.revoke(id);
+  for (const [view, label] of [[pc, 'desktop'], [phone, 'mobile']]) {
+    assert.ok(await evaluate(view, 'document.documentElement.scrollWidth <= innerWidth'));
+    const shot = await command('Page.captureScreenshot', { format: 'png' }, view.sessionId);
+    writeFileSync('/tmp/tada-experience-' + label + '.png', Buffer.from(shot.data, 'base64'));
+  }
+  await evaluate(pc, 'document.getElementById("suggest-plan").click()');
+  assert.ok((await evaluate(pc, 'document.getElementById("message").value')).includes('어디서부터'));
+  assert.equal(requests, 0, 'a suggestion drafts but never sends a message');
+  await evaluate(pc, 'document.getElementById("message").value=""');
   if (subscriptionFixture) {
     for (const view of [phone, pc]) {
       await until(view, 'document.getElementById("provider-info").textContent.includes("ChatGPT 구독")');
@@ -128,7 +190,7 @@ try {
   await until(pc, 'document.querySelectorAll(".answer").length===1');
   await send(pc, '아까 이야기한 것만 짧게 말해줘.');
   await until(pc, 'document.querySelectorAll(".answer").length===2');
-  phone = await page(firstContext, 390); await open(phone, 'http://127.0.0.1:9187');
+  phone = await page(firstContext, 390); await open(phone, origin);
   await until(phone, 'document.querySelectorAll(".answer").length===2');
   assert.equal(await evaluate(phone, '!!window.injection'), false);
   assert.ok(await evaluate(phone, 'document.documentElement.scrollWidth <= innerWidth'));
@@ -160,10 +222,11 @@ try {
     browser_startup_ms: browserStartupMs, startup_timeout_ms: 30000, command_timeout_ms: 10000,
     independent_browser_contexts: 2, viewports: [390, 1280], closed_page_work_completed: true,
     rejoined_shared_conversation: true, single_device_revocation: true, account_cleared_on_disconnect: true, late_state_after_logout_rejected: true, new_draft_preserved: true, model_text_not_executed: true,
+    browser_setup_to_conversation: true, https_handoff_fixture: tlsFixture, transient_state_failure_preserves_device_at_capacity: true, saved_device_reused: true, suggestions_do_not_send: true,
     model: 'synthetic', subscription_ui_fixture: subscriptionFixture, physical_devices: false, remote_vpn: 'not_run', public_deployment: false }));
 } finally {
   release?.();
   try { await command('Browser.close'); } catch { /* child cleanup below */ }
   if (chrome.exitCode === null && chrome.signalCode === null) { chrome.kill('SIGKILL'); await once(chrome, 'exit'); }
-  await host.close(); await service.close(); store.close(); rmSync(root, { recursive: true, force: true });
+  await setup.close(); await host.close(); await service.close(); store.close(); rmSync(root, { recursive: true, force: true });
 }

@@ -44,7 +44,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
   const cookieName = url.protocol === 'https:' ? '__Host-tada' : 'tada_local';
   const pairing = new Map();
   const streams = new Set();
-  let pairWindow = Date.now(), pairAttempts = 0;
+  let pairWindow = Date.now(), pairAttempts = 0, appPair;
   const tokenOf = req => {
     const items = (req.headers.cookie ?? '').split(';').map(s => s.trim()).filter(s => s.startsWith(`${cookieName}=`));
     return items.length === 1 ? items[0].slice(cookieName.length + 1) : '';
@@ -59,8 +59,13 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
     try {
       // Do not infer an origin or principal from attacker-controlled Forwarded,
       // X-Forwarded-Host/User or proxy identity headers.
+      // Serve the public entry document across ports/schemes (including HTTPS).
+      // No private data is in it; API requests still require the exact origin.
+      const entryNavigation = req.method === 'GET' && req.url === '/'
+        && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document'
+        && ['same-site', 'cross-site'].includes(req.headers['sec-fetch-site']);
       if (req.headers.host !== url.host || (req.headers.origin && req.headers.origin !== origin)
-          || (req.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(req.headers['sec-fetch-site']))) {
+          || (req.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(req.headers['sec-fetch-site']) && !entryNavigation)) {
         return send(res, 403, { error: 'CONTACT_ORIGIN_REJECTED' });
       }
       const target = new URL(req.url, origin);
@@ -160,11 +165,14 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
   } catch (error) { clearInterval(heartbeat); service.off('change', changed); throw error; }
   return {
     address: server.address(),
-    pair() {
+    pair({ replaceApp = false } = {}) {
+      if (replaceApp && appPair && pairing.get(appPair.key) > Date.now()) return `${origin}/#pair=${appPair.code}`;
+      if (replaceApp && appPair) pairing.delete(appPair.key);
       for (const [key, expiry] of pairing) if (expiry < Date.now()) pairing.delete(key);
       if (pairing.size >= 8) throw new Error('CONTACT_PAIR_LIMIT');
       const code = randomBytes(32).toString('base64url');
       pairing.set(sha(code), Date.now() + 5 * 60000);
+      if (replaceApp) appPair = { key: sha(code), code };
       return `${origin}/#pair=${code}`;
     },
     async close() {

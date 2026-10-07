@@ -1,6 +1,8 @@
 // Browser receives visible turns, never private tool context, host secrets or an execution API.
 const $ = id => document.getElementById(id);
-let code = new URLSearchParams(location.hash.slice(1)).get('pair');
+const link = new URLSearchParams(location.hash.slice(1));
+let code = link.get('pair');
+const autoPair = link.get('auto') === '1';
 if (location.hash) history.replaceState(null, '', location.pathname);
 let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = null, known = false;
 let turns = new Map();
@@ -10,7 +12,7 @@ const errors = {
   CONTACT_REVIEW_UPGRADE_REQUIRED: '이 호스트는 자동 확인용 기록 전환이 필요합니다. 호스트에서 --upgrade-contact로 백업 후 전환해 주세요.',
   CONTACT_REVIEW_CONSENT_REQUIRED: '일회성 로컬 확인 범위를 명시적으로 승인해야 합니다.',
   CONTACT_REVIEW_TIME_REQUIRED: '미래의 확인 시각이 있는 진행 중 업무에만 자동 확인을 맡길 수 있습니다.',
-  CONTACT_PAIR_REQUIRED: '이 기기의 연결을 확인해야 합니다. 호스트에서 새 연결 링크를 발급해 주세요.',
+  CONTACT_PAIR_REQUIRED: '이 기기의 연결을 확인해야 합니다. 컴퓨터에서 Tada를 다시 열어 연결해 주세요.',
   CONTACT_PAIR_REJECTED: '연결 링크가 만료됐거나 이미 사용됐습니다. 새 링크로 연결해 주세요.',
   CONTACT_REQUEST_LIMIT: '설정된 모델 요청 한도에 도달했습니다. 기존 대화와 답변은 그대로 남아 있습니다.',
   CONTACT_QUEUE_LIMIT: '대기 중인 요청이 많습니다. 접수된 일은 그대로 진행합니다.',
@@ -21,22 +23,25 @@ const errors = {
   CONTACT_FOLLOWUP_DECISION_CONFLICT: '이미 처리되거나 다른 변경으로 대체된 제안입니다. 최신 업무 기록을 확인해 주세요.',
 };
 async function api(path, data) {
-  const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-    headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) });
+  let response;
+  try { response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
+    headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) }); }
+  catch { throw Error('연결이 잠시 끊겼어요. 작성한 내용은 그대로 있어요.'); }
   const body = await response.json();
   if (!response.ok) {
     if (response.status === 401) paired(false);
-    throw new Error(errors[body.error] ?? '요청을 처리하지 못했습니다. 기존 접수 상태를 확인한 뒤 다시 시도해 주세요.');
+    const error = new Error(errors[body.error] ?? '요청을 처리하지 못했습니다. 기존 접수 상태를 확인한 뒤 다시 시도해 주세요.');
+    error.authenticationRequired = response.status === 401; throw error;
   }
   return body;
 }
 function paired(yes) {
-  $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; if (!yes) $('followups').hidden = true;
+  $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings').hidden = !yes; if (!yes) $('followups').hidden = true;
   if (!yes) { requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
-  if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '연락 호스트의 /pair 명령으로 발급한 링크를 이 기기에서 열어 주세요.'; }
+  if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
-  cancelled: '이 요청은 취소했어요.', interrupted: '호스트가 중단돼 답변을 끝내지 못했어요. 앞선 대화는 보존했어요.',
+  cancelled: '이 요청은 취소했어요.', interrupted: 'Tada가 멈춰 답변을 끝내지 못했어요. 요청은 남아 있어요.',
   failed: '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.' };
 function render() {
   const list = [...turns.values()].sort((a, b) => a.seq - b.seq);
@@ -69,10 +74,21 @@ function render() {
       if (turn.error === 'CHATGPT_USAGE_UNAVAILABLE') status.textContent = '지금 ChatGPT 사용 가능 여부를 확인하지 못했어요. 연결과 대화는 보존했어요. 잠시 후 다시 말씀해 주세요.';
       if (turn.error === 'CHATGPT_TEMPORARILY_UNAVAILABLE') status.textContent = '지금 ChatGPT 연결 서비스를 사용할 수 없어요. 연결과 대화는 보존했어요. 잠시 후 다시 말씀해 주세요.';
       if (['CHATGPT_PLAN_UNAVAILABLE', 'CHATGPT_PERMISSION_DENIED'].includes(turn.error)) status.textContent = '선택한 ChatGPT 계정이나 워크스페이스 정책에서 이 연결을 허용하지 않아요. 계정 설정을 확인해 주세요. 다른 결제 방식으로 전환하지 않았어요.';
-      if (['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN'].includes(turn.error)) status.textContent = 'ChatGPT 연결을 갱신해야 해요. 호스트에서 --login으로 다시 로그인해 주세요. 대화는 보존했어요.';
+      if (['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN'].includes(turn.error)) status.textContent = 'ChatGPT 연결을 갱신해야 해요. 컴퓨터에서 Tada 연결을 다시 열어 로그인해 주세요. 대화는 보존했어요.';
       if (['queued', 'running'].includes(turn.state)) {
         const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '취소';
         cancel.onclick = () => api('/api/cancel', { seq: turn.seq }).then(() => refresh()).catch(e => notice(e.message)); status.append(cancel);
+      }
+      if (['failed', 'interrupted'].includes(turn.state)) {
+        const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '이 요청 다시 작성';
+        retry.onclick = () => {
+          if ($('send').disabled) { notice('접수 확인이 끝나면 다시 작성할 수 있어요. 잠시만 기다려 주세요.'); return; }
+          if ($('message').value.trim() && $('message').value.trim() !== turn.text) { notice('작성 중인 이야기를 먼저 보내거나 비워 주세요. 덮어쓰지 않을게요.'); return; }
+          if (pending && pending.request_id !== turn.request_id) { notice('방금 보낸 이야기의 접수 여부를 먼저 확인해야 해요. 보내기를 누르면 같은 요청으로 확인할게요.'); return; }
+          pending = null; // Confirmed terminal request + explicit rewrite is a new submission.
+          $('message').value = turn.text; $('message').focus(); notice('내용을 확인하고 보내 주세요. 아직 다시 실행하지 않았어요.');
+        };
+        status.append(retry);
       }
       article.append(status);
     }
@@ -81,13 +97,13 @@ function render() {
   $('messages').replaceChildren(fragment);
   if (nearEnd) window.scrollTo(0, document.body.scrollHeight);
 }
-async function refresh(older = false) {
+async function refresh(older = false, quiet = false) {
   const generation = ++requestGeneration;
   try {
     const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`);
     if (generation !== requestGeneration) return;
     paired(true);
-    $('connection').textContent = result.host_stopping ? '호스트 정리 중' : '같은 비서에게 연결됨';
+    $('connection').textContent = result.host_stopping ? '잠시 멈추는 중' : '이야기할 준비가 됐어요';
     for (const turn of result.turns) turns.set(turn.seq, turn);
     if (older || nextBefore === null) nextBefore = result.next_before;
     $('older').hidden = nextBefore === null;
@@ -108,7 +124,8 @@ async function refresh(older = false) {
       channel.addEventListener('changed', () => refresh());
       channel.onerror = () => { $('connection').textContent = '재연결 중 · 접수한 요청은 유지됩니다'; };
     }
-  } catch (error) { $('connection').textContent = '연결 확인 필요'; notice(error.message); }
+    return true;
+  } catch (error) { $('connection').textContent = '다시 연결하는 중'; if (!quiet) notice(error.message); return error.authenticationRequired ? false : undefined; }
 }
 $('pair-form').onsubmit = async event => {
   event.preventDefault();
@@ -128,7 +145,7 @@ $('message-form').onsubmit = async event => {
     if ($('message').value.trim() === text) $('message').value = '';
     notice(''); await refresh();
   }
-  catch (error) { notice(`${error.message} 같은 내용을 다시 보내면 같은 요청 ID로 접수 여부를 확인합니다.`); }
+  catch (error) { notice(`${error.message} 다시 보내기를 누르면 접수 여부부터 확인할게요.`); }
   finally { $('send').disabled = false; }
 };
 $('older').onclick = () => refresh(true);
@@ -151,7 +168,7 @@ function element(tag, text, className) {
 }
 function when(value, timezone) {
   if (value === null) return '시간 알림 없음';
-  try { return new Intl.DateTimeFormat('ko', { timeZone: timezone, dateStyle: 'full', timeStyle: 'short' }).format(new Date(value)) + ` · ${timezone} · ${value}`; }
+  try { return new Intl.DateTimeFormat('ko', { timeZone: timezone, year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'shortOffset' }).format(new Date(value)) + ` · ${timezone}`; }
   catch { return value; }
 }
 function workCard(item) {
@@ -189,6 +206,8 @@ function renderFollowups(state) {
   $('followups').hidden = !state?.available;
   if (!state?.available) return;
   $('followup-items').replaceChildren(...state.items.map(workCard));
+  $('work-count').textContent = state.items.length ? String(state.items.length) : '';
+  $('work-empty').hidden = !!state.items.length;
   // Historical pages use the same list API as the model; refresh returns the
   // active first page so stale completed/cancelled data is not mistaken for live.
   followupOffset = 0;
@@ -227,4 +246,25 @@ $('followup-more').onclick = async () => {
   } catch (error) { notice(error.message); }
 };
 
-if (code) { paired(false); $('connection').textContent = '새 기기 연결'; } else refresh();
+for (const [id, text] of [['suggest-plan', '해야 할 일이 너무 많아서 어디서부터 시작할지 모르겠어.'], ['suggest-remember', '잊지 않게 챙겨줬으면 하는 일이 있어.']]) {
+  $(id).onclick = () => { if (!$('message').value.trim()) $('message').value = text; $('message').focus(); };
+}
+$('message').onkeydown = event => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+    event.preventDefault(); $('message-form').requestSubmit();
+  }
+};
+async function openConversation() {
+  if (code && autoPair) {
+    // A returning browser keeps its existing device and any work authorized by it.
+    const restored = await refresh(false, true);
+    if (restored === true) { code = null; notice(''); return; }
+    if (restored !== false) {
+      notice('연결이 잠시 끊겼어요. 기존 기기로 다시 연결하고 있어요.');
+      setTimeout(openConversation, 2000); return;
+    }
+    try { await api('/api/pair', { code, name: '내 컴퓨터' }); code = null; notice(''); await refresh(); }
+    catch (error) { paired(false); notice(error.message); }
+  } else if (code) { paired(false); $('connection').textContent = '새 기기 연결'; } else await refresh();
+}
+openConversation();

@@ -66,6 +66,7 @@ test('two independently paired clients share actual accepted conversation and fo
     await service.idle();
     const fromLaptop = await (await network.call('/api/state', undefined, laptop.cookie)).json();
     assert.equal(fromLaptop.turns[0].answer.text, '내일 논의할 세 가지를 정리했어요.');
+    assert.equal(fromLaptop.turns[0].request_id, id);
     const identity = fromLaptop.assistant;
     await network.host.close(); await service.close(); env.reopen();
     service = new ContactService(env.store, model, noSources); network = await serverFor(env.store, service);
@@ -165,6 +166,12 @@ test('pairing is one-use and source browsing, arbitrary commands and cross-origi
     assert.equal((await network.call('/api/state', undefined, '', { 'X-Forwarded-User': a.id })).status, 401);
     assert.equal((await network.call('/api/state', undefined, a.cookie, { Host: 'attacker.invalid' })).status, 403);
     assert.equal((await network.call('/api/turns', {}, a.cookie, { Origin: 'https://attacker.invalid' })).status, 403);
+    const navigation = { 'Sec-Fetch-Site': 'same-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
+    assert.equal((await network.call('/', undefined, '', navigation)).status, 200);
+    assert.equal((await network.call('/api/state', undefined, a.cookie, navigation)).status, 403);
+    assert.equal((await network.call('/', undefined, '', { ...navigation, 'Sec-Fetch-Site': 'cross-site' })).status, 200);
+    assert.equal((await network.call('/api/state', undefined, a.cookie, { ...navigation, 'Sec-Fetch-Site': 'cross-site' })).status, 403);
+    assert.equal((await network.call('/', undefined, '', { ...navigation, 'Sec-Fetch-Mode': 'cors' })).status, 403);
     for (const path of ['/api/shell', '/api/policy', '/api/checkpoint', '/api/files']) assert.equal((await network.call(path, {}, a.cookie)).status, 404);
     assert.equal((await network.call('/api/turns', '{"request_id":"1111111111111111","text":"a","text":"b"}', a.cookie)).status, 400);
     assert.equal((await network.call('/api/turns', { request_id: randomUUID(), text: 'a', authority: 'admin' }, a.cookie)).status, 400);
@@ -381,4 +388,22 @@ test('real process kills preserve accepted work, expose interrupted inference an
       assert.equal(reopened.checkpoint().through, phase === 'answered' ? 1 : 0);
     } finally { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); env.close(); }
   }
+});
+
+test('reopening an old setup link refreshes expired pairing before sending the browser into the conversation', async () => {
+  const { serveSetup } = await import('../src/app-setup.mjs');
+  const env = setup(), service = new ContactService(env.store, { chat: async () => response('unused') }, noSources);
+  const network = await serverFor(env.store, service), clock = Date.now; let window;
+  try {
+    window = await serveSetup({ run: async ui => { ui.ready(() => network.host.pair({ replaceApp: true })); await ui.wait(); } });
+    const url = new URL(window.url), headers = { Authorization: 'Bearer ' + new URLSearchParams(url.hash.slice(1)).get('setup') };
+    const state = () => fetch(url.origin + '/state', { headers }).then(r => r.json());
+    const first = await state(); assert.equal(first.stage, 'ready');
+    Date.now = () => clock() + 301000;
+    const renewed = await state(); assert.notEqual(renewed.url, first.url);
+    assert.equal((await state()).url, renewed.url, 'unused live entry remains stable across polling');
+    const code = entry => new URLSearchParams(new URL(entry).hash.slice(1)).get('pair');
+    assert.equal((await network.call('/api/pair', { code: code(first.url), name: 'Fixture' })).status, 403);
+    assert.equal((await network.call('/api/pair', { code: code(renewed.url), name: 'Fixture' })).status, 200);
+  } finally { Date.now = clock; await window?.close(); await network.host.close(); await service.close(); env.close(); }
 });

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Tada — 시작하기</title><link rel="stylesheet" href="/app.css"><script src="/setup.js" defer></script></head>
+<body class="setup-page"><header class="setup-header"><a class="brand" href="/">tada<span>곁에 두는 비서</span></a><span class="edition">내 컴퓨터에서 시작하기</span></header>
+<main class="setup-main"><div class="welcome-mark" aria-hidden="true">t.</div><p id="step" class="eyebrow" role="status">잠시만 기다려 주세요</p><h1 id="title">이어서 열고 있어요.</h1><p id="description" class="lead">저장된 연결과 대화를 확인하고 있어요.</p>
+<div id="consent" hidden><p class="setup-note">대화와 허용한 자료의 조회 내용은 선택한 ChatGPT 계정으로 전송됩니다. 구독 사용량과 계정의 크레딧 설정이 적용됩니다.</p><button id="connect" class="primary" type="button">ChatGPT로 연결하기 <span aria-hidden="true">↗</span></button><details class="quiet-details"><summary>사용량과 개인정보</summary><p>ChatGPT 로그인 화면에서 연결 권한을 확인하세요. 크레딧 사용을 원하지 않으면 해당 동의와 사용량 설정에서 허용하지 마세요. API 결제로 자동 전환하지 않습니다.</p><p>대화는 이 컴퓨터에 암호화해 보관합니다. 별도의 Tada 암호는 만들지 않습니다.</p></details></div>
+<div id="login" hidden><a id="login-link" class="primary" target="_blank" rel="noopener noreferrer">ChatGPT 로그인 열기 ↗</a><p class="setup-note">새 창에서 로그인을 마치면 여기서 자동으로 이어집니다.<br>비밀번호는 ChatGPT 로그인 화면에만 입력하세요.</p><button id="cancel-login" class="text-button" type="button">지금은 그만두기</button></div>
+<div id="model" hidden><p id="model-default" class="model-default"></p><details class="quiet-details"><summary>다른 모델 선택</summary><label for="models" class="sr-only">계정에서 사용할 수 있는 모델</label><select id="models"></select></details><button id="model-next" class="primary" type="button">대화 시작하기 →</button><p class="setup-note">선택은 저장됩니다. 다음부터는 바로 대화를 이어가세요.</p></div>
+<div id="error" hidden><button id="retry" class="primary" type="button">다시 열기</button><button id="upgrade" class="primary" type="button" hidden>기록 백업하고 업데이트</button></div>
+<div id="ready" hidden><a id="continue" class="primary">대화로 가기 →</a></div>
+<p id="feedback" role="alert" hidden></p></main><footer class="setup-footer">처음부터 잘 정리해서 말하지 않아도 괜찮아요.</footer></body></html>

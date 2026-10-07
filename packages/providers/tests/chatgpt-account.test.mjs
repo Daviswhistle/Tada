@@ -144,7 +144,7 @@ test('profile rejects shared permissions and hard-linked credential files', () =
 });
 
 
-test('actual default CLI signs in, opens the shared host, restarts without login and logs out', async () => {
+for (const browser of [false, true]) test(`actual ${browser ? 'browser setup' : 'default CLI'} signs in, opens the shared host and resumes`, async () => {
   const env = setup();
   const upstream = createServer(async (req, res) => {
     try {
@@ -158,12 +158,12 @@ test('actual default CLI signs in, opens the shared host, restarts without login
   upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening');
   try {
     const directory = join(env.root, 'contact');
-    for (const mode of ['init', 'wrong-model', 'resume', 'logout']) {
+    for (const mode of (browser ? ['init', 'resume'] : ['init', 'wrong-model', 'resume', 'logout'])) {
       const available = createServer(); available.listen(0, '127.0.0.1'); await once(available, 'listening');
       const port = available.address().port; await new Promise(resolve => available.close(resolve));
       if (mode === 'wrong-model') env.mode = 'second-model';
       const questions = mode === 'init' ? ['YES'] : [];
-      const args = ['--data', mode === 'init' ? directory + '/' : directory, '--port', String(port), ...(mode === 'init' ? ['--model', 'fixture-model'] : mode === 'wrong-model' ? ['--model', 'alternative-model'] : []), ...(mode === 'init' ? ['--init'] : mode === 'logout' ? ['--logout'] : [])];
+      const args = ['--data', mode === 'init' ? directory + '/' : directory, '--port', String(port), ...(mode === 'init' && !browser ? ['--model', 'fixture-model'] : mode === 'wrong-model' ? ['--model', 'alternative-model'] : []), ...(mode === 'init' ? ['--init'] : mode === 'logout' ? ['--logout'] : [])];
       const source = `
         import {createRequire,syncBuiltinESMExports} from 'node:module';
         import {EventEmitter} from 'node:events';
@@ -173,14 +173,22 @@ test('actual default CLI signs in, opens the shared host, restarts without login
           close(){this.emit('close')}, async *[Symbol.asyncIterator](){yield '/quit'}
         });
         syncBuiltinESMExports();
-        Object.defineProperty(process.stdin,'isTTY',{value:true});Object.defineProperty(process.stdout,'isTTY',{value:true});
+        Object.defineProperty(process.stdin,'isTTY',{value:${!browser}});Object.defineProperty(process.stdout,'isTTY',{value:${!browser}});
         const nativeFetch=globalThis.fetch;
         globalThis.fetch=(url, options)=> {
           if(!String(url).startsWith('https://auth.openai.com/') && !String(url).startsWith('https://api.openai.com/'))throw Error('FIXTURE_DESTINATION');
           return nativeFetch('http://127.0.0.1:${upstream.address().port}/?target='+encodeURIComponent(url),options);
         };
         const {main}=await import(${JSON.stringify(new URL('../../engine/src/contact-cli.mjs', import.meta.url).href)});
-        await main(${JSON.stringify(args)}, {keyProvider:async()=>${JSON.stringify(passphrase)}});
+        const ui=${browser} ? {
+          signal:new AbortController().signal,
+          consent:async()=>{if(questions.shift()!=='YES')throw Error('EXTRA_CONSENT');return true},
+          login:url=>console.log(url),
+          selectModel:async models=>{if(models[0].name!=='Fixture Model')throw Error('MODEL_CATALOG');return '1'},
+          ready:entry=>{const url=typeof entry==='function'?entry():entry;if(!url.includes('#pair=')||!url.endsWith('&auto=1'))throw Error('MISSING_CONVERSATION');console.log('BROWSER_READY')},
+          wait:async()=>{}, fail:()=>{throw Error('SERVICE_FAULT')}
+        } : undefined;
+        await main(${JSON.stringify(args)}, {keyProvider:async()=>${JSON.stringify(passphrase)},ui});
         if(questions.length)throw Error('SETUP_NOT_CONSUMED'); console.log('CLI_FIXTURE_COMPLETE');
       `;
       const child = spawn(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', source], { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -201,7 +209,7 @@ test('actual default CLI signs in, opens the shared host, restarts without login
       if (mode === 'wrong-model') { assert.equal(exit, 1); assert.ok(stderr.includes('CONTACT_ROUTE_CHANGED')); continue; }
       assert.equal(exit, 0, stderr); assert.ok(stdout.includes('CLI_FIXTURE_COMPLETE'));
       assert.ok(!stdout.includes('암호 (')); assert.ok(stdout.includes('별도 Tada 암호는 필요하지 않습니다'));
-      if (mode !== 'logout') assert.ok(stdout.includes('Tada 연락 호스트가 열렸습니다'));
+      if (mode !== 'logout') assert.ok(stdout.includes(browser ? 'BROWSER_READY' : 'Tada 연락 호스트가 열렸습니다'));
       assert.equal(callbackStarted, mode === 'init');
     }
   } finally { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); env.close(); }
@@ -281,4 +289,110 @@ for (const mode of ['lost-refresh', 'server-refresh']) test(`${mode} remains mar
     assert.equal(account.profile.connected, true); assert.equal(reopened.read().refresh_pending, false);
     assert.equal(await account.accessToken(), 'fake-access-not-a-secret'); assert.equal(env.tokenCalls, 3);
   } finally { await account?.stop(); reopened?.close(); env.close(); }
+});
+
+// These exercise the same runtime used by npm start, with owned HTTP/SQLite
+// and synthetic OAuth. No live account or external model is invoked.
+async function browserSetup(run, nativeFetch) {
+  const { serveSetup } = await import('../../engine/src/app-setup.mjs');
+  const host = await serveSetup({ run });
+  const url = new URL(host.url), token = new URLSearchParams(url.hash.slice(1)).get('setup');
+  const state = () => nativeFetch(url.origin + '/state', { headers: { Authorization: 'Bearer ' + token } }).then(r => r.json());
+  const until = async stage => {
+    for (let n = 0; n < 200; n++) { const value = await state(); if (value.stage === stage) return value; await new Promise(resolve => setTimeout(resolve, 10)); }
+    throw Error('SETUP_STAGE_TIMEOUT:' + stage);
+  };
+  const action = (view, action, value = null) => nativeFetch(url.origin + '/action', { method: 'POST',
+    headers: { Origin: url.origin, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revision: view.revision, action, value }) });
+  return { host, state, until, action };
+}
+
+test('cancelling setup after OAuth while models load never dispatches an existing queued request', async () => {
+  const { ContactStore, contactRoute } = await import('../../engine/src/contact-store.mjs');
+  const { main } = await import('../../engine/src/contact-cli.mjs');
+  const { randomUUID } = await import('node:crypto');
+  const env = setup(), nativeFetch = globalThis.fetch;
+  let browser, release, reached, modelRequests = 0, inference = 0, requestSignal;
+  const gate = new Promise(resolve => { release = resolve; });
+  const modelReached = new Promise(resolve => { reached = resolve; });
+  try {
+    await login(env); const profile = env.store.read(); env.store.save({ ...profile, model: 'fixture-model' });
+    await env.account.stop(); env.store.close();
+    const data = join(env.root, 'contact');
+    const route = contactRoute({ version: 1, provider: 'chatgpt-subscription', model: 'fixture-model',
+      digest: createHash('sha256').update('oaiapp_fixture:fixture-subject:fixture-model').digest('hex'), endpoint: 'https://api.openai.com/v1', scopes: [] });
+    const journal = new ContactStore({ directory: data, passphrase, route, initialize: true, followups: true, reviews: true });
+    const device = journal.addDevice('Fixture'); journal.submit(device.id, randomUUID(), 'Queued before the cancelled setup'); journal.close();
+    globalThis.fetch = async (url, options) => {
+      if (String(url).endsWith('/models') && ++modelRequests === 1) { requestSignal = options.signal; reached(); await gate; }
+      if (String(url).endsWith('/responses')) { inference++; throw Error('INFERENCE_AFTER_CANCEL'); }
+      return env.fetcher(url, options);
+    };
+    browser = await browserSetup(ui => main(['--data', data, '--chatgpt-profile', env.directory, '--login'], { ui, keyProvider: async () => passphrase }), nativeFetch);
+    await browser.action(await browser.until('consent'), 'answer', true);
+    const view = await browser.until('login'), auth = new URL(view.url); env.setNonce(auth.searchParams.get('nonce'));
+    const callback = new URL(auth.searchParams.get('redirect_uri')); callback.searchParams.set('state', auth.searchParams.get('state')); callback.searchParams.set('code', 'synthetic-code');
+    assert.equal((await nativeFetch(callback)).status, 200);
+    await modelReached;
+    assert.equal((await browser.action(await browser.state(), 'cancel')).status, 200);
+    assert.equal(requestSignal.aborted, true); release(); await browser.until('error');
+    assert.equal(inference, 0);
+    const reopened = new ContactStore({ directory: data, passphrase, route });
+    assert.equal(reopened.usage().requests, 0); assert.equal(reopened.turn(1).state, 'queued'); reopened.close();
+  } finally { release(); await browser?.host.close(); globalThis.fetch = nativeFetch; env.close(); }
+});
+
+test('a saved token rejected by the server recovers through explicit browser login on retry', async () => {
+  const { main } = await import('../../engine/src/contact-cli.mjs');
+  const env = setup(), nativeFetch = globalThis.fetch; let browser, catalogs = 0;
+  try {
+    await login(env); const client = env.store.read().client; await env.account.stop(); env.store.close();
+    globalThis.fetch = async url => {
+      assert.equal(String(url), 'https://api.openai.com/v1/models'); catalogs++;
+      return new Response(JSON.stringify({ error: { code: 'invalid_token' } }), { status: 401, headers: { 'content-type': 'application/json' } });
+    };
+    browser = await browserSetup(ui => main(['--data', join(env.root, 'contact'), '--init', '--chatgpt-profile', env.directory], { ui, keyProvider: async () => passphrase }), nativeFetch);
+    const error = await browser.until('error'); assert.equal(error.reauthorize, true);
+    await browser.action(error, 'retry');
+    await browser.action(await browser.until('consent'), 'answer', true);
+    const view = await browser.until('login');
+    assert.equal(new URL(view.url).searchParams.get('client_id'), client);
+    assert.equal(catalogs, 1, 'retry must reach login instead of replaying the rejected catalog request');
+  } finally { await browser?.host.close(); globalThis.fetch = nativeFetch; env.close(); }
+});
+
+for (const version of [2, 3]) test(`browser recovery upgrades v${version} only after explicit backup consent and keeps the same history`, async () => {
+  const { ContactStore, contactRoute } = await import('../../engine/src/contact-store.mjs');
+  const { main } = await import('../../engine/src/contact-cli.mjs');
+  const { randomUUID } = await import('node:crypto');
+  const { readdirSync } = await import('node:fs');
+  const env = setup(), nativeFetch = globalThis.fetch; let browser, journal;
+  const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
+  const port = reserve.address().port; await new Promise(resolve => reserve.close(resolve));
+  try {
+    await login(env); env.store.save({ ...env.store.read(), model: 'fixture-model' }); await env.account.stop(); env.store.close();
+    const data = join(env.root, 'contact');
+    const route = contactRoute({ version: 1, provider: 'chatgpt-subscription', model: 'fixture-model',
+      digest: createHash('sha256').update('oaiapp_fixture:fixture-subject:fixture-model').digest('hex'), endpoint: 'https://api.openai.com/v1', scopes: [] });
+    journal = new ContactStore({ directory: data, passphrase, route, initialize: true, followups: version === 3 });
+    const id = journal.id, device = journal.addDevice('Fixture');
+    const accepted = journal.submit(device.id, randomUUID(), 'Keep my original history'); journal.cancel(accepted.seq); journal.close();
+    globalThis.fetch = env.fetcher;
+    browser = await browserSetup(ui => main(['--data', data, '--chatgpt-profile', env.directory, '--port', String(port)], { ui, keyProvider: async () => passphrase }), nativeFetch);
+    const failed = await browser.until('error'); assert.equal(failed.upgrade, true); assert.equal(failed.retryable, false);
+    assert.match(failed.message, /원본을 백업/u);
+    assert.equal((await browser.action(failed, 'retry')).status, 409);
+    assert.equal((await browser.action(failed, 'upgrade', false)).status, 409);
+    journal = new ContactStore({ directory: data, passphrase, route }); assert.equal(journal.contactVersion, version); journal.close();
+    assert.equal(readdirSync(data).filter(name => name.startsWith('before-')).length, 0);
+    assert.equal((await browser.action(failed, 'upgrade', true)).status, 200);
+    await browser.until('ready'); await browser.host.close();
+    journal = new ContactStore({ directory: data, passphrase, route });
+    assert.equal(journal.contactVersion, 4); assert.equal(journal.id, id);
+    assert.equal(journal.turn(accepted.seq).text, 'Keep my original history');
+    assert.equal(journal.turn(accepted.seq).state, 'cancelled');
+    assert.equal(readdirSync(data).filter(name => name.startsWith('before-')).length, 4 - version);
+    assert.equal(journal.usage().requests, 0);
+  } finally { journal?.close(); await browser?.host.close(); globalThis.fetch = nativeFetch; env.close(); }
 });

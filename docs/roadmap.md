@@ -10,6 +10,10 @@ Release requires a usable installation and onboarding flow on the declared suppo
 
 At development baseline `4e9dbdc`, the contact browser and ordinary CI passed, but the real local review did not: the model promised future work without calling `propose_followup`. The general-action path, user-ready packaging, long-lived memory beyond preview limits and full product acceptance remain incomplete. GitHub PRs #1–#13, #15 and #16 form an unmerged stack; main does not contain these features. Repairing the observed defects is necessary, but is not a release declaration.
 
+## Human experience correction — 2026-10-08
+
+The user explicitly rejected a developer-operated product. A browser-first setup now replaces terminal questions on the default `npm start` route, and the continuing conversation moves management details out of the foreground. This closes a concrete usability problem; it does not close installation, live provider proof, useful general actions, durable long-term memory or acceptance. Read [the implementation and evidence](experience-2026-10-08.md). Judge the remaining work from first launch through verified useful results, not the count of passing checks.
+
 ## Next delivery: one continuous delegation experience
 
 Provider priority was clarified by the user on 2026-10-07: use an existing subscription through its official integration by default, retain local model support, and offer API access as an explicit alternative. Start with Sign in with ChatGPT plan usage in this open-source local application. Its documented availability does not authorize offering the same route as a paid/centrally hosted service. Do not make inherited Qwen 8B CI behavior the product quality target or continue model-size comparisons in place of this integration. See the [official eligibility](https://developers.openai.com/siwc/token-sharing-open-source) and [integration guide](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt).
