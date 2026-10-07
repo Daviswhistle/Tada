@@ -92,6 +92,29 @@ fn wal_full_foreign_keys_and_single_owner() {
     }
     assert!(matches!(Store::open(&temp.0), Err(Error::AlreadyOpen)));
 }
+
+#[cfg(unix)]
+#[test]
+fn duplicated_lock_descriptor_cannot_extend_or_break_store_ownership() {
+    let temp = Temp::new();
+    let store = Store::open(&temp.0).unwrap();
+    let duplicate = store._lock.file.try_clone().unwrap();
+
+    assert!(matches!(Store::open(&temp.0), Err(Error::AlreadyOpen)));
+    drop(store);
+
+    // Keep the duplicated descriptor alive across this reopen. flock state is
+    // attached to the open file description, so closing Store's fd alone is
+    // insufficient unless its owner-lock guard explicitly unlocks it.
+    let reopened = Store::open(&temp.0).unwrap();
+    assert!(duplicate.metadata().unwrap().is_file());
+    assert!(matches!(Store::open(&temp.0), Err(Error::AlreadyOpen)));
+    drop(duplicate);
+    assert!(matches!(Store::open(&temp.0), Err(Error::AlreadyOpen)));
+    drop(reopened);
+    assert!(Store::open(&temp.0).is_ok());
+}
+
 #[test]
 fn second_run_is_denied_without_changing_events_or_witness() {
     let temp = Temp::new();

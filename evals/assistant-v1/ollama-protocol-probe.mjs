@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { OllamaLocal, jsonRequest } from '../../packages/providers/src/ollama-local.mjs';
 import { discoveryTools } from '../../packages/engine/src/native-sources.mjs';
 
-const provider = new OllamaLocal({ model: process.argv[2] });
+const provider = new OllamaLocal({ model: process.argv[2], endpoint: process.argv[3] });
 const identity = await provider.inspect(AbortSignal.timeout(20000));
 const show = await jsonRequest(provider.endpoint, '/api/show', { model: provider.model }, AbortSignal.timeout(20000));
 let probe;

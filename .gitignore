@@ -6,3 +6,5 @@ coverage/
 .env
 .env.*
 !.env.example
+# Default private journal location used by the contact setup examples.
+tada-contact-private/

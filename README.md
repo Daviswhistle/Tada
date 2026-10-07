@@ -6,6 +6,12 @@ Tada is being built as a personal AI assistant you can delegate to in ordinary l
 
 “Look into that company”, “This isn't working”, and “Make the earlier one simpler” are product acceptance requests, not shortcuts for prewritten workflows. The same request can mean different things in different conversations or screens. File, terminal, browser and app tools are means to do the work, not the product definition.
 
+## Continuing contact build
+
+The current development tip includes a [browser contact host](docs/contact-assistant.md) with an encrypted conversation shared across paired devices, optional [private Telegram contact](docs/telegram-contact.md), [saved work](docs/contact-followups.md) and [one-time local reviews](docs/contact-reviews.md). Start it with `npm run contact -- --help`. Setup still requires development runtimes, an explicitly selected installed local model and a host passphrase; this is not an installed or always-on product.
+
+The user requires a finished personal secretary with release quality. [The current completion target](docs/roadmap.md#completion-target--2026-10-07) includes real actions, installation, long-lived work and independent product acceptance. The developer previews below are narrower entry points, not the finished product.
+
 ## Current product contract
 
 The user's 2026-10-04 correction is recorded in the [current product contract](docs/product-contract.md) and [revised roadmap](docs/roadmap.md). It changes the interpretation and development priorities of the preserved [2026-09-30 design](docs/design/source-2026-09-30.md), which remains byte-identical. Cancellation, authorization, original-file protection and verified completion still apply.
@@ -51,7 +57,7 @@ It asks for a chosen model, explicit API-billing/context-transmission consent, t
 
 The two preview selections currently have separate in-memory conversations. Local roots, file contents and local conversation are never automatically sent into web/API research. Shared working context and host permission/ledger integration remain next work within one assistant; the modes are not two finished products.
 
-**This is not yet the complete general-purpose assistant.** Current-screen observation, mail/calendar, agent file modification, arbitrary commands, external actions, durable conversation and a desktop interface remain unconnected. The local preview rechecks cited source bytes; public citations come from the provider. Neither mechanism independently proves every semantic claim or a successful external action. The terminal is a development entry point, not the intended final desktop experience.
+**This is not yet the complete general-purpose assistant.** Current-screen observation, mail/calendar, agent file modification, arbitrary commands, general external actions and a native desktop interface remain unconnected. Durable conversation is available in the separate contact entry described above; these two terminal selections retain only session context. The local preview rechecks cited source bytes; public citations come from the provider. Neither mechanism independently proves every semantic claim or a successful external action. The terminal is a development entry point, not the intended final desktop experience.
 
 ## Existing execution core and product evidence
 

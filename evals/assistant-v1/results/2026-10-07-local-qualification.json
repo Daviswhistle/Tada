@@ -1,0 +1,734 @@
+{
+  "kind": "development_qualification_checkpoint",
+  "baseline_commit": "4e9dbdcc28574544178a77099c803b8a698afab0",
+  "environment": {
+    "node": "24.21.0",
+    "rust": "1.98.1",
+    "os": "Linux/WSL",
+    "chrome": "155.0.8059.39",
+    "ollama": "0.32.13",
+    "ci_ollama": "0.34.0",
+    "synthetic_fixture_data": true
+  },
+  "current_source_sha256": {
+    "packages/engine/src/conversation.ts": "38e7cec26371729ed3f11eabc53c20e79b6d0298cbc7583b54f8e6f42acb6acb",
+    "packages/engine/src/review-sources.mjs": "379a7c0ad02904c487dc87fd5d1fc70ba24a7bebcf256c9a4077263e9be238bf",
+    "packages/providers/src/ollama-local.mjs": "9565b72dad7aaada6727a4109b54622384770bd9a9a05ac75803eb0ce2814067",
+    "crates/store/src/lib.rs": "aa58063094b191d4e00ab65d95e2fbd69332a5a0374a437dfd410cd705308bac"
+  },
+  "qualification": "not_release_ready",
+  "assistant_v1_all_16": "not_run",
+  "notes": [
+    "Intermediate attempts used different documented code stages. Raw report hashes identify original local evidence; only contact-grounding runs match all current source hashes so far.",
+    "contact-final failed before the original script could emit JSON; stderr retained locally in /tmp/tada-contact-final.log. No cause was recovered for that first failure.",
+    "No hidden reasoning, live credentials or private user files are included.",
+    "Same 8B weights on local Ollama 0.32.13 do not qualify CI runtime 0.34.0.",
+    "Further final-source discovery/review and 14B comparison are pending."
+  ],
+  "attempts": [
+    {
+      "run": "review-baseline",
+      "raw_sha256": "29eacee92821b6797f4af8886eab900989be62b651457a56640aed7b13e45655",
+      "kind": "real_local_contact_review",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "failure": {
+        "stage": "proposal",
+        "message": "one_model_proposal\n\nfalse !== true\n"
+      },
+      "checks": {
+        "ordinary_utterance_answered": true,
+        "one_model_proposal": false
+      },
+      "usage": {
+        "requests": 1,
+        "input_tokens": 1877,
+        "output_tokens": 32,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {
+          "text": "Remember to check the launch status at 2026-10-07T11:23:51Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "I will remember to check the launch status at the specified time. For now, I cannot check it yet. Let me know if you need anything else!",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 1,
+              "input_tokens": 1877,
+              "output_tokens": 32,
+              "unknown_requests": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run": "review-reasoning",
+      "raw_sha256": "ae7661134eafbf67ad3e4aaa6bf64e8c768c43c139ee6b3ec85832f6a1cc5169",
+      "kind": "real_local_contact_review",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "failure": {
+        "stage": "proposal",
+        "message": "ordinary_utterance_answered\n\nfalse !== true\n"
+      },
+      "checks": {
+        "ordinary_utterance_answered": false
+      },
+      "usage": {
+        "requests": 2,
+        "input_tokens": 3991,
+        "output_tokens": 1219,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {
+          "text": "Remember to check the launch status at 2026-10-07T11:25:04Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.",
+          "state": "failed",
+          "error": "ASSISTANT_TOOL_REJECTED",
+          "answer": null
+        }
+      ]
+    },
+    {
+      "run": "review-corrected",
+      "raw_sha256": "2e5ca1585e218bf82d3c7f3de22c77e2df8793146298acd383cfe33e5958712d",
+      "kind": "real_local_contact_review",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "failure": {
+        "stage": "followup",
+        "message": "followup_retains_observed_gate\n\nfalse !== true\n"
+      },
+      "checks": {
+        "ordinary_utterance_answered": true,
+        "one_model_proposal": true,
+        "requested_time_preserved": true,
+        "not_activated_from_prose": true,
+        "save_is_not_review_permission": true,
+        "same_assistant_after_restart": true,
+        "no_early_or_replayed_inference": true,
+        "scheduled_model_sees_due_time": true,
+        "review_answered": true,
+        "new_file_read_during_review": true,
+        "current_source_cited_and_rechecked": true,
+        "new_gate_reported": true,
+        "work_not_marked_done": true,
+        "existing_bounded_budget_used": true,
+        "no_duplicate_due_turn": true,
+        "completed_review_not_replayed": true,
+        "other_device_sees_same_conversation": true,
+        "followup_retains_observed_gate": false
+      },
+      "usage": {
+        "requests": 8,
+        "input_tokens": 18441,
+        "output_tokens": 4166,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {
+          "text": "Remember to check the launch status at 2026-10-07T11:27:07Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The launch status check has been scheduled for **2026-10-07T11:27:07Z** and is now pending your confirmation. No action is taken yet—this is a proposed reminder. To proceed, you must explicitly approve this check in your interface. No blockers or release gates are currently identified. \n\nWait for your confirmation or provide instructions to cancel/schedule this check.\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 4,
+              "input_tokens": 8727,
+              "output_tokens": 2714,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "[예약한 일회성 확인 · 2026-10-07T11:27:07Z]\nCheck Launch Status at 2026-10-07T11:27:07Z\nCheck the launch status at 2026-10-07T11:27:07Z and report any blockers, release gates, and next actions\n현재 허용된 로컬 자료만 확인해 결과와 다음 행동을 알려 주세요. 확인하지 못한 내용은 구분해 주세요.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The launch status check completed using local data from **s1/nodes/launch-notes.md** shows:\n\n- **Status**: Blocked [S1](evidence_id:S1)  \n- **Release Gate**: `gate-02973c0e` [S1](evidence_id:S1)  \n- **Blocker**: Missing safety sign-off from the release owner [S1](evidence_id:S1)  \n- **Next Action**: Request the sign-off before proceeding [S1](evidence_id:S1)  \n\nNo external systems or logs were checked. The file was last modified on 2026-10-07T11:27:07.000Z.  \n\nConfirm if you want to proceed with resolving the blocker.",
+            "sources": [
+              {
+                "id": "S1",
+                "source": "s1",
+                "path": "launch-notes.md",
+                "sha256": "e943eb5c5e47ad0dec93734a4296bcd2cfa4044d21c72529b0151c47873e6f4a",
+                "observed_at": "2026-10-07T11:27:07.000Z"
+              }
+            ],
+            "verification": "cited_sources_rechecked",
+            "usage": {
+              "requests": 8,
+              "input_tokens": 18441,
+              "output_tokens": 4166,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "What is the exact release gate we just found? One short sentence.",
+          "state": "failed",
+          "error": "ASSISTANT_CONTEXT_LIMIT",
+          "answer": null
+        }
+      ]
+    },
+    {
+      "run": "review-continuity",
+      "raw_sha256": "ce6e6e72cb317b99b64c8a5effe72c9d30280da980e076ed80c52f75f58befe7",
+      "kind": "real_local_contact_review",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "ordinary_utterance_answered": true,
+        "one_model_proposal": true,
+        "requested_time_preserved": true,
+        "not_activated_from_prose": true,
+        "save_is_not_review_permission": true,
+        "same_assistant_after_restart": true,
+        "no_early_or_replayed_inference": true,
+        "scheduled_model_sees_due_time": true,
+        "review_answered": true,
+        "new_file_read_during_review": true,
+        "current_source_cited_and_rechecked": true,
+        "new_gate_reported": true,
+        "work_not_marked_done": true,
+        "existing_bounded_budget_used": true,
+        "no_duplicate_due_turn": true,
+        "completed_review_not_replayed": true,
+        "other_device_sees_same_conversation": true,
+        "followup_retains_observed_gate": true
+      },
+      "usage": {
+        "requests": 9,
+        "input_tokens": 19760,
+        "output_tokens": 4209,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {
+          "text": "Remember to check the launch status at 2026-10-07T11:30:34Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The follow-up proposal \"Check Launch Status\" has been submitted and is pending owner confirmation. I will notify you once the owner approves it. Until then, no action will be taken. \n\nNo immediate blockers or release gates are identified at this time. The next step is to wait for the owner's confirmation of the proposed follow-up. \n\nLet me know if you need further assistance!\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 4,
+              "input_tokens": 8624,
+              "output_tokens": 2414,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "[예약한 일회성 확인 · 2026-10-07T11:30:34Z]\nCheck Launch Status\nRemember to check the launch status at 2026-10-07T11:30:34Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.\n현재 허용된 로컬 자료만 확인해 결과와 다음 행동을 알려 주세요. 확인하지 못한 내용은 구분해 주세요.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The launch status details are confirmed from the file `launch-notes.md` [S1]. Here's the analysis:\n\n- **Blocker**: Missing safety sign-off from the release owner.  \n- **Exact Release Gate**: `gate-06f2d77a`  \n- **Next Action**: Request the safety sign-off from the release owner before proceeding with the launch.  \n\nNo additional blockers or unconfirmed items were found in the accessible sources. The follow-up proposal for this check is still pending owner confirmation. Let me know if you need further actions!",
+            "sources": [
+              {
+                "id": "S1",
+                "source": "s1",
+                "path": "launch-notes.md",
+                "sha256": "10f970d610d43d8b9697650c958696c7ddecfdd93d0f25dfdfb58ebcbd099549",
+                "observed_at": "2026-10-07T11:30:34.000Z"
+              }
+            ],
+            "verification": "cited_sources_rechecked",
+            "usage": {
+              "requests": 8,
+              "input_tokens": 16781,
+              "output_tokens": 4039,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "What is the exact release gate we just found? One short sentence.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The exact release gate is **gate-06f2d77a**.",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 9,
+              "input_tokens": 19760,
+              "output_tokens": 4209,
+              "unknown_requests": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run": "protocol-final",
+      "raw_sha256": "c2e328ba8bee92c97d72c87d8142a4b946e84bbcc59855bac4bc5ba33cb8513a",
+      "kind": "local_protocol_diagnostic",
+      "identity": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "probe": {
+        "structured_call_returned": true,
+        "call_names": [
+          "list_sources"
+        ],
+        "input_tokens": 167,
+        "output_tokens": 113
+      }
+    },
+    {
+      "run": "discovery-final",
+      "raw_sha256": "54e9c898285021ca4be699ecbdb82f1393d81c59e68c57904792155d3ded44c7",
+      "kind": "real_local_model_smoke",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "results": [
+        {
+          "variant": 1,
+          "status": "failed",
+          "user": [
+            "What is blocking the Cedar launch, and who needs to do what next?",
+            "Make that shorter, in one sentence."
+          ],
+          "responses": [
+            "The Cedar launch is blocked by the **certificate issue**. According to the status file [S1], **Nadia must renew the certificate** before launch can proceed. The tracking code for this task is `2ba76fdb`. No other immediate actions are listed in the current record. \n\nWould you like me to check if there are additional details in other files?",
+            "The Cedar launch is blocked by the certificate issue, requiring Nadia to renew it (tracking code: 2ba76fdb)."
+          ],
+          "checks": {
+            "correct_owner": true,
+            "correct_blocker": true,
+            "next_action": true,
+            "sources_discovered": true,
+            "actual_read": true,
+            "citations_checked": false,
+            "followup_shorter": true
+          },
+          "usage": {
+            "requests": 6,
+            "input_tokens": 8338,
+            "output_tokens": 1747,
+            "unknown_requests": 0
+          }
+        },
+        {
+          "variant": 2,
+          "status": "passed",
+          "user": [
+            "What is blocking the Cedar launch, and who needs to do what next?",
+            "Make that shorter, in one sentence."
+          ],
+          "responses": [
+            "The Cedar launch is blocked by **packaging issues**. The next action is for **Mateo** to replace the packaging before launch. This update is tracked in the file [S1](S1).",
+            "The Cedar launch is blocked by packaging issues, with Mateo needing to replace it next [S1]."
+          ],
+          "checks": {
+            "correct_owner": true,
+            "correct_blocker": true,
+            "next_action": true,
+            "sources_discovered": true,
+            "actual_read": true,
+            "citations_checked": true,
+            "followup_shorter": true
+          },
+          "usage": {
+            "requests": 6,
+            "input_tokens": 8383,
+            "output_tokens": 2119,
+            "unknown_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "run": "contact-diagnostic",
+      "raw_sha256": "d8fa75dc72ff83b8a9521b3cbfd1dbd6b6975ffb819854bf34f54cb4d599ccc4",
+      "kind": "real_local_contact_continuity",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "same_assistant": true,
+        "two_paired_clients": true,
+        "retained_original": true,
+        "reply_after_reopen": true,
+        "remembers_subject": true,
+        "remembers_day": true,
+        "no_replayed_inference": true,
+        "no_browser_checkpoint": true
+      },
+      "usage": {
+        "requests": 3,
+        "input_tokens": 2194,
+        "output_tokens": 783,
+        "unknown_requests": 0
+      },
+      "responses": [
+        "Review key topics like stoichiometry and chemical reactions first, then practice 10-15 problems to reinforce concepts. Take short breaks between study sessions to maintain focus and avoid burnout.",
+        "You are preparing for a chemistry exam on Friday."
+      ]
+    },
+    {
+      "run": "discovery-citation",
+      "raw_sha256": "b3c1f2368cceb42cd4f3a06be92a1a45678ed04a6cbf1d20cdb04869329c264d",
+      "kind": "real_local_model_smoke",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "results": [
+        {
+          "variant": 1,
+          "status": "failed",
+          "error": "ASSISTANT_UNGROUNDED_ANSWER"
+        },
+        {
+          "variant": 2,
+          "status": "failed",
+          "user": [
+            "What is blocking the Cedar launch, and who needs to do what next?",
+            "Make that shorter, in one sentence."
+          ],
+          "responses": [
+            "The Cedar launch is blocked by **packaging**. The next action is for **Mateo** to replace the packaging before launch. This conclusion is based on the status file [S1].",
+            "The Cedar launch is blocked by packaging, and Mateo must replace it before launch."
+          ],
+          "checks": {
+            "correct_owner": true,
+            "correct_blocker": true,
+            "next_action": true,
+            "sources_discovered": true,
+            "actual_read": true,
+            "citations_checked": false,
+            "followup_shorter": true
+          },
+          "usage": {
+            "requests": 6,
+            "input_tokens": 8484,
+            "output_tokens": 1917,
+            "unknown_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "run": "review-citation",
+      "raw_sha256": "23e7240c1ae7fbbbe4b7c7273d537cd6f524208e91728dee5d45ba9614df551b",
+      "kind": "real_local_contact_review",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "failure": {
+        "stage": "followup",
+        "message": "followup_cites_rechecked_source\n\nfalse !== true\n"
+      },
+      "checks": {
+        "ordinary_utterance_answered": true,
+        "one_model_proposal": true,
+        "requested_time_preserved": true,
+        "not_activated_from_prose": true,
+        "save_is_not_review_permission": true,
+        "same_assistant_after_restart": true,
+        "no_early_or_replayed_inference": true,
+        "scheduled_model_sees_due_time": true,
+        "review_answered": true,
+        "new_file_read_during_review": true,
+        "current_source_cited_and_rechecked": true,
+        "new_gate_reported": true,
+        "work_not_marked_done": true,
+        "existing_bounded_budget_used": true,
+        "no_duplicate_due_turn": true,
+        "completed_review_not_replayed": true,
+        "other_device_sees_same_conversation": true,
+        "followup_retains_observed_gate": true,
+        "followup_cites_rechecked_source": false
+      },
+      "usage": {
+        "requests": 7,
+        "input_tokens": 15349,
+        "output_tokens": 2479,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {
+          "text": "Remember to check the launch status at 2026-10-07T11:41:01Z and tell me the blocker, its exact release gate, and the next action. Do not check it yet.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The launch status check has been proposed as a pending task (proposal ID: 80c2c4b9-12f9-4507-8dc9-281772010042). A review card will be committed with the answer once the owner confirms. Do not consider this active yet, and no notifications will be sent until confirmation is received.\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 2,
+              "input_tokens": 4094,
+              "output_tokens": 1025,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "[예약한 일회성 확인 · 2026-10-07T11:41:01Z]\nCheck Launch Status at 2026-10-07T11:41:01Z\nRemember to check the launch status at 2026-10-07T11:41:01Z and report the blocker, its exact release gate, and the next action. Do not check it yet.\n현재 허용된 로컬 자료만 확인해 결과와 다음 행동을 알려 주세요. 확인하지 못한 내용은 구분해 주세요.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The launch status check completed successfully using the local notes source. Here are the details:\n\n**Blocker**: Missing safety sign-off from the release owner [S1].  \n**Exact Release Gate**: `gate-1ae68905` [S1].  \n**Next Action**: Request the safety sign-off from the release owner before proceeding with the launch [S1].  \n\nNo unresolved access issues were encountered. The file `launch-notes.md` was read directly from the local source.  \n\nWould you like me to trigger the next action (requesting the sign-off) now?",
+            "sources": [
+              {
+                "id": "S1",
+                "source": "s1",
+                "path": "launch-notes.md",
+                "sha256": "03661cd39e32d7fdaf5aa629857f95c89bd97051313a2777f8106d3a9218c33a",
+                "observed_at": "2026-10-07T11:41:01.000Z"
+              }
+            ],
+            "verification": "cited_sources_rechecked",
+            "usage": {
+              "requests": 6,
+              "input_tokens": 12365,
+              "output_tokens": 2270,
+              "unknown_requests": 0
+            }
+          }
+        },
+        {
+          "text": "What is the exact release gate we just found? One short sentence.",
+          "state": "answered",
+          "error": null,
+          "answer": {
+            "text": "The exact release gate we found is **gate-1ae68905**.",
+            "sources": [],
+            "verification": "not_applicable",
+            "usage": {
+              "requests": 7,
+              "input_tokens": 15349,
+              "output_tokens": 2479,
+              "unknown_requests": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "run": "contact-trial-1",
+      "raw_sha256": "60be0264a85cc71de5520c2b2d63614e9082f28d32f18411363f3a6f2acf191b",
+      "kind": "real_local_contact_continuity_failure",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "failure": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'failed'\n- 'answered'\n",
+      "usage": {
+        "requests": 2,
+        "input_tokens": 1498,
+        "output_tokens": 534,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {},
+        {}
+      ]
+    },
+    {
+      "run": "contact-trial-2",
+      "raw_sha256": "ec64daca0621e95632c0e61d01b7605a5a838c44391a608b79a55222f1e4e8e5",
+      "kind": "real_local_contact_continuity",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "same_assistant": true,
+        "two_paired_clients": true,
+        "retained_original": true,
+        "reply_after_reopen": true,
+        "remembers_subject": true,
+        "remembers_day": true,
+        "no_replayed_inference": true,
+        "no_browser_checkpoint": true
+      },
+      "usage": {
+        "requests": 3,
+        "input_tokens": 2330,
+        "output_tokens": 856,
+        "unknown_requests": 0
+      },
+      "responses": [
+        "Review fundamental concepts like stoichiometry and chemical reactions first, then practice 10-15 problems to reinforce understanding. Take short breaks between study sessions to maintain focus and avoid burnout.  \n\n**Note:** No tools are available to verify specific study strategies, so this plan is based on general academic preparation principles.",
+        "You are preparing for a chemistry exam on Friday."
+      ]
+    },
+    {
+      "run": "contact-trial-3",
+      "raw_sha256": "5a4a88af0bee39401651e3eda5fcb61d568c62d369f5116ffa7c3fbe864301a6",
+      "kind": "real_local_contact_continuity_failure",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "failure": "Expected values to be strictly equal:\n+ actual - expected\n\n+ 'failed'\n- 'answered'\n",
+      "usage": {
+        "requests": 2,
+        "input_tokens": 1509,
+        "output_tokens": 773,
+        "unknown_requests": 0
+      },
+      "turns": [
+        {},
+        {}
+      ]
+    },
+    {
+      "run": "contact-grounding-1",
+      "raw_sha256": "cce5914477ebdd88316a7cbd7e22a2492006eded01bfcbec70570749a3fd0f7a",
+      "kind": "real_local_contact_continuity",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "same_assistant": true,
+        "two_paired_clients": true,
+        "retained_original": true,
+        "reply_after_reopen": true,
+        "remembers_subject": true,
+        "remembers_day": true,
+        "no_replayed_inference": true,
+        "no_browser_checkpoint": true
+      },
+      "usage": {
+        "requests": 3,
+        "input_tokens": 2320,
+        "output_tokens": 808,
+        "unknown_requests": 0
+      },
+      "responses": [
+        "Start by reviewing key topics like stoichiometry and reaction mechanisms, then tackle 10–15 practice problems to apply your knowledge. Take 10-minute breaks every hour to stay focused and avoid fatigue.",
+        "You are preparing for a chemistry exam on Friday."
+      ]
+    },
+    {
+      "run": "contact-grounding-2",
+      "raw_sha256": "4dee52a6826f9324c6384a266d5a467386355faeb62bbb6198b138c185bdd820",
+      "kind": "real_local_contact_continuity",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "same_assistant": true,
+        "two_paired_clients": true,
+        "retained_original": true,
+        "reply_after_reopen": true,
+        "remembers_subject": true,
+        "remembers_day": true,
+        "no_replayed_inference": true,
+        "no_browser_checkpoint": true
+      },
+      "usage": {
+        "requests": 3,
+        "input_tokens": 2290,
+        "output_tokens": 629,
+        "unknown_requests": 0
+      },
+      "responses": [
+        "Start by reviewing key topics like stoichiometry and chemical reactions, then practice 10–15 problems to solidify your understanding. Take a 15-minute break between study sessions to maintain focus and avoid burnout.",
+        "You are preparing for a chemistry exam on Friday."
+      ]
+    },
+    {
+      "run": "contact-grounding-3",
+      "raw_sha256": "4dee52a6826f9324c6384a266d5a467386355faeb62bbb6198b138c185bdd820",
+      "kind": "real_local_contact_continuity",
+      "runtime": {
+        "provider": "ollama-local",
+        "model": "qwen3:8b",
+        "model_digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+        "runtime_version": "0.32.13",
+        "billing": "local-compute-only"
+      },
+      "checks": {
+        "same_assistant": true,
+        "two_paired_clients": true,
+        "retained_original": true,
+        "reply_after_reopen": true,
+        "remembers_subject": true,
+        "remembers_day": true,
+        "no_replayed_inference": true,
+        "no_browser_checkpoint": true
+      },
+      "usage": {
+        "requests": 3,
+        "input_tokens": 2290,
+        "output_tokens": 629,
+        "unknown_requests": 0
+      },
+      "responses": [
+        "Start by reviewing key topics like stoichiometry and chemical reactions, then practice 10–15 problems to solidify your understanding. Take a 15-minute break between study sessions to maintain focus and avoid burnout.",
+        "You are preparing for a chemistry exam on Friday."
+      ]
+    }
+  ]
+}

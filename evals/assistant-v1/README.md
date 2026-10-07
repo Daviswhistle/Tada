@@ -42,3 +42,14 @@ Measure user burden as well as outcome: requested technical preparation, repeate
 | A14 | Everyday task organization without asking for a prepared list |
 
 These cases do not replace the existing cancellation, external-effect, credential and platform regressions or the original release evaluation. They add the missing product-level question: can a user actually treat Tada like an assistant?
+
+## Running the narrow local smoke checks
+
+The local smoke scripts accept an optional final loopback Ollama endpoint, so qualification can use an isolated server without altering an existing user's model service. The same local-only endpoint validation applies; omitting it retains `http://127.0.0.1:11434`. For example:
+
+```sh
+node --experimental-strip-types evals/assistant-v1/contact-model-smoke.mjs qwen3:8b http://127.0.0.1:11438
+node --experimental-strip-types evals/assistant-v1/contact-review-model-smoke.mjs "$PWD/target/debug/tada-read-broker" qwen3:8b http://127.0.0.1:11438
+```
+
+Select and record the actual runtime/model digest. These checks retain their existing assertions and do not stand in for the 16 product scenarios.

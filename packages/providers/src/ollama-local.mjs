@@ -96,8 +96,12 @@ export class OllamaLocal {
       throw new Error('OLLAMA_MODEL_CHANGED');
     }
     const body = { model: this.model, messages, tools, stream: false, keep_alive: '5m',
-      options: { num_ctx: 16384, num_predict: 768, temperature: 0 } };
-    if (this.thinking) body.think = false;
+      options: { num_ctx: 16384, num_predict: this.thinking ? 4096 : 768, temperature: 0 } };
+    // Tool selection is part of the delegated work. Do not disable a selected
+    // model's reasoning capability merely to hide its private trace: Ollama
+    // separates that channel, and we discard it below. Bound the whole output,
+    // including reasoning, and reject a length-limited/incomplete turn.
+    if (this.thinking) body.think = true;
     const raw = await jsonRequest(this.endpoint, '/api/chat', body, signal, 65536);
     if (raw.done !== true || raw.done_reason !== 'stop' || raw.message?.role !== 'assistant'
         || typeof raw.message.content !== 'string') throw new Error('OLLAMA_INCOMPLETE_TURN');

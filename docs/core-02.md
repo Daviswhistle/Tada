@@ -21,6 +21,10 @@ cargo run --locked -p tada-store --example recover_mock -- ./new-mock-demo
 
 The example refuses an existing destination. It records a mock effect, loses the response, cancels execution, reopens the store, and verifies the existing effect by observation. It neither sends the mutation again nor labels the whole task successful.
 
+## Issue #14: owner-lock descriptor lifetime
+
+On Unix, duplicated or inherited descriptors share the `flock` open-file-description lock, so closing Store's original fd alone may leave ownership held. `OwnerLock` explicitly unlocks on drop; Store declares it after both SQLite connections, so `state.sqlite` and `witness.sqlite` close first. The same RAII ordering handles early-open errors, and `owner.lock` is never unlinked. A Unix regression keeps a duplicated fd alive across Store drop, checks that a genuine second owner is rejected, then verifies reopen succeeds while the duplicate remains and that the new owner still excludes another opener. Historical CI recorded an immediate-reopen `AlreadyOpen` symptom, but not the original lock holder; the specific cause was not established there.
+
 ## Admission, authority and time
 
 A run lease contains a task, run ID, supervisor generation and increasing task fence. Deadlines use the owning process's `Instant`. Every store open advances the persistent supervisor generation and invalidates all previous runs and grants, including a restart on the same OS boot. This is intentionally more conservative than retaining same-boot leases; an OS boot-ID probe and a scheduler are not implemented here.

@@ -50,7 +50,8 @@ test('inspect verifies local weights and capabilities before receiving user cont
 test('chat sends tool schema, no stream, and preserves actual tool result roles', async () => {
   await server(fixture({ '/api/chat': (_req, res, raw) => {
     const request = JSON.parse(raw);
-    assert.equal(request.stream, false); assert.equal(request.think, false);
+    assert.equal(request.stream, false); assert.equal(request.think, true);
+    assert.equal(request.options.num_predict, 4096);
     assert.equal(request.messages[0].role, 'tool'); assert.equal(request.messages[0].tool_name, 'read_file');
     assert.equal(request.tools[0].function.name, 'read_file');
     res.end(JSON.stringify({ done: true, done_reason: 'stop', message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'list_sources', arguments: {} } }] }, prompt_eval_count: 1, eval_count: 1 }));
@@ -58,6 +59,21 @@ test('chat sends tool schema, no stream, and preserves actual tool result roles'
     const provider = new OllamaLocal({ model: 'unit', endpoint }); await provider.inspect();
     const response = await provider.chat([{ role: 'tool', tool_name: 'read_file', content: '{}' }], [{ type: 'function', function: { name: 'read_file' } }]);
     assert.equal(response.message.tool_calls[0].function.name, 'list_sources');
+  });
+});
+
+test('models without a thinking capability keep the bounded non-reasoning request', async () => {
+  await server(fixture({
+    '/api/show': (_req, res) => res.end(JSON.stringify({ details: { format: 'gguf' }, capabilities: ['completion', 'tools'] })),
+    '/api/chat': (_req, res, raw) => {
+      const request = JSON.parse(raw);
+      assert.equal(Object.hasOwn(request, 'think'), false);
+      assert.equal(request.options.num_predict, 768);
+      res.end(JSON.stringify({ done: true, done_reason: 'stop', message: { role: 'assistant', content: 'Hello.' }, prompt_eval_count: 2, eval_count: 1 }));
+    },
+  }), async endpoint => {
+    const provider = new OllamaLocal({ model: 'unit', endpoint }); await provider.inspect();
+    assert.equal((await provider.chat([{ role: 'user', content: 'Hi' }], [])).message.content, 'Hello.');
   });
 });
 

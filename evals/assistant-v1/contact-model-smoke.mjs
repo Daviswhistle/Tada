@@ -13,13 +13,13 @@ import { serveContact } from '../../packages/engine/src/contact-http.mjs';
 
 const model = process.argv[2];
 if (!model) throw Error('Choose an installed local model explicitly');
-const provider = new OllamaLocal({ model });
+const provider = new OllamaLocal({ model, endpoint: process.argv[3] });
 const runtime = await provider.inspect(AbortSignal.timeout(20000));
 const route = contactRoute(runtime), passphrase = randomBytes(32).toString('base64url');
 const root = mkdtempSync(join(tmpdir(), 'tada-contact-live-')), directory = join(root, 'private');
 const sources = { definitions: [], validate: () => false, execute: async () => { throw Error('NO_CONNECTED_SOURCE'); }, verify: async () => false };
 let store = new ContactStore({ directory, passphrase, route, initialize: true });
-let service, host;
+let service, host, reported = false;
 const origin = 'http://127.0.0.1:9177';
 function call(path, body, cookie = '') {
   return new Promise((yes, no) => {
@@ -72,5 +72,14 @@ try {
     scenario: [first, followup], responses: fromPhone.turns.map(t => t.answer?.text), checks,
     usage: fromPhone.usage, synthetic_personal_context: true, public_deployment: false,
     physical_phone: false, broad_assistant_suite: 'not_run' }, null, 2));
+  reported = true;
   assert.ok(Object.values(checks).every(Boolean), 'Keep failed continuity checks in evidence');
+} catch (error) {
+  // Preserve the actual failed turn before deleting the synthetic journal.
+  // An assertion alone loses the provider/host reason needed to fix the path.
+  if (!reported) console.log(JSON.stringify({ kind: 'real_local_contact_continuity_failure',
+    commit: process.env.GITHUB_SHA ?? 'local-unrecorded', runtime,
+    failure: error.message, turns: store.page(), usage: store.usage(),
+    synthetic_personal_context: true, broad_assistant_suite: 'not_run' }, null, 2));
+  throw error;
 } finally { await host?.close(); await service?.close(); store.close(); rmSync(root, { recursive: true, force: true }); }

@@ -12,7 +12,7 @@ import { ConversationAssistant } from '../../packages/engine/src/conversation.ts
 const binary = resolve(process.argv[2] ?? 'target/debug/tada-read-broker');
 const model = process.argv[3];
 if (!model) throw new Error('An explicitly installed local model is required');
-const provider = new OllamaLocal({ model });
+const provider = new OllamaLocal({ model, endpoint: process.argv[4] });
 const identity = await provider.inspect(AbortSignal.timeout(20000));
 const results = [];
 const variants = [

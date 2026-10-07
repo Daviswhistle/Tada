@@ -14,7 +14,7 @@ import { ContactStore, contactRoute } from '../../packages/engine/src/contact-st
 import { ContactService } from '../../packages/engine/src/contact-service.mjs';
 import { serveContact } from '../../packages/engine/src/contact-http.mjs';
 
-const [binary, model] = process.argv.slice(2);
+const [binary, model, endpoint] = process.argv.slice(2);
 assert.ok(binary && isAbsolute(binary) && model, 'Choose the absolute read broker and installed local model explicitly');
 const RealDate = Date;
 const root = mkdtempSync(join(tmpdir(), 'tada-live-review-'));
@@ -75,7 +75,7 @@ async function pair(name) {
 }
 const check = (name, value) => { checks[name] = !!value; assert.equal(checks[name], true, name); };
 try {
-  const provider = new OllamaLocal({ model });
+  const provider = new OllamaLocal({ model, endpoint });
   const runtime = await provider.inspect(AbortSignal.timeout(20000)); evidence.runtime = runtime;
   const observedModel = { chat: async (messages, tools, signal) => {
     const request = ++modelRequest;
@@ -179,6 +179,8 @@ try {
   check('other_device_sees_same_conversation', result.assistant === identity && result.turns.length === 3);
   check('followup_retains_observed_gate', result.turns.at(-1)?.state === 'answered'
     && result.turns.at(-1).answer.text.includes(gate));
+  check('followup_cites_rechecked_source', result.turns.at(-1).answer.sources.some(s => s.sha256 === sha(updated))
+    && observed.some(o => o.stage === 'followup' && o.tool === 'citation_recheck' && o.sha256 === sha(updated)));
 } catch (error) {
   evidence.failure = { stage, message: error.message };
   process.exitCode = 1;

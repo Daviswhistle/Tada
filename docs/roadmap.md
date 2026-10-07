@@ -2,6 +2,14 @@
 
 Revised 2026-10-04 following the user's explicit correction. [Product contract](product-contract.md) is the current behavior specification. The preserved design remains a historical source and its safety invariants remain in force; its old examples and implementation ordering are not the active priority list.
 
+## Completion target — 2026-10-07
+
+The user has assigned ownership of a finished personal secretary with quality suitable for market release. The next delivery below is an engineering milestone within that objective, not permission to call the product finished. Preserve the same assistant across devices, ordinary conversation, useful actions and follow-through. Configure reusable owner delegation so routine authorized work does not repeatedly return to the owner for approval.
+
+Release requires a usable installation and onboarding flow on the declared supported platforms; an explicitly connected real model; integrated tools that actually perform and verify delegated work; durable conversation and work across restart and interruption; useful failure recovery and cancellation; private account/data handling; and independently evaluated product acceptance. The 16 assistant scenarios and original release evaluations remain distinct from component regression. Distribution signing, actual account/device qualification and commercial provider eligibility must have evidence before their support is advertised.
+
+At development baseline `4e9dbdc`, the contact browser and ordinary CI passed, but the real local review did not: the model promised future work without calling `propose_followup`. The general-action path, user-ready packaging, long-lived memory beyond preview limits and full product acceptance remain incomplete. GitHub PRs #1–#13, #15 and #16 form an unmerged stack; main does not contain these features. Repairing the observed defects is necessary, but is not a release declaration.
+
 ## Next delivery: one continuous delegation experience
 
 The next working build must accept ordinary conversation, discover the relevant context and sources, perform useful work through general tools, verify the result, and accept a follow-up without requiring the user to restate everything. Use the same assistant path for research without attachments, “This isn't working” in the current environment, and “Make the earlier one simpler.” Do not implement three phrase-to-script routes.

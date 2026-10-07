@@ -85,11 +85,23 @@ pub struct Notification {
     pub kind: String,
 }
 
+struct OwnerLock {
+    file: File,
+}
+impl Drop for OwnerLock {
+    fn drop(&mut self) {
+        // A duplicated/inherited descriptor can outlive this File. Release the
+        // flock on its open file description explicitly before closing it.
+        let _ = self.file.unlock();
+    }
+}
+
 pub struct Store {
     conn: Connection,
     witness: Connection,
-    // Never unlink a held lock: that would permit locking a replacement inode.
-    _lock: File,
+    // Fields drop in declaration order: close both databases before unlock.
+    // Never unlink a held lock, or another owner could lock a replacement inode.
+    _lock: OwnerLock,
     clock: Instant,
     poisoned: bool,
     admission: std::sync::Arc<priority::AdmissionGate>,
@@ -280,17 +292,18 @@ impl Store {
                 return Err(Error::RecoveryRequired);
             }
         }
-        let lock = OpenOptions::new()
+        let lock_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(root.join("owner.lock"))?;
-        match lock.try_lock() {
+        match lock_file.try_lock() {
             Ok(()) => (),
             Err(std::fs::TryLockError::WouldBlock) => return Err(Error::AlreadyOpen),
             Err(std::fs::TryLockError::Error(e)) => return Err(Error::Io(e)),
         }
+        let lock = OwnerLock { file: lock_file };
         let exists = root.join("state.sqlite").exists();
         if exists != root.join("witness.sqlite").exists() {
             return Err(Error::RecoveryRequired);
