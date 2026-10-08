@@ -16,6 +16,8 @@ This remains a development build requiring the repository's Node dependencies. I
 
 The same conversation now supports [saved documents](docs/contact-documents.md): create a short Markdown/text document, download it, and revise it in a later message while preserving earlier versions. These are encrypted conversation results, not arbitrary filesystem changes or external publication. Actual model/account qualification is still pending.
 
+A [bounded live check on 2026-10-09](docs/qualification-2026-10-07.md#2026-10-09--연결된-google-계정에서-문서-완성) used the selected ChatGPT subscription and a connected Google account to produce a saved document, recheck three cited sources and preserve it across restart. Mail results were truncated; this does not qualify comprehensive inbox review or the finished product.
+
 ## Proactive suggestions and phone contact
 
 [먼저 챙겨보기와 휴대폰 연락](docs/proactive-and-mobile.md)은 같은 대화의 설정에서 켭니다. 먼저 챙겨보기는 새 대화·저장된 업무에서 도움이 될 다음 행동을 하루 최대 한 번 제안하고, 새 내용이 없으면 조용히 기다립니다. Telegram 연결은 화면에서 설정하고 휴대폰에서 같은 비서에게 이야기합니다. 기존 기록은 원본 백업 후 v5 업데이트를 본인이 선택해야 합니다. 실제 계정에서의 제안 품질과 휴대폰 송수신은 아직 검증하지 않았으며, 컴퓨터에서 Tada가 실행 중이어야 합니다.
