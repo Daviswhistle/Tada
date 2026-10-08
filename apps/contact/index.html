@@ -1,6 +1,43 @@
 <!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light"><title>Tada — 곁에 두는 비서</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
-<body><div class="shell"><header><div class="brand">tada<span>곁에 두는 비서</span></div><div class="controls"><span id="connection" role="status">연결 확인 중</span><details id="settings" class="settings"><summary>설정</summary><div class="settings-panel"><h2>연결과 알림</h2><p id="provider-info" class="muted"></p><a id="plan-usage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer" hidden>ChatGPT 사용량과 연결 관리 ↗</a><button id="notifications" type="button">답변 알림 켜기</button><p class="muted">브라우저 알림은 이 페이지가 열려 있을 때 받을 수 있어요.</p><section id="proactive-settings"><h2>먼저 챙겨보기</h2><p class="muted">최근 대화·맡긴 일·저장된 문서에서 도움이 될 일을 찾아 먼저 제안해요. 새로운 내용이 있을 때 하루 최대 한 번, 오전 9시~오후 9시에 살펴봐요.</p><p class="muted">현재 선택한 모델의 사용량을 씁니다. 아직 메일·일정이나 다른 앱을 자동으로 살펴보지는 못해요.</p><p id="proactive-status" role="status" class="muted"></p><button id="proactive-toggle" type="button">먼저 챙겨보기 켜기</button></section><section id="mobile-settings"><h2>휴대폰에서 연락하기</h2><p class="muted">Telegram에서 같은 대화를 이어가고 새 제안 알림을 받을 수 있어요. 이 컴퓨터에서 Tada가 실행 중이어야 해요.</p><p id="mobile-status" role="status" class="muted"></p><button id="mobile-reconnect" type="button" hidden>저장된 연결로 다시 시도</button><form id="mobile-form"><p class="muted"><a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">Telegram에서 내 비서 만들기 ↗</a><br>BotFather에게 /newbot을 보내고 이름을 정한 뒤 받은 연결 키를 아래에 붙여 넣으세요. Tada 전용 봇을 사용해 주세요.</p><label for="mobile-token">Telegram 연결 키</label><input id="mobile-token" type="password" autocomplete="off" spellcheck="false" required><p class="muted">연결하면 이 개인 채팅의 메시지와 답변을 Telegram으로 주고받습니다. 연결 키는 이 컴퓨터에 암호화해 보관합니다.</p><button id="mobile-connect" type="submit">동의하고 연결하기</button></form><button id="mobile-pair" type="button" hidden>휴대폰 연결 링크 만들기</button><a id="mobile-link" target="_blank" rel="noopener noreferrer" hidden>Telegram에서 대화 열기 ↗</a><p id="mobile-link-help" class="muted" hidden>이 링크를 본인 휴대폰에서 열고 시작을 누르세요. 아래에 나타나는 연결 요청을 확인하면 대화가 이어져요. 링크는 5분 동안 유효해요.</p><button id="mobile-copy" type="button" hidden>연결 링크 복사</button><div id="mobile-candidates"></div><button id="mobile-disconnect" type="button" hidden>휴대폰 연결 해제</button></section><button id="logout" type="button" hidden>이 기기 연결 해제</button></div></details></div></header>
+<body><div class="shell">
+<header><div class="brand">tada<span>곁에 두는 비서</span></div><div class="controls"><span id="connection" role="status">연결 확인 중</span><button id="settings-open" type="button" aria-haspopup="dialog">설정</button></div></header>
+<dialog id="settings" aria-labelledby="settings-title">
+  <div class="settings-heading"><div><p class="eyebrow">나의 비서</p><h1 id="settings-title">설정</h1></div><button id="settings-close" type="button" aria-label="설정 닫기">닫기 ×</button></div>
+  <div class="settings-layout">
+    <nav class="settings-nav" aria-label="설정 항목">
+      <button id="settings-nav-care" type="button" aria-pressed="true" aria-controls="settings-care">먼저 챙기기</button>
+      <button id="settings-nav-accounts" type="button" aria-pressed="false" aria-controls="settings-accounts">연결된 계정</button>
+      <button id="settings-nav-mobile" type="button" aria-pressed="false" aria-controls="settings-mobile">연락과 알림</button>
+    </nav>
+    <div id="settings-content" class="settings-content">
+      <p id="settings-notice" role="alert" hidden></p>
+      <div id="settings-care">
+        <section id="proactive-settings" class="setting-card featured">
+          <p class="eyebrow">말을 걸기 전에도</p><h2>먼저 챙겨보기</h2>
+          <p class="muted">메일과 다가오는 일정, 맡긴 일을 살펴 필요한 제안과 오늘 챙길 일을 먼저 알려드려요.</p>
+          <p id="proactive-status" role="status"></p><button id="proactive-toggle" type="button">먼저 챙겨보기 켜기</button>
+          <dl class="setting-facts"><div><dt>확인 주기</dt><dd>하루 한 번 · 오전 9시~오후 9시</dd></div><div><dt>사용량</dt><dd>현재 모델로 하루 최대 4회 요청</dd></div><div><dt>최근 자동 확인</dt><dd id="proactive-last">아직 확인 전</dd></div></dl>
+          <details class="setting-details"><summary>무엇을 살펴보나요?</summary><p id="proactive-scope" class="muted">최근 대화·맡긴 일·저장된 문서를 확인합니다. 연결된 Google 계정이 있으면 최근 메일과 다가오는 일정도 함께 살펴봅니다.</p><p class="muted">기한이 가까워졌거나 새로 달라진 내용이 있을 때 알려드려요. 새로 챙길 일이 없으면 불필요한 연락을 하지 않습니다. 별도 시각 알림은 대화에서 확정한 예약을 따릅니다.</p></details>
+        </section>
+        <aside class="settings-note"><strong>자리를 비워도 이어서</strong><p>창을 닫아도 확인은 계속돼요. 이 컴퓨터가 켜져 있고 Tada가 실행 중이어야 합니다.</p><button id="settings-contact-link" class="text-button" type="button">휴대폰으로 알림 받기 →</button></aside>
+      </div>
+      <div id="settings-accounts" hidden>
+        <div id="google-settings-slot"></div>
+        <section class="setting-card"><p class="eyebrow">생각하고 답하는 모델</p><h2>AI 연결</h2><p id="provider-info" class="muted"></p><a id="plan-usage" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer" hidden>ChatGPT 사용량과 연결 관리 ↗</a></section>
+        <details class="setting-details device-settings"><summary>이 기기 관리</summary><p class="muted">이 브라우저의 접근만 해제합니다. 대화와 연결된 계정은 보존됩니다.</p><button id="logout" type="button" hidden>이 기기 연결 해제</button></details>
+      </div>
+      <div id="settings-mobile" hidden>
+        <section id="mobile-settings" class="setting-card"><p class="eyebrow">같은 비서와 어디서든</p><h2>휴대폰에서 연락하기</h2><p class="muted">Telegram으로 이야기하고, 새 제안과 예약 알림을 받아보세요.</p><p id="mobile-status" role="status"></p><button id="mobile-reconnect" type="button" hidden>저장된 연결로 다시 시도</button>
+          <form id="mobile-form"><ol class="connect-steps"><li><a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">Telegram에서 전용 봇 만들기 ↗</a><span>BotFather에게 /newbot을 보내고 이름을 정해 주세요.</span></li><li><label for="mobile-token">받은 연결 키 붙여 넣기</label><input id="mobile-token" aria-label="Telegram 연결 키" type="password" autocomplete="off" spellcheck="false" placeholder="BotFather가 알려준 연결 키" required></li></ol><p class="muted">메시지와 답변은 Telegram으로 전송됩니다. 연결 키는 이 컴퓨터에 암호화해 보관합니다.</p><button id="mobile-connect" type="submit">동의하고 연결하기</button></form>
+          <button id="mobile-pair" type="button" hidden>휴대폰 연결 링크 만들기</button><a id="mobile-link" target="_blank" rel="noopener noreferrer" hidden>Telegram에서 대화 열기 ↗</a><p id="mobile-link-help" class="muted" hidden>본인 휴대폰에서 링크를 열고 시작을 누른 뒤, 아래 연결 요청을 확인해 주세요. 링크는 5분 동안 유효합니다.</p><button id="mobile-copy" type="button" hidden>연결 링크 복사</button><div id="mobile-candidates"></div><button id="mobile-disconnect" type="button" hidden>휴대폰 연결 해제</button>
+        </section>
+        <section class="setting-card"><h2>이 브라우저 알림</h2><p class="muted">이 페이지가 열려 있을 때 새 답변을 알려드려요.</p><button id="notifications" type="button">답변 알림 켜기</button></section>
+        <p class="settings-footnote">컴퓨터가 꺼져 있거나 잠들면 확인과 연락도 잠시 멈춥니다.</p>
+      </div>
+    </div>
+  </div>
+</dialog>
 <main><section id="pairing" hidden><p class="eyebrow">어디서든 같은 대화</p><h1>여기서도<br>이야기를 이어가세요.</h1><p class="lead">연결하면 지금까지 나눈 대화와 맡긴 일을 볼 수 있어요.</p><form id="pair-form"><details class="quiet-details"><summary>기기 이름 바꾸기</summary><label class="sr-only" for="device-name">이 기기의 이름</label><input id="device-name" maxlength="64" value="내 기기" autocomplete="off" required></details><button type="submit">이 기기에서 계속하기 →</button></form><p id="pair-help" class="muted"></p></section>
 <section id="conversation" hidden aria-label="비서와의 대화"><button id="older" class="text-button" type="button" hidden>이전 대화 보기</button><div id="empty"><div class="welcome-mark" aria-hidden="true">t.</div><p class="eyebrow">Tada에게 맡기기</p><h1>무엇을 맡길까요?</h1><p class="lead">문서를 만들고 수정하고, 허용한 자료를 확인하고,<br>챙겨야 할 일을 기록할 수 있어요.</p><div class="suggestions"><button id="suggest-plan" type="button">체크리스트 문서 만들기</button><button id="suggest-remember" type="button">잊지 않게 챙겨줘</button></div></div><div id="messages" aria-live="polite" aria-relevant="additions text"></div></section>
 <section id="followups" hidden aria-label="맡긴 일과 후속 연락"><div id="followup-notices" aria-live="polite"></div><div id="followup-proposals"></div><details id="work-drawer"><summary>맡긴 일 <span id="work-count"></span></summary><p id="work-empty" class="muted">챙길 일이 생기면 여기에 모아둘게요.</p><div id="followup-items"></div><button id="followup-more" class="text-button" type="button" hidden>이전 업무 기록 보기</button></details></section></main>

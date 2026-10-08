@@ -25,6 +25,7 @@ export interface SourcePort {
   verify(evidence: Evidence, signal: AbortSignal): Promise<boolean>;
   assertCurrent?(signal: AbortSignal): void;
   isEvidenceRead?(name: string): boolean;
+  completionIssue?(): string | null;
 }
 // Trusted in-process admission only; this callback is never model input or a
 // wire field. Sources may shorten an observation before evidence is issued.
@@ -186,6 +187,7 @@ export class ConversationAssistant {
     let toolCount = 0;
     let freshReads = 0;
     let citationCorrection = false;
+    let completionCorrection = false;
     let batchCorrection = false;
     const transientHistory = new Set<number>();
     const failures = new Map<string, number>();
@@ -326,6 +328,14 @@ export class ConversationAssistant {
           continue;
         }
         if (!message.content.trim()) throw new Error('ASSISTANT_EMPTY_ANSWER');
+        const completionIssue = this.sources.completionIssue?.();
+        if (completionIssue) {
+          if (completionCorrection) throw new Error('ASSISTANT_INCOMPLETE_CHECK');
+          completionCorrection = true;
+          transientHistory.add(this.history.length); this.history.push(copy(message));
+          transientHistory.add(this.history.length); this.history.push({ role: 'system', content: completionIssue });
+          continue;
+        }
         const quiet = !response.refused && this.sources.quietAnswer === 'NO_NEW_SUGGESTION' && message.content.trim() === this.sources.quietAnswer;
         const ids = [...new Set([...message.content.matchAll(/\[(S[0-9]+)\]/gu)].map(m => m[1] as string))];
         if (ids.some(id => !this.evidence.has(id)) || (!response.refused && !quiet && freshReads > 0 && ids.length === 0)) {

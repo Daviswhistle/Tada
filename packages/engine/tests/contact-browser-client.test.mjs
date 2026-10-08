@@ -21,6 +21,8 @@ function client() {
     setAttribute(name, value) { if (name === 'id') this.id = value; else this.attributes.set(name, String(value)); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     focus() { focused = this; }
+    showModal() { this.open = true; }
+    close() { this.open = false; this.onclose?.(); }
     scrollIntoView(options) { this.scrolls.push(options); }
     insert(index, items) {
       for (const item of items) {
@@ -45,9 +47,6 @@ function client() {
   }
   const body = new Element('body'); body.scrollHeight = 100;
   const get = id => { if (!elements.has(id)) { const item = new Element(); item.id = id; body.append(item); } return elements.get(id); };
-  // The static page has these two explanatory paragraphs; the real client
-  // updates the second after a Google connection state changes.
-  for (let i = 0; i < 2; i++) { const p = new Element('p'); p.className = 'muted'; get('proactive-settings').append(p); }
   const calls = [], pending = [], handlers = new Map();
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
@@ -83,9 +82,8 @@ test('an accepted message does not erase the next draft typed while its request 
 });
 
 test('Google settings use the inserted controls and render configuration, account and pending states without connecting automatically', async () => {
-  const c = client(), section = c.get('google-settings'), proactive = c.get('proactive-settings');
-  assert.equal(section.parentNode, proactive.parentNode);
-  assert.equal(section.parentNode.children.indexOf(section) + 1, section.parentNode.children.indexOf(proactive));
+  const c = client(), section = c.get('google-settings');
+  assert.equal(section.parentNode, c.get('google-settings-slot'));
   assert.equal(c.get('google-status').getAttribute('role'), 'status');
   assert.ok(section.children.includes(c.get('google-connect')));
   const consent = c.get('google-consent'), details = c.get('google-scope-details');
@@ -313,4 +311,31 @@ test('rewrite waits for admission to settle so its late response cannot erase a 
   retry.onclick(); assert.equal(c.get('message').value, 'Retry this work');
   const next = c.submit(); c.accept(); await next;
   assert.notEqual(c.calls.filter(call => call.path === '/api/turns')[1].body.request_id, original);
+});
+
+test('settings navigation keeps account actions separate and closes without retaining the mobile secret', () => {
+  const c = client(); c.get('settings-open').onclick();
+  assert.equal(c.get('settings').open, true);
+  assert.equal(c.get('settings-care').hidden, false); assert.equal(c.get('settings-accounts').hidden, true);
+  c.get('settings-nav-accounts').onclick();
+  assert.equal(c.get('settings-care').hidden, true); assert.equal(c.get('settings-accounts').hidden, false);
+  assert.equal(c.get('settings-nav-accounts').getAttribute('aria-pressed'), 'true');
+  c.get('settings-contact-link').onclick();
+  assert.equal(c.get('settings-mobile').hidden, false); assert.equal(c.focused, c.get('settings-nav-mobile'));
+  c.get('mobile-token').value = 'fixture-not-a-real-secret'; c.get('settings-close').onclick();
+  assert.equal(c.get('settings').open, false); assert.equal(c.get('mobile-token').value, '');
+  assert.equal(c.focused, c.get('settings-open'));
+  assert.equal(c.calls.length, 0);
+});
+
+test('a connection error is visible inside the modal and remains available after closing it', async () => {
+  const c = client(); c.get('settings-open').onclick(); c.get('settings-nav-mobile').onclick();
+  c.handle('/api/mobile/connect', () => { throw Error('Fixture connection unavailable'); });
+  c.get('mobile-token').value = 'fixture-not-a-real-secret';
+  await c.get('mobile-form').onsubmit({ preventDefault() {} });
+  assert.equal(c.get('settings-notice').hidden, false);
+  assert.match(c.get('settings-notice').textContent, /Fixture connection unavailable/);
+  assert.equal(c.get('notice').hidden, true);
+  c.get('settings-close').onclick();
+  assert.equal(c.get('notice').hidden, false); assert.equal(c.get('settings-notice').hidden, true);
 });

@@ -720,7 +720,7 @@ for (const citeSaved of [true, false]) test(`proactive citation freshness follow
   e.store.finish(seq, { text: '당시 납기는 미정입니다. [S1]', sources: [evidence] }, cp, [], document);
   let calls = 0;
   const model = { async chat() {
-    return ++calls === 1 ? reply('', [callTool('read_document', { id: seq }), callTool('list_upcoming_events')])
+    return ++calls === 1 ? reply('', [callTool('read_document', { id: seq }), callTool('list_upcoming_events'), callTool('list_recent_emails')])
       : reply(citeSaved ? '저장된 분석에는 당시 납기가 미정이라고 되어 있어요 [S1]. 다가오는 일정에서 납기를 확인하면 좋겠어요 [S2].'
         : '현재 확인한 일정의 미팅 전에 질문 목록을 준비하면 좋겠어요 [S2].');
   } };
@@ -1631,4 +1631,38 @@ test('filename-free attachment dispositions exclude inline text and container su
     assert.equal(email.content.includes('PRIVATE_ATTACHMENT_TEXT'), false); assert.equal(email.body_status, 'available');
     assert.equal(await sources.verify(evidenceOf(email), signal), true); assert.equal(fake.requests.some(item => item.path.includes('/attachments/')), false);
   });
+});
+
+for (const scenario of ['corrected', 'corrected_empty', 'ignored', 'calendar_failed']) test(`daily check cannot claim nothing is new without reading connected mail and calendar: ${scenario}`, async () => {
+  const e = environment(), fake = await googleServer(scenario === 'calendar_failed' ? { responses: { calendar: { status: 503, value: {} } } } : scenario === 'corrected_empty' ? { responses: { inbox: { value: { messages: [] } }, calendar: { value: { items: [] } } } } : {});
+  const device = e.store.addDevice('Owner'); e.store.saveGoogleCredential(device.id, makeCredential(device.id), null);
+  let calls = 0;
+  const model = { async chat(messages) {
+    calls++;
+    assert.match(messages[0].content, /owner timezone: Asia\/Seoul/);
+    assert.match(messages[0].content, /deadline getting closer/);
+    if (calls === 1) return reply('NO_NEW_SUGGESTION');
+    assert.ok(messages.some(message => message.role === 'system' && message.content.includes('daily check is incomplete')));
+    if (scenario === 'ignored') return reply('NO_NEW_SUGGESTION');
+    if (calls === 2) return reply('', [callTool('list_recent_emails'), callTool('list_upcoming_events')]);
+    return reply('NO_NEW_SUGGESTION');
+  } };
+  const service = new ContactService(e.store, model, noSources), connection = makeConnection(e.store, service, fake);
+  try {
+    const noon = Date.parse('2026-10-08T03:00:00Z');
+    e.store.configureProactive(device.id, true, 'daily_conversation_suggestions_v1', 'Asia/Seoul', noon);
+    assert.equal(e.store.proactiveTick(noon, true), 1); service.start(); await service.idle();
+    const turn = e.store.page().turns.at(-1);
+    if (scenario.startsWith('corrected')) {
+      assert.equal(turn.state, 'answered'); assert.equal(turn.answer.quiet, true);
+      assert.equal(fake.counts().inboxCount, 1); assert.equal(fake.counts().calendarCount, 1);
+    } else {
+      assert.equal(turn.state, 'failed'); assert.equal(turn.error, 'ASSISTANT_INCOMPLETE_CHECK');
+      assert.equal(turn.answer, null);
+    }
+    assert.equal(calls, scenario === 'ignored' ? 2 : 3);
+    assert.equal(e.store.checkpoint().through, 0);
+    assert.equal(e.store.proactiveTick(noon + 1000, true), 0);
+    assert.equal(e.store.usage().requests, calls);
+  } finally { await service.close(); connection.close(); e.close(); await fake.close(); }
 });

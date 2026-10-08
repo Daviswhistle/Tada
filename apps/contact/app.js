@@ -6,7 +6,28 @@ const autoPair = link.get('auto') === '1';
 if (location.hash) history.replaceState(null, '', location.pathname);
 let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = null, known = false;
 let turns = new Map();
-const notice = text => { $('notice').textContent = text; $('notice').hidden = !text; };
+const notice = text => {
+  $('notice').textContent = text; $('notice').hidden = !text || $('settings').open;
+  $('settings-notice').textContent = text; $('settings-notice').hidden = !text || !$('settings').open;
+};
+const settingsPages = ['care', 'accounts', 'mobile'];
+function showSettingsPage(page) {
+  $('settings-content').scrollTop = 0;
+  for (const name of settingsPages) {
+    $('settings-' + name).hidden = name !== page;
+    $('settings-nav-' + name).setAttribute('aria-pressed', String(name === page));
+  }
+}
+function openSettings(page = 'care') {
+  showSettingsPage(page);
+  if (!$('settings').open) $('settings').showModal();
+  notice($('notice').textContent);
+}
+$('settings-open').onclick = () => openSettings();
+$('settings-close').onclick = () => $('settings').close();
+$('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open').focus(); notice($('settings-notice').textContent); };
+for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
+$('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
   CONTACT_PROACTIVE_CONSENT_REQUIRED: '먼저 챙겨보기의 범위와 사용량 안내를 확인해 주세요.',
   CONTACT_ASSISTANCE_UPGRADE_REQUIRED: 'Tada를 다시 열어 기록 업데이트를 완료해 주세요. 원본은 먼저 백업합니다.',
@@ -58,7 +79,7 @@ async function api(path, data) {
   return body;
 }
 function paired(yes) {
-  $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings').hidden = !yes; if (!yes) $('followups').hidden = true;
+  $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings-open').hidden = !yes; if (!yes && $('settings').open) $('settings').close(); if (!yes) $('followups').hidden = true;
   if (!yes) { $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
@@ -109,7 +130,7 @@ function render() {
       if (['failed', 'interrupted'].includes(turn.state) && ['CONTACT_GOOGLE_RECONNECT_REQUIRED', 'CONTACT_GOOGLE_SCOPE_DENIED', 'CONTACT_GOOGLE_PERMISSION_DENIED'].includes(turn.error)) {
         const settings = document.createElement('button'); settings.type = 'button'; settings.textContent = 'Google 연결 설정';
         settings.onclick = () => {
-          $('settings').open = true;
+          openSettings('accounts');
           googleStatus.scrollIntoView({ block: 'nearest' }); googleStatus.focus({ preventScroll: true });
         };
         status.append(settings);
@@ -208,7 +229,7 @@ function element(tag, text, className) {
 }
 const googleSection = document.createElement('section');
 googleSection.id = 'google-settings';
-googleSection.hidden = true;
+googleSection.hidden = true; googleSection.className = 'setting-card';
 googleSection.append(element('h2', 'Gmail과 일정 연결'));
 const googleConsent = element('p', '최근 메일과 다가오는 일정을 읽고, 필요한 발췌를 선택한 Tada 모델로 전송해요. 먼저 챙겨보기를 따로 켜면 같은 범위에서 하루 한 번 살펴봅니다.', 'muted');
 googleConsent.id = 'google-consent'; googleSection.append(googleConsent);
@@ -220,7 +241,7 @@ googleDetails.append(element('summary', '확인하는 자료와 범위'));
 googleDetails.append(element('p', '최근 7일 받은편지함의 보낸 사람·제목·미리보기와 필요한 메일의 짧은 본문, 앞으로 7일 기본 캘린더 일정만 읽어요. 목록은 각각 최대 20개이며, 자료가 많으면 일부만 살펴봅니다.', 'muted'));
 googleDetails.append(element('p', '보낸편지함과 전체 대화는 읽지 않아 답장 여부는 확인할 수 없어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다. Google 권한 화면에서도 읽기 범위를 확인할 수 있어요.', 'muted'));
 googleSection.append(googleDetails);
-$('proactive-settings').before(googleSection);
+$('google-settings-slot').append(googleSection);
 function when(value, timezone) {
   if (value === null) return '시간 알림 없음';
   try { return new Intl.DateTimeFormat('ko', { timeZone: timezone, year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'shortOffset' }).format(new Date(value)) + ` · ${timezone}`; }
@@ -331,20 +352,21 @@ function renderGoogle(state) {
 }
 function renderAssistance(result) {
   renderGoogle(result.google);
-  const proactiveCopy = $('proactive-settings').querySelectorAll('p.muted');
-  proactiveCopy[1].textContent = result.google?.connected
+  $('proactive-scope').textContent = result.google?.connected
     ? '현재 선택한 모델의 사용량을 씁니다. 연결된 Google 계정은 이 설정을 켠 경우에만 최근 메일과 다가오는 일정을 하루 한 번 살펴봅니다.'
     : '현재 선택한 모델의 사용량을 씁니다. Google 연결만으로 먼저 챙겨보기가 켜지지는 않습니다.';
   const state = result.proactive;
   proactiveEnabled = state?.enabled === true;
+  $('proactive-last').textContent = state?.last ? new Intl.DateTimeFormat('ko-KR', { timeZone: state.timezone ?? undefined, month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(state.last.created) + ({ queued: ' · 대기', running: ' · 확인 중', failed: ' · 확인 실패', interrupted: ' · 중단', cancelled: ' · 취소', answered: '' }[state.last.state] ?? '') : '아직 확인 전';
   $('proactive-settings').hidden = !state?.available;
+  $('proactive-toggle').setAttribute('aria-pressed', String(proactiveEnabled));
   $('proactive-toggle').textContent = proactiveEnabled ? '먼저 챙겨보기 끄기' : '먼저 챙겨보기 켜기';
   $('proactive-status').textContent = proactiveEnabled
     ? (state.blocked_reason === 'usage_limit' ? '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.'
       : state.last?.state === 'failed' || state.last?.state === 'interrupted' ? '최근 확인을 끝내지 못했어요. 기록은 남아 있고 자동으로 재시도하지 않아요.'
-      : result.google?.connected ? '켜져 있어요. 최근 메일과 다가오는 일정도 하루 한 번 확인하며, 새 제안이 없으면 조용히 기다려요.'
-      : '켜져 있어요. 도움이 될 새 내용이 없으면 조용히 기다려요.')
-    : '꺼져 있어요. 켜면 같은 비서가 먼저 챙겨봅니다.';
+      : result.google?.connected ? '켜져 있어요. 메일과 일정을 확인하고, 가까워진 기한과 필요한 일을 먼저 알려드려요.'
+      : '켜져 있어요. 맡긴 일과 대화에서 챙길 일을 먼저 찾아요.')
+    : '꺼져 있어요. 켜면 말을 걸지 않아도 먼저 살펴봅니다.';
   const mobile = result.mobile;
   $('mobile-settings').hidden = !mobile?.available;
   if (!mobile?.available) return;
