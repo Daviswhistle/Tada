@@ -99,11 +99,19 @@ export function completedTurn(value, names) {
     provider_state: { version: 1, provider: 'chatgpt-subscription', items: retained } }, input_tokens: value.usage.input_tokens, output_tokens: value.usage.output_tokens };
 }
 async function collect(res, signal) {
-  if (!res.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream')) { await res.body?.cancel(); throw Error('CHATGPT_STREAM_REQUIRED'); }
+  const contentType = res.headers.get('content-type');
+  if (contentType !== null && contentType.split(';', 1)[0].trim().toLowerCase() !== 'text/event-stream') {
+    await res.body?.cancel(); throw Error('CHATGPT_STREAM_REQUIRED');
+  }
+  if (!res.body) throw Error('CHATGPT_STREAM_INCOMPLETE');
   const reader = res.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
   let buffer = '', bytes = 0, events = 0, terminal;
   function event(block) {
-    const data = block.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /u, '')).join('\n');
+    const lines = block.split('\n');
+    // Some subscription responses omit MIME metadata. Require SSE field framing
+    // in that case so JSON/HTML containing a data: line cannot become a reply.
+    if (contentType === null && lines.some(line => line && !/^(?::|(?:data|event|id|retry)(?::|$))/u.test(line))) throw Error('CHATGPT_STREAM_INVALID');
+    const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).replace(/^ /u, '')).join('\n');
     if (!data) return;
     if (data === '[DONE]') { if (!terminal) throw Error('CHATGPT_INCOMPLETE_TURN'); return; }
     if (terminal) throw Error('CHATGPT_STREAM_AFTER_COMPLETION');
@@ -168,7 +176,7 @@ export class ChatGPTSubscription {
     const { request, names } = this.#request(messages, tools);
     const token = await this.account.accessToken(signal);
     const res = await response(this.fetcher, `${API}/responses`, { method: 'POST', signal,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify(request) });
     return completedTurn(await collect(res, signal), names);
   }
 }

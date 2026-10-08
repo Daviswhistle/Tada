@@ -23,6 +23,7 @@ async function serverFixture(handler) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : null; requests.push(body);
     assert.equal(req.headers.authorization, 'Bearer synthetic-fixture-access');
+    assert.equal(req.headers.accept, 'text/event-stream');
     handler(body, res);
   });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -32,7 +33,9 @@ async function serverFixture(handler) {
   const provider = new ChatGPTSubscription({ account, model: 'fixture-model', fetcher }); await provider.inspect();
   return { provider, account, requests, close: async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } };
 }
-function stream(res, events) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(events.map(frame).join('')); }
+function stream(res, events, contentType = 'text/event-stream') {
+  res.writeHead(200, contentType === null ? {} : { 'content-type': contentType }); res.end(events.map(frame).join(''));
+}
 
 test('subscription is the explicit default, local compatibility requires a named local provider', () => {
   assert.equal(contactOptions(['--data', 'fixture']).provider, 'chatgpt');
@@ -47,6 +50,57 @@ test('complete subscription response uses the public protocol and discards priva
     assert.equal(result.message.content, '안녕하세요.'); assert.equal(result.input_tokens, 12);
     const body = env.requests[0]; assert.deepEqual(Object.keys(body).sort(), ['input', 'model', 'store', 'stream']);
     assert.equal(body.store, false); assert.equal(body.stream, true); assert.equal(body.input[0].role, 'developer');
+  } finally { await env.close(); }
+});
+
+test('missing Content-Type accepts a fully completed SSE response with normal field framing', async () => {
+  const env = await serverFixture((_body, res) => {
+    res.writeHead(200);
+    res.end(': synthetic comment\r\nretry: 1000\r\nid: fixture\r\nevent: response.completed\r\n'
+      + frame(completed([message('검증된 합성 답변입니다.')])).replace(/\n/gu, '\r\n'));
+  });
+  try {
+    const result = await env.provider.chat([{ role: 'user', content: 'synthetic request' }], [], new AbortController().signal);
+    assert.equal(result.message.content, '검증된 합성 답변입니다.');
+    assert.equal(result.input_tokens, 12); assert.equal(result.output_tokens, 8); assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+for (const contentType of ['application/json', 'text/html', '', 'text/event-stream-malicious']) test(`explicit non-SSE MIME ${JSON.stringify(contentType)} rejects even completed SSE and never retries`, async () => {
+  const env = await serverFixture((_body, res) => stream(res, [completed([message('must not escape')])], contentType));
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'synthetic request' }], [], new AbortController().signal), /CHATGPT_STREAM_REQUIRED/);
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+for (const [name, body, expected] of [
+  ['JSON response', JSON.stringify(completed([message('must not escape')]).response), 'CHATGPT_STREAM_INCOMPLETE'],
+  ['HTML response', '<html><body>must not escape</body></html>', 'CHATGPT_STREAM_INCOMPLETE'],
+  ['JSON wrapper with injected SSE', '{"wrapped":"\n' + frame(completed([message('must not escape')])) + '"}\n\n', 'CHATGPT_STREAM_INVALID'],
+  ['HTML wrapper with injected SSE', '<html>\n' + frame(completed([message('must not escape')])) + '</html>\n\n', 'CHATGPT_STREAM_INVALID'],
+  ['truncated frame', frame(completed([message('must not escape')])).slice(0, -1), 'CHATGPT_STREAM_INCOMPLETE'],
+  ['missing completion', frame({ type: 'response.output_text.delta', delta: 'partial' }), 'CHATGPT_INCOMPLETE_TURN'],
+  ['incomplete turn', frame({ type: 'response.incomplete' }), 'CHATGPT_INCOMPLETE_TURN'],
+  ['late failure', frame({ type: 'response.output_text.delta', delta: 'partial' }) + frame({ type: 'response.failed', response: { error: { code: 'subscription_sharing_usage_limit_exceeded' } } }), 'CHATGPT_USAGE_LIMIT'],
+  ['failure after completion', frame(completed([message('must not escape')])) + frame({ type: 'response.failed' }), 'CHATGPT_STREAM_AFTER_COMPLETION'],
+  ['wrong tool', frame(completed([call('send_money', {})])), 'CHATGPT_TOOL_CALL_INVALID'],
+  ['wrong namespace', frame(completed([call('list_sources', {}, { namespace: 'attacker' })])), 'CHATGPT_TOOL_CALL_INVALID'],
+  ['event limit', frame({ type: 'response.output_text.delta', delta: '' }).repeat(4097), 'CHATGPT_RESPONSE_LIMIT'],
+  ['byte limit', ':' + 'x'.repeat(1048576) + '\n\n' + frame(completed([message('must not escape')])), 'CHATGPT_RESPONSE_LIMIT'],
+]) test(`missing Content-Type ${name} releases no answer or tool and never retries`, async () => {
+  const env = await serverFixture((_body, res) => { res.writeHead(200); res.end(body); });
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'synthetic request' }], [tool], new AbortController().signal), error => error.message === expected);
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+test('missing Content-Type and absent HTTP body return a defined stream error without retry', async () => {
+  const env = await serverFixture((_body, res) => { res.writeHead(204); res.end(); });
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'synthetic request' }], [], new AbortController().signal), /CHATGPT_STREAM_INCOMPLETE/);
+    assert.equal(env.requests.length, 1);
   } finally { await env.close(); }
 });
 
@@ -95,7 +149,7 @@ test('HTTP redirects cannot forward credentials to another destination', async (
   finally { await env.close(); }
 });
 
-test('same contact conversation executes source tools, survives restart across devices and rejects remote review grants', async () => {
+for (const contentType of ['text/event-stream', null]) test(`same contact conversation with ${contentType === null ? 'missing' : 'declared'} Content-Type executes source tools, survives restart across devices and rejects remote review grants`, async () => {
   const root = mkdtempSync(join(tmpdir(), 'tada-subscription-contact-')), notes = join(root, 'notes'), directory = join(root, 'journal');
   mkdirSync(notes); writeFileSync(join(notes, 'update.txt'), '미루 출시: 11월 2일. 남은 일: 계약 검토.');
   let phase = 0;
@@ -114,7 +168,7 @@ test('same contact conversation executes source tools, survives restart across d
       assert.ok(outputs.some(item => item.output.includes('계약 검토')));
       output = message('앞서 확인한 남은 일은 계약 검토입니다. [S1]');
     }
-    phase++; stream(res, [completed([{ type: 'reasoning', id: `rs_fixture_${phase}`, encrypted_content: `opaque-encrypted-fixture-${phase}`, summary: [{ type: 'summary_text', text: 'private summary fixture' }] }, output])]);
+    phase++; stream(res, [completed([{ type: 'reasoning', id: `rs_fixture_${phase}`, encrypted_content: `opaque-encrypted-fixture-${phase}`, summary: [{ type: 'summary_text', text: 'private summary fixture' }] }, output])], contentType);
   });
   const passphrase = 'synthetic contact encryption passphrase', route = contactRoute({ provider: env.provider.identity });
   let store, service;
