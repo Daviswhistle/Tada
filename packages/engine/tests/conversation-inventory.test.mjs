@@ -11,7 +11,7 @@ const sourcePort = definitions => ({ definitions, validate: () => false,
 test('model receives the actual host tool inventory without a preselected source or task', async () => {
   const source = sourcePort([definition('list_sources'), definition('read_file')]);
   const assistant = new ConversationAssistant({ async chat(messages, tools) {
-    assert.match(messages[0].content, /Current host tool inventory: \["list_sources","read_file"\]/u);
+    assert.match(messages[0].content, /Follow tool schemas exactly/u);
     assert.deepEqual(tools, source.definitions);
     assert.equal(messages.at(-1).content, 'What is going on?');
     assert.equal(messages[0].content.includes('Cedar'), false);
@@ -23,7 +23,7 @@ test('model receives the actual host tool inventory without a preselected source
 
 test('an empty inventory remains empty rather than claiming a connected source', async () => {
   const assistant = new ConversationAssistant({ async chat(messages, tools) {
-    assert.match(messages[0].content, /Current host tool inventory: \[\]/u);
+    assert.match(messages[0].content, /No tools are connected/u);
     assert.deepEqual(tools, []);
     return response();
   } }, sourcePort([]));
@@ -35,11 +35,10 @@ test('an empty inventory remains empty rather than claiming a connected source',
 test('inventory refreshes on follow-up and forget without using untrusted names as instructions', async () => {
   const source = sourcePort([definition('list_sources')]);
   let calls = 0;
-  const assistant = new ConversationAssistant({ async chat(messages) {
+  const assistant = new ConversationAssistant({ async chat(messages, tools) {
     calls++;
-    assert.match(messages[0].content, calls === 1
-      ? /Current host tool inventory: \["list_sources"\]/u
-      : /Current host tool inventory: \[\]/u);
+    assert.deepEqual(tools, source.definitions);
+    assert.match(messages[0].content, tools.length ? /Follow tool schemas exactly/u : /No tools are connected/u);
     assert.equal(messages[0].content.includes('INVENTORY_INJECTION_CANARY'), false);
     return response();
   } }, source);

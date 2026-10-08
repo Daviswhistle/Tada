@@ -61,7 +61,15 @@ function render() {
     const article = document.createElement('article'); article.className = 'turn';
     const user = document.createElement('div'); user.className = 'user'; user.textContent = turn.text; article.append(user);
     if (turn.answer) {
+      if (turn.answer.document) {
+        const doc = turn.answer.document, card = document.createElement('div'); card.className = 'document-card';
+        const title = document.createElement('strong'); title.textContent = `${doc.title} · 버전 ${doc.revision}`;
+        const download = document.createElement('a'); download.textContent = '문서 내려받기';
+        download.href = `/api/documents/${doc.id}`; download.setAttribute('download', '');
+        card.append(title, download); article.append(card);
+      }
       const answer = document.createElement('div'); answer.className = 'answer'; answer.textContent = turn.answer.text; article.append(answer);
+      if (turn.answer.notice) { const note = document.createElement('p'); note.className = 'status'; note.textContent = turn.answer.notice; article.append(note); }
       if (turn.answer.sources.length) {
         const details = document.createElement('details'); details.className = 'source-list';
         const summary = document.createElement('summary'); summary.textContent = '참고한 자료'; details.append(summary);
@@ -113,8 +121,8 @@ async function refresh(older = false, quiet = false) {
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
     $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
-      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 대화·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 예약된 자동 자료 확인은 아직 지원하지 않습니다.'
-      : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 대화·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 예약된 자동 자료 확인은 아직 지원하지 않습니다.'
+      : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
     const unknown = result.messaging?.deliveries?.unknown ?? 0;
@@ -246,7 +254,7 @@ $('followup-more').onclick = async () => {
   } catch (error) { notice(error.message); }
 };
 
-for (const [id, text] of [['suggest-plan', '해야 할 일이 너무 많아서 어디서부터 시작할지 모르겠어.'], ['suggest-remember', '잊지 않게 챙겨줬으면 하는 일이 있어.']]) {
+for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 확인할 항목을 체크리스트 문서로 만들어줘.'], ['suggest-remember', '잊지 않게 챙겨줬으면 하는 일이 있어.']]) {
   $(id).onclick = () => { if (!$('message').value.trim()) $('message').value = text; $('message').focus(); };
 }
 $('message').onkeydown = event => {

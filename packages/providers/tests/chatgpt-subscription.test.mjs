@@ -101,7 +101,7 @@ test('same contact conversation executes source tools, survives restart across d
   let phase = 0;
   const env = await serverFixture((body, res) => {
     assert.equal(body.store, false);
-    assert.ok(body.input[0].content.includes('Automatic source reviews are unavailable'));
+    assert.ok(body.input[0].content.includes('No automatic source reviews with this provider'));
     assert.equal(body.input[0].content.includes('separately authorize one read-only local review'), false);
     const outputs = body.input.filter(item => item.type === 'function_call_output');
     let output;
@@ -188,4 +188,32 @@ for (const [status, errorBody, expected, shape] of [
     });
     assert.equal(env.requests.length, 1);
   } finally { await env.close(); }
+});
+
+for (const body of ['x'.repeat(4096), '"x"'.repeat(1300)]) test(`subscription document revision budgets actual request, including escaping=${body.includes('"')}`, async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-sub-documents-'));
+  let store, service;
+  const steps = [
+    [call('prepare_document', { title: 'Full note', format: 'text', based_on: null })], [message(body)],
+    [call('list_documents', { before: null })], [call('read_document', { id: 1 })],
+    [call('prepare_document', { title: 'Short note', format: 'text', based_on: 1 })], [message('Shortened note')],
+  ];
+  const f = await serverFixture((_body, res) => { const output = steps.shift(); assert.ok(output); stream(res, [completed(output)]); });
+  const measured = [], originalSize = f.provider.contextBytes.bind(f.provider);
+  f.provider.contextBytes = (messages, tools) => { const size = originalSize(messages, tools); measured.push(size); return size; };
+  try {
+    store = new ContactStore({ directory: join(root, 'journal'), passphrase: 'synthetic document subscription passphrase', route: contactRoute({ fixture: 'subscription-documents' }), initialize: true, reviews: true });
+    const sources = { definitions: discoveryTools, validate: validCall, execute: async () => { throw Error('NO_SOURCE_READ_EXPECTED'); }, verify: async () => true };
+    service = new ContactService(store, f.provider, sources, { timezone: 'Asia/Seoul' });
+    const device = store.addDevice('Browser');
+    service.submit(device.id, randomUUID(), 'Create a note'); await service.idle(); assert.equal(store.document(1)?.content, body, store.turn(1).error);
+    await service.close(); store.close();
+    store = new ContactStore({ directory: join(root, 'journal'), passphrase: 'synthetic document subscription passphrase', route: contactRoute({ fixture: 'subscription-documents' }) });
+    service = new ContactService(store, f.provider, sources, { timezone: 'Asia/Seoul' });
+    service.submit(device.id, randomUUID(), 'Shorten the previous document'); await service.idle();
+    assert.equal(store.document(2)?.content, 'Shortened note', `${store.turn(2).error}: ${measured.join(',')}`);
+    assert.equal(steps.length, 0); assert.equal(f.requests.length, 6);
+    assert.deepEqual(measured, f.requests.map(body => Buffer.byteLength(JSON.stringify(body))));
+    assert.ok(measured.every(size => size <= 14000));
+  } finally { await service?.close(); store?.close(); await f.close(); rmSync(root, { recursive: true, force: true }); }
 });

@@ -87,6 +87,17 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       }
       const device = store.authenticate(tokenOf(req));
       if (!device) return send(res, 401, { error: 'CONTACT_PAIR_REQUIRED' });
+      if (req.method === 'GET' && /^\/api\/documents\/[1-9][0-9]*$/u.test(target.pathname) && !target.search) {
+        const document = store.document(Number(target.pathname.split('/').at(-1)));
+        if (!document) return send(res, 404, { error: 'CONTACT_DOCUMENT_NOT_FOUND' });
+        const extension = document.format === 'markdown' ? 'md' : 'txt';
+        const content = document.content + (document.sources.length ? '\n\n---\n참고 자료\n' + document.sources.map(source =>
+          `[${source.id}] ${source.source}/${source.path} · 확인 시각 ${source.observed_at}`).join('\n') + '\n' : '');
+        res.writeHead(200, { ...headers, 'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Disposition': `attachment; filename="tada-document-${document.id}-v${document.revision}.${extension}"`,
+          'Content-Length': Buffer.byteLength(content), 'X-Content-SHA256': sha(content) });
+        res.end(content); return;
+      }
       if (req.method === 'GET' && target.pathname === '/api/state') {
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;

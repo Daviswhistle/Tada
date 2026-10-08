@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { DocumentSources } from './document-sources.mjs';
 import { ConversationAssistant } from './conversation.ts';
 import { ReviewSources } from './review-sources.mjs';
 import { FollowupSources } from './followup-sources.mjs';
@@ -65,11 +66,13 @@ export class ContactService extends EventEmitter {
           signal.throwIfAborted();
           return response;
         } };
+        if (typeof this.#model.contextBytes === 'function') metered.contextBytes = (messages, tools) => this.#model.contextBytes(messages, tools);
         const review = this.#store.reviewForTurn(job.seq);
         if (review && !this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
-        const sources = review ? new ReviewSources(this.#sources, this.#store, job, review)
+        const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
           ? new FollowupSources(this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : this.#sources;
+        const sources = review ? base : new DocumentSources(base, this.#store, job);
         const assistant = new ConversationAssistant(metered, sources);
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
@@ -78,16 +81,34 @@ export class ContactService extends EventEmitter {
         }
         const answer = await assistant.ask(job.text, abort.signal);
         abort.signal.throwIfAborted();
-        const proposals = sources instanceof FollowupSources ? sources.proposals() : [];
+        const proposals = base instanceof FollowupSources ? base.proposals() : [];
+        const document = !answer.refused && sources instanceof DocumentSources ? sources.prepared() : null;
         const checkpoint = assistant.checkpoint();
+        // The full document stays in the encrypted answer. Persist a compact
+        // receipt in model context; read_document retrieves it when needed.
+        for (const message of checkpoint.history) {
+          if (message.role === 'tool' && message.tool_name === 'read_document') {
+            const newline = message.content.indexOf('\n');
+            const result = JSON.parse(newline < 0 ? message.content : message.content.slice(0, newline));
+            if (newline >= 0 || typeof result.content === 'string') { delete result.content; message.content = JSON.stringify({ ...result, note: 'Read again for the full document.' }); }
+          }
+        }
+        if (document) {
+          const currentUser = checkpoint.history.findLastIndex(message => message.role === 'user');
+          checkpoint.history.splice(currentUser + 1, checkpoint.history.length, { role: 'assistant', content: `Saved document: ${JSON.stringify({ id: document.id, root: document.root, based_on: document.based_on, title: document.title, revision: document.revision })}. Use read_document for content.` });
+        }
         if (proposals.length) {
           const notice = '\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.';
-          answer.text += notice;
-          const last = checkpoint.history[checkpoint.history.length - 1];
-          if (last.provider_state) checkpoint.history.push({ role: 'assistant', content: notice.trim() });
-          else last.content = answer.text;
+          if (document) {
+            answer.notice = notice.trim(); checkpoint.history.push({ role: 'assistant', content: notice.trim() });
+          } else {
+            answer.text += notice;
+            const last = checkpoint.history[checkpoint.history.length - 1];
+            if (last.provider_state) checkpoint.history.push({ role: 'assistant', content: notice.trim() });
+            else last.content = answer.text;
+          }
         }
-        this.#store.finish(job.seq, answer, checkpoint, proposals);
+        this.#store.finish(job.seq, answer, checkpoint, proposals, document);
       } catch (error) {
         this.#store.fail(job.seq, safeCode(error), this.#stopped ? 'interrupted' : 'failed');
       } finally {

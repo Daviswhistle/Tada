@@ -64,7 +64,7 @@ export function responsesInput(messages) {
 export function completedTurn(value, names) {
   if (value?.status !== 'completed' || !Array.isArray(value.output) || !value.usage
     || ![value.usage.input_tokens, value.usage.output_tokens].every(n => Number.isSafeInteger(n) && n >= 0)) throw Error('CHATGPT_INCOMPLETE_TURN');
-  const calls = [], text = [], ids = new Set(), retained = [];
+  const calls = [], text = [], ids = new Set(), retained = []; let refused = false;
   for (const item of value.output) {
     if (item.type === 'reasoning') {
       if (typeof item.encrypted_content === 'string' && item.encrypted_content && typeof item.id === 'string') {
@@ -87,7 +87,7 @@ export function completedTurn(value, names) {
         const visible = part.type === 'output_text' ? part.text : part.type === 'refusal' ? part.refusal : undefined;
         if (typeof visible !== 'string') throw Error('CHATGPT_OUTPUT_UNSUPPORTED');
         parts.push(part.type === 'refusal' ? { type: 'refusal', refusal: visible } : { type: 'output_text', text: visible, annotations: [] });
-        if (item.phase !== 'commentary') text.push(visible);
+        if (item.phase !== 'commentary') { text.push(visible); if (part.type === 'refusal') refused = true; }
       }
       retained.push({ type: 'message', ...(typeof item.id === 'string' ? { id: item.id } : {}), role: 'assistant', status: 'completed', content: parts, ...(item.phase ? { phase: item.phase } : {}) });
     } else throw Error('CHATGPT_OUTPUT_UNSUPPORTED');
@@ -95,7 +95,7 @@ export function completedTurn(value, names) {
   if (calls.length > 8 || (!calls.length && !text.join('').trim())) throw Error('CHATGPT_INCOMPLETE_TURN');
   const content = text.join('\n');
   if (Buffer.byteLength(content) > 16384 || /<\/?(?:think|analysis|reasoning)(?:\s|>)/iu.test(content)) throw Error('CHATGPT_OUTPUT_UNSUPPORTED');
-  return { message: { role: 'assistant', content, tool_calls: calls,
+  return { ...(refused ? { refused: true } : {}), message: { role: 'assistant', content, tool_calls: calls,
     provider_state: { version: 1, provider: 'chatgpt-subscription', items: retained } }, input_tokens: value.usage.input_tokens, output_tokens: value.usage.output_tokens };
 }
 async function collect(res, signal) {
@@ -149,19 +149,24 @@ export class ChatGPTSubscription {
       billing: 'chatgpt-plan', display_name: item.display_name, account_label: profile.email ?? profile.client });
     return this.identity;
   }
-  async chat(messages, tools, signal) {
-    if (!this.identity) throw Error('CHATGPT_INSPECT_REQUIRED');
-    const profile = this.account.profile;
-    if (`${profile.client}:${profile.subject}` !== this.binding) throw Error('CHATGPT_ACCOUNT_CHANGED');
+  #request(messages, tools) {
     const names = new Set(), definitions = tools.map(tool => {
       const fn = tool?.function;
       if (tool?.type !== 'function' || !validName(fn?.name) || names.has(fn.name)) throw Error('CHATGPT_TOOL_SCHEMA_INVALID');
       names.add(fn.name);
       return { type: 'function', name: fn.name, description: fn.description, parameters: fn.parameters, strict: false };
     });
-    const token = await this.account.accessToken(signal);
     const request = { model: this.model, input: responsesInput(messages), store: false, stream: true,
       ...(definitions.length ? { tools: [{ type: 'namespace', name: 'tada', description: 'Tools granted by this Tada host.', tools: definitions }] } : {}) };
+    return { request, names };
+  }
+  contextBytes(messages, tools) { return Buffer.byteLength(JSON.stringify(this.#request(messages, tools).request)); }
+  async chat(messages, tools, signal) {
+    if (!this.identity) throw Error('CHATGPT_INSPECT_REQUIRED');
+    const profile = this.account.profile;
+    if (`${profile.client}:${profile.subject}` !== this.binding) throw Error('CHATGPT_ACCOUNT_CHANGED');
+    const { request, names } = this.#request(messages, tools);
+    const token = await this.account.accessToken(signal);
     const res = await response(this.fetcher, `${API}/responses`, { method: 'POST', signal,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(request) });
     return completedTurn(await collect(res, signal), names);

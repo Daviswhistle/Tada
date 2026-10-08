@@ -14,6 +14,10 @@ At development baseline `4e9dbdc`, the contact browser and ordinary CI passed, b
 
 The user explicitly rejected a developer-operated product. A browser-first setup now replaces terminal questions on the default `npm start` route, and the continuing conversation moves management details out of the foreground. This closes a concrete usability problem; it does not close installation, live provider proof, useful general actions, durable long-term memory or acceptance. Read [the implementation and evidence](experience-2026-10-08.md). Judge the remaining work from first launch through verified useful results, not the count of passing checks.
 
+## Current execution slice — 2026-10-08
+
+The user rejected reassuring conversation copy as a substitute for a working secretary. [Saved documents](contact-documents.md) add a concrete result path to the same conversation: preparation, citation checks, atomic encrypted persistence, authenticated download and revision after restart. Synthetic integration evidence does not qualify real account/model behavior. Live sign-in has been requested from the owner; broader execution and release work remain open.
+
 ## Next delivery: one continuous delegation experience
 
 Provider priority was clarified by the user on 2026-10-07: use an existing subscription through its official integration by default, retain local model support, and offer API access as an explicit alternative. Start with Sign in with ChatGPT plan usage in this open-source local application. Its documented availability does not authorize offering the same route as a paid/centrally hosted service. Do not make inherited Qwen 8B CI behavior the product quality target or continue model-size comparisons in place of this integration. See the [official eligibility](https://developers.openai.com/siwc/token-sharing-open-source) and [integration guide](https://developers.openai.com/cookbook/articles/sign-in-with-chatgpt).

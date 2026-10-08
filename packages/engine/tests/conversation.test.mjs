@@ -224,3 +224,12 @@ test('larger explicitly bounded JSON keeps default limit and duplicate-key rejec
   for (const limit of [0, -1, 1.5, 262145, Infinity]) assert.throws(() => parseUniqueJson('{}', limit));
   assert.throws(() => parseUniqueJson('{"x":1,"x":2}', 20000));
 });
+
+test('an invalid or over-budget provider context measurement stops before any inference', async () => {
+  for (const bytes of [NaN, -1, 0, 14001]) {
+    let called = false; const trace = [];
+    const assistant = new ConversationAssistant({ contextBytes: () => bytes, chat: async () => { called = true; return answer('unused'); } }, sources(), event => trace.push(event));
+    await assert.rejects(assistant.ask('hello'), /ASSISTANT_CONTEXT_LIMIT/u);
+    assert.equal(called, false); assert.equal(trace.filter(event => event.kind === 'model_request').length, 0);
+  }
+});

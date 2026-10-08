@@ -82,7 +82,7 @@ test('suggestions preserve an existing draft and never submit on behalf of the u
   c.get('suggest-plan').onclick();
   assert.equal(c.get('message').value, 'My unfinished thought');
   c.get('message').value = ''; c.get('suggest-plan').onclick();
-  assert.ok(c.get('message').value.includes('어디서부터'));
+  assert.ok(c.get('message').value.includes('문서로 만들어줘'));
   assert.equal(c.calls.length, 0);
 });
 

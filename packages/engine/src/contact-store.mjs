@@ -1,5 +1,6 @@
 // Host-owned contact journal. Raw context never goes into a browser checkpoint.
-// Separate from the existing action ledger: this host exposes no mutation tools.
+// Separate from the existing action ledger: documents are conversation results,
+// never an authority to overwrite arbitrary files or publish externally.
 import { DatabaseSync, backup } from 'node:sqlite';
 import { validateFollowupProposal, followupTimezone, followupInstant, isFollowupId, followupReviewText } from './followup-contract.mjs';
 import { randomBytes, randomUUID, createHash, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
@@ -256,9 +257,45 @@ export class ContactStore {
     return this.#tx(() => Number(this.#db.prepare("UPDATE turns SET state='cancelled',error='USER_CANCELLED' WHERE seq=? AND state IN('queued','running')").run(seq).changes) > 0);
   }
   #turn(row) {
+    const answer = row.answer ? this.#open(`answer:${row.request_id}`, row.answer) : null;
+    if (answer?.document) {
+      const d = answer.document;
+      if (d.version !== 1 || d.id !== row.seq || !Number.isSafeInteger(d.root) || d.root < 1 || d.root > d.id
+          || !Number.isSafeInteger(d.revision) || d.revision < 1 || !['markdown', 'text'].includes(d.format)
+          || typeof d.title !== 'string' || !d.title.trim() || d.title.length > 120
+          || (d.based_on !== null && (!Number.isSafeInteger(d.based_on) || d.based_on < 1 || d.based_on >= d.id))
+          || typeof answer.text !== 'string' || Buffer.byteLength(answer.text) > 4096 || d.sha256 !== hash(answer.text)) throw Error('CONTACT_DOCUMENT_INVALID');
+    }
     return { seq: row.seq, request_id: row.request_id, device: row.device, state: row.state, created: row.created,
       text: this.#open(`turn:${row.request_id}`, row.payload).text,
-      answer: row.answer ? this.#open(`answer:${row.request_id}`, row.answer) : null, error: row.error };
+      answer, error: row.error };
+  }
+  document(id) {
+    if (!Number.isSafeInteger(id) || id < 1) throw Error('CONTACT_DOCUMENT_INVALID');
+    const turn = this.turn(id);
+    return turn?.state === 'answered' && turn.answer?.document
+      ? { ...turn.answer.document, content: turn.answer.text, sources: turn.answer.sources } : null;
+  }
+  documentPage(before = null) {
+    this.#check();
+    if (before !== null && (!Number.isSafeInteger(before) || before < 1)) throw Error('CONTACT_DOCUMENT_INVALID');
+    const docs = this.#db.prepare("SELECT * FROM turns WHERE state='answered' AND seq<? ORDER BY seq DESC").all(before ?? Number.MAX_SAFE_INTEGER)
+      .map(row => this.#turn(row).answer?.document).filter(Boolean);
+    return { documents: docs.slice(0, 10).map(({ id, root, based_on, title, format, revision }) => ({ id, root, based_on, title, format, revision })), next_before: docs.length > 10 ? docs[9].id : null };
+  }
+  prepareDocument(seq, { title, format, based_on }) {
+    this.assertTurnAuthority(seq);
+    if (this.reviewForTurn(seq)) throw Error('CONTACT_REVIEW_READ_ONLY');
+    if (typeof title !== 'string' || !title.trim() || title.length > 120 || /[\u0000-\u001f\u007f]/u.test(title)
+        || !['markdown', 'text'].includes(format) || (based_on !== null && (!Number.isSafeInteger(based_on) || based_on < 1 || based_on >= seq))) throw Error('CONTACT_DOCUMENT_INVALID');
+    const parent = based_on === null ? null : this.document(based_on);
+    if (based_on !== null && !parent) throw Error('CONTACT_DOCUMENT_NOT_FOUND');
+    if (parent) {
+      const newer = this.#db.prepare("SELECT * FROM turns WHERE state='answered' AND seq>? ORDER BY seq DESC").all(based_on)
+        .some(row => this.#turn(row).answer?.document?.root === parent.root);
+      if (newer) throw Error('CONTACT_DOCUMENT_STALE');
+    }
+    return { version: 1, id: seq, root: parent?.root ?? seq, revision: (parent?.revision ?? 0) + 1, based_on, title: title.trim(), format };
   }
   turn(seq) { this.#check(); const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq); return row ? this.#turn(row) : null; }
   page(before = Number.MAX_SAFE_INTEGER) {
@@ -313,7 +350,7 @@ export class ContactStore {
     }
     return total;
   }
-  finish(seq, answer, checkpoint, proposals = []) {
+  finish(seq, answer, checkpoint, proposals = [], document = null) {
     return this.#tx(() => {
       const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq);
       if (row?.state !== 'running') return false;
@@ -322,6 +359,12 @@ export class ContactStore {
       if (typeof answer?.text !== 'string' || !answer.text.trim() || !Array.isArray(answer.sources)
           || !checkpoint || ![1, 2].includes(checkpoint.version)) throw new Error('CONTACT_ANSWER_INVALID');
       if (this.#version === 4 && this.reviewForTurn(seq) && proposals.length) throw new Error('CONTACT_REVIEW_READ_ONLY');
+      if (Object.hasOwn(answer, 'document')) throw Error('CONTACT_DOCUMENT_INVALID');
+      if (document) {
+        const checked = this.prepareDocument(seq, document);
+        if (Object.keys(checked).some(k => checked[k] !== document[k]) || Buffer.byteLength(answer.text) > 4096) throw Error('CONTACT_DOCUMENT_INVALID');
+        answer = { ...answer, document: { ...checked, sha256: hash(answer.text) } };
+      }
       this.#saveFollowupProposals(row, proposals);
       this.#db.prepare("UPDATE turns SET state='answered',answer=? WHERE seq=?").run(this.#seal(`answer:${row.request_id}`, answer), seq);
       this.#db.prepare('INSERT INTO context VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET through_seq=excluded.through_seq,payload=excluded.payload')
@@ -472,6 +515,7 @@ export class ContactStore {
         } else if (row.state === 'answered') {
           const turn = this.#turn(row);
           text = `Tada · 요청 ${row.seq}\n${turn.answer.text}`;
+          if (turn.answer.notice) text += '\n\n' + turn.answer.notice;
           if (turn.answer.sources.length) text += '\n\n자료 식별자·관측 시각은 같은 연락 화면의 참고 자료에서 확인할 수 있어요.';
         } else text = `Tada · 요청 ${row.seq}\n${row.state === 'cancelled' ? '요청을 취소했어요.' : '이번 답변을 완료하지 못했어요. 앞선 대화는 보존했어요. 새 메시지로 이어서 이야기할 수 있어요.'}`;
         this.#telegramNote(key, binding.device, row.seq, text);
