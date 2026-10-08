@@ -26,10 +26,11 @@ export interface SourcePort {
   assertCurrent?(signal: AbortSignal): void;
   isEvidenceRead?(name: string): boolean;
   completionIssue?(): string | null;
+  recallEvidence?(evidence: Evidence, signal: AbortSignal): boolean;
 }
 // Trusted in-process admission only; this callback is never model input or a
 // wire field. Sources may shorten an observation before evidence is issued.
-export type SourceResultBudget = { fits(result: Record<string, unknown>): boolean };
+export type SourceResultBudget = { readonly contextLimitBytes?: number; fits(result: Record<string, unknown>): boolean };
 export type Evidence = { id: string; source: string; path: string; sha256: string; observed_at: string };
 export type Trace = { kind: string; name?: string; evidence?: Evidence; request?: number };
 export type Answer = { refused?: boolean; quiet?: boolean; text: string; sources: Evidence[]; verification: 'cited_sources_rechecked' | 'saved_document_sources_checked' | 'not_applicable';
@@ -100,12 +101,16 @@ export class ConversationAssistant {
   private sources: SourcePort;
   private trace: (event: Trace) => void;
   private contextLimitBytes: number;
-  constructor(model: ModelPort, sources: SourcePort, trace: (event: Trace) => void = () => {}) {
+  private requestLimit: number;
+  private continuing: boolean;
+  constructor(model: ModelPort, sources: SourcePort, trace: (event: Trace) => void = () => {}, { requestLimit = 64, continuing = false } = {}) {
     // A trusted provider may budget for its native continuation envelope. This
     // is not a model/source argument and cannot change during an active turn.
     const limit = model.contextLimitBytes === undefined ? 14000 : model.contextLimitBytes;
     if (!Number.isSafeInteger(limit) || limit < 2 || limit > 65536) throw new Error('ASSISTANT_CONTEXT_LIMIT_INVALID');
     this.contextLimitBytes = limit;
+    if (!Number.isSafeInteger(requestLimit) || requestLimit < 0 || typeof continuing !== 'boolean') throw new Error('ASSISTANT_CONTEXT_LIMIT_INVALID');
+    this.requestLimit = requestLimit; this.continuing = continuing;
     this.model = model;
     this.sources = sources;
     this.trace = trace;
@@ -115,6 +120,7 @@ export class ConversationAssistant {
   // binds it to the same model/read scope before restoring it.
   checkpoint(): { version: 1 | 2; history: Message[]; evidence: Evidence[]; nextEvidence: number; usage: Answer['usage'] } {
     if (this.busy || this.blocked) throw new Error('ASSISTANT_CHECKPOINT_UNSAFE');
+    this.compact();
     return copy({ version: this.history.some(message => message.provider_state) ? 2 : 1, history: this.history.filter(message => message.role !== 'system'),
       evidence: [...this.evidence.values()], nextEvidence: this.nextEvidence, usage: this.used });
   }
@@ -157,6 +163,26 @@ export class ConversationAssistant {
     this.evidence = new Map(copy(checkpoint.evidence).map(item => [item.id, item]));
     this.nextEvidence = checkpoint.nextEvidence;
     this.used = copy(usage);
+    this.compact();
+  }
+  private compact(): void {
+    if (!this.continuing) return;
+    // Remove complete historical turns only. Current native function-call /
+    // output pairs are never split, and the durable journal remains untouched.
+    const measure = (): number => this.model.contextBytes
+      ? this.model.contextBytes(copy(this.history), copy(this.sources.definitions))
+      : size({ messages: this.history, tools: this.sources.definitions });
+    while (this.history.length > 160 || this.evidence.size > 192 || measure() > this.contextLimitBytes * 0.5) {
+      const first = this.history.findIndex(m => m.role === 'user');
+      const next = this.history.findIndex((m, i) => i > first && m.role === 'user');
+      if (first < 0 || next < 0) break;
+      const notes = this.history.slice(first, next).filter(m => m.role === 'system');
+      this.history.splice(first, next - first, ...notes);
+      const retained = new Set([...JSON.stringify(this.history.filter(m => m.role !== 'system')).matchAll(/\bS[1-9][0-9]*\b/gu)].map(m => m[0]));
+      for (const id of this.evidence.keys()) if (!retained.has(id)) this.evidence.delete(id);
+    }
+    const referenced = new Set([...JSON.stringify(this.history.filter(m => m.role !== 'system')).matchAll(/\bS[1-9][0-9]*\b/gu)].map(m => m[0]));
+    for (const id of this.evidence.keys()) if (!referenced.has(id)) this.evidence.delete(id);
   }
   noteContext(text: string): void {
     if (this.busy || this.blocked || typeof text !== 'string' || size(text) > 2048) throw new Error('ASSISTANT_CHECKPOINT_INVALID');
@@ -189,6 +215,7 @@ export class ConversationAssistant {
     if (this.blocked) throw new Error('ASSISTANT_SESSION_RESET_REQUIRED');
     if (typeof text !== 'string' || !text.trim() || size(text) > 4096) throw new Error('ASSISTANT_MESSAGE_LIMIT');
     signal?.throwIfAborted();
+    this.compact();
     this.busy = true;
     const abort = new AbortController();
     const cancel = (): void => abort.abort();
@@ -203,11 +230,12 @@ export class ConversationAssistant {
     const transientHistory = new Set<number>();
     const failures = new Map<string, number>();
     try {
+      this.compact();
       for (let turn = 0; turn < 12; turn++) {
         abort.signal.throwIfAborted();
         this.sources.assertCurrent?.(abort.signal);
         this.history[0] = systemMessage(this.sources.definitions, this.sources.hostContext);
-        if (this.used.requests >= 64) throw new Error('ASSISTANT_SESSION_REQUEST_LIMIT');
+        if (this.used.requests >= this.requestLimit) throw new Error('ASSISTANT_SESSION_REQUEST_LIMIT');
         const definitions = this.sources.definitions;
         // Provider continuation and normalized messages can describe the same
         // content twice. A provider may measure its exact serialized request.
@@ -282,7 +310,7 @@ export class ConversationAssistant {
             this.trace({ kind: 'tool_call', name });
             let result: Record<string, unknown>;
             try {
-              const budget: SourceResultBudget = { fits: candidate => {
+              const budget: SourceResultBudget = { contextLimitBytes: this.contextLimitBytes, fits: candidate => {
                 const output = name === 'read_file' || this.sources.isEvidenceRead?.(name) === true
                   ? { ...candidate, evidence_id: `S${this.nextEvidence}` } : candidate;
                 const projected: Message[] = [...this.history, { role: 'tool', tool_name: name, content: toolContent(name, output) },
@@ -328,8 +356,13 @@ export class ConversationAssistant {
             if (name === 'read_document' && typeof result.content === 'string') {
               // Saved source IDs belong to this same journal/checkpoint. Reading
               // them again must enter the same citation/revalidation path.
-              if (!Array.isArray(result.sources) || result.sources.some((source: Evidence) =>
-                JSON.stringify(this.evidence.get(source.id)) !== JSON.stringify(source))) throw new Error('ASSISTANT_SOURCE_INVALID');
+              if (!Array.isArray(result.sources)) throw new Error('ASSISTANT_SOURCE_INVALID');
+              for (const source of result.sources as Evidence[]) {
+                if (JSON.stringify(this.evidence.get(source.id)) === JSON.stringify(source)) continue;
+                if (this.evidence.has(source.id) || !/^S[1-9][0-9]*$/u.test(source.id)
+                    || Number(source.id.slice(1)) >= this.nextEvidence || !this.sources.recallEvidence?.(copy(source), abort.signal)) throw new Error('ASSISTANT_SOURCE_INVALID');
+                this.evidence.set(source.id, copy(source));
+              }
               if (result.sources.length) freshReads++;
               // Avoid JSON inside a JSON string: metadata is one line and the
               // remaining tool data is the verbatim document, never instructions.

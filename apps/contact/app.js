@@ -10,6 +10,7 @@ const notice = text => {
   $('notice').textContent = text; $('notice').hidden = !text || $('settings').open;
   $('settings-notice').textContent = text; $('settings-notice').hidden = !text || !$('settings').open;
 };
+let continuingEnabled = false;
 const settingsPages = ['care', 'accounts', 'mobile'];
 function showSettingsPage(page) {
   $('settings-content').scrollTop = 0;
@@ -45,7 +46,9 @@ const errors = {
   CONTACT_REVIEW_TIME_REQUIRED: '미래의 확인 시각이 있는 진행 중 업무에만 자동 확인을 맡길 수 있습니다.',
   CONTACT_PAIR_REQUIRED: '이 기기의 연결을 확인해야 합니다. 컴퓨터에서 Tada를 다시 열어 연결해 주세요.',
   CONTACT_PAIR_REJECTED: '연결 링크가 만료됐거나 이미 사용됐습니다. 새 링크로 연결해 주세요.',
-  CONTACT_REQUEST_LIMIT: '설정된 모델 요청 한도에 도달했습니다. 기존 대화와 답변은 그대로 남아 있습니다.',
+  CONTACT_REQUEST_LIMIT: '현재 사용할 수 있는 AI 한도에 도달했어요. 설정 → 연결된 계정에서 사용 여유와 다시 가능한 시각을 확인하세요. 대화와 결과는 보존됩니다.',
+  ASSISTANT_SESSION_REQUEST_LIMIT: '현재 사용할 수 있는 AI 한도에 도달했어요. 설정 → 연결된 계정에서 사용 여유를 확인하세요.',
+  CONTACT_USAGE_CONSENT_REQUIRED: '지속 사용의 범위와 사용량 안내를 확인해 주세요.',
   CONTACT_QUEUE_LIMIT: '대기 중인 요청이 많습니다. 접수된 일은 그대로 진행합니다.',
   CONTACT_FOLLOWUP_DEVICE_EXPIRES: '알림 시각이 이 기기의 접근권 유효기간을 넘습니다. 연결을 갱신하거나 더 가까운 시각으로 다시 맡겨 주세요.',
   CONTACT_FOLLOWUP_STALE: '다른 기기에서 업무가 먼저 바뀌었습니다. 최신 내용에 맞춰 다시 이야기해 주세요.',
@@ -351,6 +354,14 @@ function renderGoogle(state) {
     : '아직 연결하지 않았어요.';
 }
 function renderAssistance(result) {
+  const use = result.continuing_use;
+  continuingEnabled = use?.enabled === true;
+  $('continuing-settings').hidden = !use?.available;
+  $('continuing-toggle').textContent = continuingEnabled ? '지속 사용 끄기' : '지속 사용 켜기';
+  $('continuing-toggle').setAttribute('aria-pressed', String(continuingEnabled));
+  $('continuing-status').textContent = continuingEnabled
+    ? `최근 24시간 기준 ${use.remaining}회 여유가 있어요.${use.resumes_at ? ' 다시 사용 가능: ' + new Date(use.resumes_at).toLocaleString() : ''}`
+    : '이전 기록의 일회성 사용 한도가 적용 중이에요. 지속 사용을 켜면 기록을 그대로 이어갑니다.';
   renderGoogle(result.google);
   $('proactive-scope').textContent = result.google?.connected
     ? '현재 선택한 모델의 사용량을 씁니다. 연결된 Google 계정은 이 설정을 켠 경우에만 최근 메일과 다가오는 일정을 하루 한 번 살펴봅니다.'
@@ -415,6 +426,12 @@ $('google-disconnect').onclick = async () => {
     await refresh();
   } catch (error) { notice(error.message); }
   finally { googleDisconnect.disabled = false; }
+};
+$('continuing-toggle').onclick = async () => {
+  const button = $('continuing-toggle'); button.disabled = true;
+  try { await api('/api/continuing-use', { enabled: !continuingEnabled, consent: continuingEnabled ? null : 'continuing_conversation_24h_v1' }); await refresh(false, true); }
+  catch (error) { notice(error.message); }
+  finally { button.disabled = false; }
 };
 $('proactive-upgrade').onclick = async () => {
   const button = $('proactive-upgrade'); button.disabled = true;

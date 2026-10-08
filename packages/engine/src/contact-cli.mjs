@@ -77,8 +77,10 @@ Voice, mail/calendar writes, arbitrary actions, recurring jobs and automatic rep
 remain unimplemented. Read-only Google access is available when the host's OAuth setup is configured
 and the owner connects an account in Settings. Closed-tab results remain in the shared conversation. The host must
 be running and reachable; sleep/power loss is not always-on service availability.
-The inherited preview limits remain 64 model requests per journal and 14 KiB model
-context. No automatic history deletion, reset, hidden compaction or budget refill.
+Without continuing-use consent the preview limit remains 64 model requests per
+journal. Settings can enable a rolling 64-request allowance per 24 hours on the
+same provider; original records remain, with bounded recent model context and
+read-only historical retrieval. No account or billing fallback is introduced.
 `;
 export function contactOptions(args) {
   if (args.length === 1 && ['--help', '-h'].includes(args[0])) return { help: true };

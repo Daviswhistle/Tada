@@ -81,7 +81,8 @@ export class ContactService extends EventEmitter {
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
           ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : (google ?? this.#sources);
-        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job);
+        const continuing = this.#store.continuingUseEnabled();
+        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job, { history: continuing });
         const metered = { chat: async (messages, tools, signal) => {
           signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
           const id = this.#store.reserve(job.seq);
@@ -94,7 +95,10 @@ export class ContactService extends EventEmitter {
         } };
         if (typeof this.#model.contextBytes === 'function') metered.contextBytes = (messages, tools) => this.#model.contextBytes(messages, tools);
         if (this.#model.contextLimitBytes !== undefined) metered.contextLimitBytes = this.#model.contextLimitBytes;
-        const assistant = new ConversationAssistant(metered, sources);
+        // Rolling allowance may recover while a provider response is pending.
+        // The durable reserve above owns admission at every request, including
+        // legacy review/proactive limits; do not freeze that allowance here.
+        const assistant = new ConversationAssistant(metered, sources, undefined, { continuing, requestLimit: continuing ? Number.MAX_SAFE_INTEGER : 64 });
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
         for (const stopped of this.#store.stoppedSince(prior.through, job.seq)) {

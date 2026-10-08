@@ -101,7 +101,12 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       if (req.method === 'GET' && target.pathname === '/api/state') {
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
-        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, host_stopping: service.stopped });
+      }
+      if (req.method === 'POST' && target.pathname === '/api/continuing-use' && !target.search) {
+        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const result = store.configureContinuingUse(device, data.enabled, data.consent);
+        service.emit('change'); return send(res, 200, result);
       }
       if (req.method === 'POST' && target.pathname === '/api/proactive' && !target.search) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);

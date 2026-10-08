@@ -37,7 +37,7 @@ export class ProactiveSources {
     if (this.#google?.googleDefinitions.some(tool => tool.function.name === name)) return this.#google.validate(name, args);
     if (!args || typeof args !== 'object' || Array.isArray(args)) return false;
     if (name === 'list_followups') return Object.keys(args).sort().join(',') === 'offset,status'
-      && ['active', 'all'].includes(args.status) && Number.isSafeInteger(args.offset) && args.offset >= 0 && args.offset <= 1000;
+      && ['active', 'all'].includes(args.status) && Number.isSafeInteger(args.offset) && args.offset >= 0 && (this.#store.continuingUseEnabled() || args.offset <= 1000);
     if (name === 'list_documents') return Object.keys(args).join(',') === 'before' && (args.before === null || Number.isSafeInteger(args.before) && args.before > 0);
     return name === 'read_document' && Object.keys(args).join(',') === 'id' && Number.isSafeInteger(args.id) && args.id > 0;
   }
@@ -52,6 +52,15 @@ export class ProactiveSources {
     const doc = this.#store.document(args.id); if (!doc) throw Error('CONTACT_DOCUMENT_NOT_FOUND');
     this.#documents.set(doc.id, { sha256: doc.sha256, sources: doc.sources });
     return { ...doc, source_basis: 'saved_document_snapshot_not_live_external_observation' };
+  }
+  recallEvidence(evidence, signal) {
+    this.#guard(signal);
+    for (const [id, snapshot] of this.#documents) {
+      const doc = this.#store.document(id);
+      if (doc?.sha256 === snapshot.sha256 && snapshot.sources.some(s => JSON.stringify(s) === JSON.stringify(evidence))
+          && doc.sources.some(s => JSON.stringify(s) === JSON.stringify(evidence))) return true;
+    }
+    return false;
   }
   async verify(evidence, signal) {
     this.#guard(signal);

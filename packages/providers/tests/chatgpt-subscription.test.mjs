@@ -365,3 +365,31 @@ for (const change of ['call identity', 'optional item identity', 'duplicate call
     assert.equal(env.requests.length, 1);
   } finally { await env.close(); }
 });
+
+test('continuing conversation compacts complete native response groups and restores their call IDs', async () => {
+  let step = 0;
+  const f = await serverFixture((_body, res) => {
+    step++;
+    stream(res, [completed(step % 2 ? [call('list_sources', {})] : [message('Recorded. ' + 'x'.repeat(1500))])]);
+  });
+  const sources = { definitions: [tool], validate: (name, args) => name === 'list_sources' && Object.keys(args).length === 0,
+    execute: async () => ({ sources: [] }), verify: async () => true };
+  try {
+    let assistant = new ConversationAssistant(f.provider, sources, undefined, { continuing: true, requestLimit: 100 });
+    for (let i = 0; i < 25; i++) await assistant.ask(`Historical request ${i}: ` + 'y'.repeat(1000));
+    const checkpoint = assistant.checkpoint();
+    assert.equal(checkpoint.version, 2); assert.equal(checkpoint.usage.requests, 50);
+    assert.ok(!checkpoint.history.some(m => m.content.startsWith('Historical request 0:')));
+    assistant = new ConversationAssistant(f.provider, sources, undefined, { continuing: true, requestLimit: 100 });
+    assistant.restore(checkpoint); await assistant.ask('Continue after restart');
+    assert.equal(f.requests.length, 52);
+    for (const request of f.requests) {
+      const calls = new Set();
+      for (const item of request.input) {
+        if (item.type === 'function_call') calls.add(item.call_id);
+        if (item.type === 'function_call_output') { assert.ok(calls.has(item.call_id)); calls.delete(item.call_id); }
+      }
+      assert.equal(calls.size, 0); assert.ok(Buffer.byteLength(JSON.stringify(request)) <= 65536);
+    }
+  } finally { await f.close(); }
+});

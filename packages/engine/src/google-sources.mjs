@@ -282,14 +282,14 @@ export class GoogleSources {
       result = this.#recentEmailResult;
     } else if (name === READ_EMAIL) {
       if (!this.#emailReads.has(args.id)) this.#emailReads.set(args.id, await this.#readEmail(args.id, signal,
-        { maxContextBytes: MAX_GOOGLE_CONTEXT_BYTES - this.#contextBytes, budget }));
+        { maxContextBytes: (budget?.contextLimitBytes >= 32768 ? 49152 : MAX_GOOGLE_CONTEXT_BYTES) - this.#contextBytes, budget }));
       result = this.#emailReads.get(args.id);
     } else {
       if (!this.#calendarResult) this.#calendarResult = await this.#upcomingEvents(this.#window(), signal, { budget });
       result = this.#calendarResult;
     }
     const size = toolContextBytes(name, result);
-    if (this.#contextBytes + size > MAX_GOOGLE_CONTEXT_BYTES || budget && !budget.fits(result)) throw Error('CONTACT_GOOGLE_CONTEXT_LIMIT');
+    if (this.#contextBytes + size > (budget?.contextLimitBytes >= 32768 ? 49152 : MAX_GOOGLE_CONTEXT_BYTES) || budget && !budget.fits(result)) throw Error('CONTACT_GOOGLE_CONTEXT_LIMIT');
     this.#contextBytes += size;
     this.#issued.set(result.path, structuredClone(result));
     this.assertCurrent(signal); return structuredClone(result);
@@ -315,7 +315,7 @@ export class GoogleSources {
     for (;;) {
       const content = json({ ...data, truncated, [key]: items });
       const result = { ...this.#evidence(source, path, content, observedAt), truncated, max_results: 20 };
-      if (toolContextBytes(name, result) <= MAX_LIST_CONTEXT_BYTES && (!budget || budget.fits(result))) return { result, items };
+      if (toolContextBytes(name, result) <= (budget?.contextLimitBytes >= 32768 ? 24576 : MAX_LIST_CONTEXT_BYTES) && (!budget || budget.fits(result))) return { result, items };
       if (!items.length) throw Error('CONTACT_GOOGLE_CONTEXT_LIMIT');
       items.pop(); truncated = true;
     }
@@ -472,7 +472,7 @@ export class GoogleSources {
       const match = /^inbox\?from=(\d{1,16})&to=(\d{1,16})$/u.exec(evidence.path);
       if (match) {
         const result = await this.#recentEmails({ from: Number(match[1]), to: Number(match[2]) }, signal,
-          { verify: true, itemLimit: JSON.parse(issued.content).emails.length });
+          { verify: true, itemLimit: JSON.parse(issued.content).emails.length, budget: { contextLimitBytes: 65536, fits: () => true } });
         this.assertCurrent(signal); return result.sha256 === evidence.sha256;
       }
       const message = /^messages\/([A-Za-z0-9_-]{1,200})(?:\?body_bytes=(\d{1,4}))?$/u.exec(evidence.path);
@@ -493,7 +493,7 @@ export class GoogleSources {
       let start, end;
       try { start = decodeURIComponent(match[1]); end = decodeURIComponent(match[2]); } catch { return false; }
       if (!/^\d{4}-\d{2}-\d{2}T/u.test(start) || !/^\d{4}-\d{2}-\d{2}T/u.test(end)) return false;
-      const result = await this.#upcomingEvents({ start, end }, signal, { itemLimit: JSON.parse(issued.content).events.length });
+      const result = await this.#upcomingEvents({ start, end }, signal, { itemLimit: JSON.parse(issued.content).events.length, budget: { contextLimitBytes: 65536, fits: () => true } });
       this.assertCurrent(signal); return result.sha256 === evidence.sha256;
     }
     return false;

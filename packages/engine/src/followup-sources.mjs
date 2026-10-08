@@ -7,7 +7,7 @@ const string = { type: 'string' };
 const nullableString = { type: ['string', 'null'] };
 export const FOLLOWUP_TOOLS = [
   tool('list_followups', 'Read current commitments/proposals before reporting or revising work.', {
-    status: { type: 'string', enum: ['active', 'all'] }, offset: { type: 'integer', minimum: 0, maximum: 1000 },
+    status: { type: 'string', enum: ['active', 'all'] }, offset: { type: 'integer', minimum: 0 },
   }, ['status', 'offset']),
   tool('propose_followup', 'Stage user-requested work; owner confirmation of summary/time activates it. List first for updates. No source-file authorization, repeats, third-party sending or mailbox watching. Scheduled inference needs separate owner approval.', {
     operation_id: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$',
@@ -43,7 +43,7 @@ export class FollowupSources {
   assertCurrent(signal) { signal?.throwIfAborted(); this.#base.assertCurrent?.(signal); signal?.throwIfAborted(); }
   validate(name, args) {
     if (name === 'list_followups') return args && Object.keys(args).sort().join(',') === 'offset,status'
-      && ['active', 'all'].includes(args.status) && Number.isSafeInteger(args.offset) && args.offset >= 0 && args.offset <= 1000;
+      && ['active', 'all'].includes(args.status) && Number.isSafeInteger(args.offset) && args.offset >= 0 && (this.#store.continuingUseEnabled() || args.offset <= 1000);
     if (name === 'propose_followup') {
       try { validateFollowupProposal(args, this.#job.text, this.#clock()); return true; } catch { return false; }
     }

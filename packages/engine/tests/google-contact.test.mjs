@@ -498,6 +498,24 @@ test('the contact host cancels a first OAuth attempt immediately and admits a fr
   } finally { await network.host.close(); await service.close(); connection.close(); e.close(); await fake.close(); }
 });
 
+test('a larger connected provider can inspect a broad overview and verify that exact overview', async () => {
+  const e = environment(), fake = await googleServer({ largeContent: true }), device = e.store.addDevice('Owner');
+  e.store.saveGoogleCredential(device.id, makeCredential(device.id), null);
+  const connection = makeConnection(e.store, null, fake);
+  e.store.submit(device.id, randomUUID(), 'Read my recent inbox');
+  const source = new GoogleSources(noSources, e.store, connection, e.store.claim()), signal = new AbortController().signal;
+  try {
+    const budget = { contextLimitBytes: 65536, fits: value => Buffer.byteLength(JSON.stringify(value)) < 28000 };
+    const overview = await source.execute('list_recent_emails', {}, signal, budget);
+    assert.ok(JSON.parse(overview.content).emails.length >= 10);
+    const first = await source.execute('read_email', { id: 'm1' }, signal, budget);
+    const second = await source.execute('read_email', { id: 'm2' }, signal, budget);
+    assert.ok(first.content.length > 100); assert.ok(second.content.length > 100);
+    assert.equal(await source.verify(overview, signal), true);
+    assert.equal(await source.verify(first, signal), true); assert.equal(await source.verify(second, signal), true);
+  } finally { connection.close(); e.close(); await fake.close(); }
+});
+
 for (const measure of ['normalized', 'subscription']) test(`large multibyte Google lists/body fit combined native tools and ${measure} request context`, async () => {
   const e = environment(); const fake = await googleServer({ largeContent: true }); const device = e.store.addDevice('Owner');
   e.store.saveGoogleCredential(device.id, makeCredential(device.id), null);

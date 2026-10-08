@@ -339,3 +339,15 @@ test('a connection error is visible inside the modal and remains available after
   c.get('settings-close').onclick();
   assert.equal(c.get('notice').hidden, false); assert.equal(c.get('settings-notice').hidden, true);
 });
+
+test('continuing use requires its explicit settings action and reports remaining requests and recovery time', async () => {
+  const c = client(); c.state.continuing_use = { available: true, enabled: false, remaining: 12 };
+  await c.refresh(); assert.equal(c.calls.filter(x => x.path === '/api/continuing-use').length, 0);
+  c.handle('/api/continuing-use', () => { c.state.continuing_use = { available: true, enabled: true, remaining: 12 }; return {}; });
+  await c.get('continuing-toggle').onclick();
+  const sent = c.calls.find(x => x.path === '/api/continuing-use');
+  assert.deepEqual(sent.body, { enabled: true, consent: 'continuing_conversation_24h_v1' });
+  assert.match(c.get('continuing-status').textContent, /12회/);
+  c.state.continuing_use = { available: true, enabled: true, remaining: 0, resumes_at: Date.now() + 1000 }; await c.refresh();
+  assert.match(c.get('continuing-status').textContent, /다시 사용 가능/);
+});
