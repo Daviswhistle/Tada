@@ -16,6 +16,8 @@ export interface ModelPort {
 }
 export interface SourcePort {
   readonly hostContext?: string;
+  readonly verificationKind?: 'saved_document_sources_checked';
+  readonly quietAnswer?: 'NO_NEW_SUGGESTION';
   definitions: unknown[];
   validate(name: string, args: Record<string, unknown>): boolean;
   execute(name: string, args: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>>;
@@ -23,7 +25,7 @@ export interface SourcePort {
 }
 export type Evidence = { id: string; source: string; path: string; sha256: string; observed_at: string };
 export type Trace = { kind: string; name?: string; evidence?: Evidence; request?: number };
-export type Answer = { refused?: boolean; text: string; sources: Evidence[]; verification: 'cited_sources_rechecked' | 'not_applicable';
+export type Answer = { refused?: boolean; quiet?: boolean; text: string; sources: Evidence[]; verification: 'cited_sources_rechecked' | 'saved_document_sources_checked' | 'not_applicable';
   usage: { requests: number; input_tokens: number; output_tokens: number; unknown_requests: number } };
 
 const SYSTEM = `You are Tada, a personal assistant. Use the user's language. Understand, perform available work, verify and deliver the result. Plans are not execution; nothing secretly continues after your answer. Writing/general discussion needs no unnecessary investigation.
@@ -282,8 +284,9 @@ export class ConversationAssistant {
           continue;
         }
         if (!message.content.trim()) throw new Error('ASSISTANT_EMPTY_ANSWER');
+        const quiet = !response.refused && this.sources.quietAnswer === 'NO_NEW_SUGGESTION' && message.content.trim() === this.sources.quietAnswer;
         const ids = [...new Set([...message.content.matchAll(/\[(S[0-9]+)\]/gu)].map(m => m[1] as string))];
-        if (ids.some(id => !this.evidence.has(id)) || (!response.refused && freshReads > 0 && ids.length === 0)) {
+        if (ids.some(id => !this.evidence.has(id)) || (!response.refused && !quiet && freshReads > 0 && ids.length === 0)) {
           if (citationCorrection) throw new Error('ASSISTANT_UNGROUNDED_ANSWER');
           citationCorrection = true;
           transientHistory.add(this.history.length);
@@ -308,8 +311,8 @@ export class ConversationAssistant {
         // User messages, accepted answers, actual observations and usage stay.
         this.history = this.history.filter((_item, index) => !transientHistory.has(index));
         this.trace({ kind: 'answer_sources_checked' });
-        return { ...(response.refused ? { refused: true } : {}), text: message.content, sources: copy(cited),
-          verification: cited.length ? 'cited_sources_rechecked' : 'not_applicable', usage: { ...this.used } };
+        return { ...(response.refused ? { refused: true } : {}), ...(quiet ? { quiet: true } : {}), text: message.content, sources: copy(cited),
+          verification: cited.length ? this.sources.verificationKind ?? 'cited_sources_rechecked' : 'not_applicable', usage: { ...this.used } };
       }
       throw new Error('ASSISTANT_TURN_LIMIT');
     } catch (error) {

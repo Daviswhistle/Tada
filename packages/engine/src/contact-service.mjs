@@ -1,3 +1,4 @@
+import { ProactiveSources } from './proactive-sources.mjs';
 import { EventEmitter } from 'node:events';
 import { DocumentSources } from './document-sources.mjs';
 import { ConversationAssistant } from './conversation.ts';
@@ -67,21 +68,22 @@ export class ContactService extends EventEmitter {
           return response;
         } };
         if (typeof this.#model.contextBytes === 'function') metered.contextBytes = (messages, tools) => this.#model.contextBytes(messages, tools);
+        const proactive = this.#store.proactiveForTurn(job.seq);
         const review = this.#store.reviewForTurn(job.seq);
         if (review && !this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
           ? new FollowupSources(this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : this.#sources;
-        const sources = review ? base : new DocumentSources(base, this.#store, job);
+        const sources = proactive ? new ProactiveSources(this.#store, job) : review ? base : new DocumentSources(base, this.#store, job);
         const assistant = new ConversationAssistant(metered, sources);
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
         for (const stopped of this.#store.stoppedSince(prior.through, job.seq)) {
-          assistant.noteStopped(stopped.text, stopped.state);
+          if (stopped.origin !== 'proactive') assistant.noteStopped(stopped.text, stopped.state);
         }
         const answer = await assistant.ask(job.text, abort.signal);
         abort.signal.throwIfAborted();
-        const proposals = base instanceof FollowupSources ? base.proposals() : [];
+        const proposals = !proactive && base instanceof FollowupSources ? base.proposals() : [];
         const document = !answer.refused && sources instanceof DocumentSources ? sources.prepared() : null;
         const checkpoint = assistant.checkpoint();
         // The full document stays in the encrypted answer. Persist a compact
@@ -117,6 +119,11 @@ export class ContactService extends EventEmitter {
       }
     }
   }
+  configureProactive(device, enabled, consent) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    const result = this.#store.configureProactive(device, enabled, consent, this.#timezone);
+    this.#abortStale(); this.emit('change'); this.start(); return result;
+  }
   confirmFollowup(device, id, decision) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
     const result = this.#store.confirmFollowup(device, id, decision);
@@ -139,7 +146,7 @@ export class ContactService extends EventEmitter {
     if (this.#stopped || this.#store.contactVersion < 3) return 0;
     const queued = this.localReviews ? this.#store.reviewTick(now) : 0;
     this.#abortStale();
-    return queued + this.#store.followupTick(now);
+    return queued + this.#store.followupTick(now) + this.#store.proactiveTick(now);
   }
   get localReviews() { return !this.#model.identity || this.#model.identity.provider === 'ollama-local'; }
   get providerStatus() {

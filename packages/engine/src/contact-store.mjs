@@ -47,6 +47,12 @@ CREATE INDEX review_due ON followup_reviews(state,due);
 PRAGMA user_version=4;
 `;
 const SCHEMA_V4 = SCHEMA_V3 + REVIEW_SCHEMA;
+const ASSISTANCE_SCHEMA = `
+CREATE TABLE assistance_settings(name TEXT PRIMARY KEY,payload TEXT NOT NULL) STRICT;
+CREATE TABLE proactive_runs(turn INTEGER PRIMARY KEY REFERENCES turns(seq),epoch TEXT NOT NULL,fingerprint TEXT NOT NULL,created INTEGER NOT NULL,payload TEXT NOT NULL) STRICT;
+PRAGMA user_version=5;
+`;
+const SCHEMA_V5 = SCHEMA_V4 + ASSISTANCE_SCHEMA;
 
 
 const telegramId = value => typeof value === 'string' && /^[1-9][0-9]{0,15}$/u.test(value)
@@ -94,7 +100,7 @@ function prepare(root, initialize) {
 
 export class ContactStore {
   #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false;
-  constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false }) {
+  constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
         || passphrase.length > 1024 || typeof route !== 'string' || !/^[a-f0-9]{64}$/u.test(route)) {
       throw new Error('CONTACT_SETUP_REQUIRED');
@@ -116,17 +122,17 @@ export class ContactStore {
         this.#key = scryptSync(passphrase, salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
         this.#db.exec('BEGIN IMMEDIATE');
         try {
-          const schema = reviews ? SCHEMA_V4 : followups ? SCHEMA_V3 : SCHEMA_V2;
-          this.#db.exec(schema); this.#version = reviews ? 4 : followups ? 3 : 2;
+          const schema = assistance ? SCHEMA_V5 : reviews ? SCHEMA_V4 : followups ? SCHEMA_V3 : SCHEMA_V2;
+          this.#db.exec(schema); this.#version = assistance ? 5 : reviews ? 4 : followups ? 3 : 2;
           this.#db.prepare('INSERT INTO identity VALUES(1,?,?,?,?,?)').run(this.#id, salt,
             this.#seal('identity', { id: this.#id, route }), route, hash(schema));
           this.#db.exec('COMMIT');
         } catch (error) { this.#db.exec('ROLLBACK'); throw error; }
       } else {
         this.#version = this.#db.prepare('PRAGMA user_version').get().user_version;
-        if (![1, 2, 3, 4].includes(this.#version)) throw new Error('CONTACT_SCHEMA_UNSUPPORTED');
+        if (![1, 2, 3, 4, 5].includes(this.#version)) throw new Error('CONTACT_SCHEMA_UNSUPPORTED');
         const identity = this.#db.prepare('SELECT * FROM identity WHERE singleton=1').get();
-        if (!identity || identity.route !== route || identity.schema_hash !== hash(this.#version === 1 ? SCHEMA : this.#version === 2 ? SCHEMA_V2 : this.#version === 3 ? SCHEMA_V3 : SCHEMA_V4)) throw new Error('CONTACT_ROUTE_CHANGED');
+        if (!identity || identity.route !== route || identity.schema_hash !== hash(this.#version === 1 ? SCHEMA : this.#version === 2 ? SCHEMA_V2 : this.#version === 3 ? SCHEMA_V3 : this.#version === 4 ? SCHEMA_V4 : SCHEMA_V5)) throw new Error('CONTACT_ROUTE_CHANGED');
         this.#id = identity.id;
         this.#key = scryptSync(passphrase, identity.salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
         const proof = this.#open('identity', identity.proof);
@@ -149,8 +155,12 @@ export class ContactStore {
         for (const row of this.#db.prepare('SELECT * FROM followup_proposals').all()) this.#proposal(row);
         for (const row of this.#db.prepare('SELECT * FROM followup_notices').all()) this.#open(`followup-notice:${row.id}`, row.payload);
       }
-      if (this.#version === 4) {
+      if (this.#version >= 4) {
         for (const row of this.#db.prepare('SELECT * FROM followup_reviews').all()) this.#reviewPayload(row);
+      }
+      if (this.#version >= 5) {
+        for (const row of this.#db.prepare('SELECT * FROM assistance_settings').all()) this.#setting(row.name);
+        this.#sweepProactive();
       }
       this.#tx(() => {
         this.#db.exec("UPDATE requests SET state='unknown' WHERE state='reserved'; UPDATE turns SET state='interrupted',error='HOST_RESTARTED' WHERE state='running';");
@@ -246,7 +256,8 @@ export class ContactStore {
     return this.#tx(() => {
       if (this.#db.prepare("SELECT seq FROM turns WHERE state='running'").get()) return null;
       this.#db.prepare("UPDATE turns SET state='cancelled',error='DEVICE_REVOKED' WHERE state='queued' AND device IN(SELECT id FROM devices WHERE revoked=1 OR expires<=?)").run(Date.now());
-      if (this.#version === 4) this.#sweepReviews(Date.now());
+      if (this.#version >= 4) this.#sweepReviews(Date.now());
+      this.#sweepProactive();
       const row = this.#db.prepare("SELECT * FROM turns WHERE state='queued' ORDER BY seq LIMIT 1").get();
       if (!row) return null;
       this.#db.prepare("UPDATE turns SET state='running' WHERE seq=?").run(row.seq);
@@ -268,6 +279,7 @@ export class ContactStore {
     }
     return { seq: row.seq, request_id: row.request_id, device: row.device, state: row.state, created: row.created,
       text: this.#open(`turn:${row.request_id}`, row.payload).text,
+      ...(this.proactiveForTurn(row.seq) ? { origin: 'proactive' } : {}),
       answer, error: row.error };
   }
   document(id) {
@@ -285,7 +297,7 @@ export class ContactStore {
   }
   prepareDocument(seq, { title, format, based_on }) {
     this.assertTurnAuthority(seq);
-    if (this.reviewForTurn(seq)) throw Error('CONTACT_REVIEW_READ_ONLY');
+    if (this.reviewForTurn(seq) || this.proactiveForTurn(seq)) throw Error('CONTACT_REVIEW_READ_ONLY');
     if (typeof title !== 'string' || !title.trim() || title.length > 120 || /[\u0000-\u001f\u007f]/u.test(title)
         || !['markdown', 'text'].includes(format) || (based_on !== null && (!Number.isSafeInteger(based_on) || based_on < 1 || based_on >= seq))) throw Error('CONTACT_DOCUMENT_INVALID');
     const parent = based_on === null ? null : this.document(based_on);
@@ -319,9 +331,10 @@ export class ContactStore {
       const row = this.#db.prepare('SELECT state,device FROM turns WHERE seq=?').get(seq);
       if (row?.state !== 'running') throw new Error('CONTACT_REQUEST_STOPPED');
       this.#device(row.device);
-      this.#assertReviewAuthority(seq);
-      if (this.#version === 4 && this.reviewForTurn(seq)
+      this.#assertReviewAuthority(seq); this.#assertProactiveAuthority(seq);
+      if (this.#version >= 4 && this.reviewForTurn(seq)
           && this.#db.prepare('SELECT count(*) n FROM requests WHERE turn=?').get(seq).n >= 8) throw new Error('CONTACT_REVIEW_REQUEST_LIMIT');
+      if (this.proactiveForTurn(seq) && this.#db.prepare('SELECT count(*) n FROM requests WHERE turn=?').get(seq).n >= 4) throw Error('CONTACT_PROACTIVE_REQUEST_LIMIT');
       if (this.#db.prepare('SELECT count(*) n FROM requests').get().n >= 64) throw new Error('CONTACT_REQUEST_LIMIT');
       return Number(this.#db.prepare("INSERT INTO requests(turn,state) VALUES(?,'reserved')").run(seq).lastInsertRowid);
     });
@@ -355,10 +368,11 @@ export class ContactStore {
       const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq);
       if (row?.state !== 'running') return false;
       this.#device(row.device);
-      this.#assertReviewAuthority(seq);
+      this.#assertReviewAuthority(seq); this.#assertProactiveAuthority(seq);
       if (typeof answer?.text !== 'string' || !answer.text.trim() || !Array.isArray(answer.sources)
           || !checkpoint || ![1, 2].includes(checkpoint.version)) throw new Error('CONTACT_ANSWER_INVALID');
-      if (this.#version === 4 && this.reviewForTurn(seq) && proposals.length) throw new Error('CONTACT_REVIEW_READ_ONLY');
+      if (this.#version >= 4 && this.reviewForTurn(seq) && proposals.length) throw new Error('CONTACT_REVIEW_READ_ONLY');
+      if (this.proactiveForTurn(seq) && (proposals.length || document)) throw Error('CONTACT_PROACTIVE_READ_ONLY');
       if (Object.hasOwn(answer, 'document')) throw Error('CONTACT_DOCUMENT_INVALID');
       if (document) {
         const checked = this.prepareDocument(seq, document);
@@ -367,7 +381,7 @@ export class ContactStore {
       }
       this.#saveFollowupProposals(row, proposals);
       this.#db.prepare("UPDATE turns SET state='answered',answer=? WHERE seq=?").run(this.#seal(`answer:${row.request_id}`, answer), seq);
-      this.#db.prepare('INSERT INTO context VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET through_seq=excluded.through_seq,payload=excluded.payload')
+      if (!answer.quiet) this.#db.prepare('INSERT INTO context VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET through_seq=excluded.through_seq,payload=excluded.payload')
         .run(seq, this.#seal(`context:${seq}`, checkpoint));
       return true;
     });
@@ -505,11 +519,15 @@ export class ContactStore {
       if (!binding?.live) return;
       const rows = this.#db.prepare("SELECT * FROM turns WHERE seq>? AND state IN('answered','failed','cancelled','interrupted') ORDER BY seq").all(binding.since_seq);
       for (const row of rows) {
+        const proactive = this.proactiveForTurn(row.seq);
+        if (proactive && (row.state !== 'answered' || this.#turn(row).answer?.quiet || !this.#proactiveLive(proactive))) continue;
         const key = `result:${binding.device}:${row.seq}`;
         if (this.#db.prepare('SELECT id FROM telegram_outbox WHERE id=?').get(hash(`${key}:0`))) continue;
         const fromTelegram = row.device === binding.device;
         let text;
-        if (!fromTelegram) {
+        if (proactive) {
+          text = 'Tada · 먼저 챙겨봤어요\n새 제안이 대화에 있어요. 이 채팅에서 “새 제안 알려줘”라고 말씀해 주세요.';
+        } else if (!fromTelegram) {
           text = row.state === 'answered' ? `Tada · 요청 ${row.seq}\n브라우저에서 맡긴 요청의 답변이 준비됐어요. 같은 연락 화면에서 확인할 수 있어요.`
             : `Tada · 요청 ${row.seq}\n브라우저 요청이 중지됐어요. 같은 연락 화면에서 상태를 확인해 주세요.`;
         } else if (row.state === 'answered') {
@@ -532,10 +550,11 @@ export class ContactStore {
     return this.#tx(() => {
       this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='DEVICE_REVOKED' WHERE state='queued' AND device IN(SELECT id FROM devices WHERE revoked=1 OR expires<=?)").run(now);
       if (this.#version >= 3) this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='FOLLOWUP_SUPERSEDED' WHERE state='queued' AND id IN(SELECT n.telegram_id FROM followup_notices n JOIN followups f ON f.id=n.commitment JOIN devices d ON d.id=f.device WHERE n.state<>'ready' OR f.version<>n.version OR f.state NOT IN('open','waiting') OR d.revoked=1 OR d.expires<=?)").run(now);
-      if (this.#version === 4) {
+      if (this.#version >= 4) {
         this.#sweepReviews(now);
         this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='CONTACT_REVIEW_SUPERSEDED' WHERE state='queued' AND turn IN(SELECT r.turn FROM followup_reviews r JOIN followups f ON f.id=r.commitment JOIN devices d ON d.id=r.device JOIN devices w ON w.id=f.device WHERE r.state='cancelled' OR r.version<>f.version OR f.state NOT IN('open','waiting') OR d.revoked=1 OR d.expires<=? OR w.revoked=1 OR w.expires<=?)").run(now, now);
       }
+      this.#sweepProactive(now);
       // A lost first part must not be followed by dangling continuation parts.
       this.#db.exec("UPDATE telegram_outbox AS o SET state='suppressed',error='PREVIOUS_PART_UNCONFIRMED' WHERE o.state='queued' AND o.turn IS NOT NULL AND EXISTS(SELECT 1 FROM telegram_outbox p WHERE p.device=o.device AND p.turn=o.turn AND p.part<o.part AND p.state IN('unknown','rejected','suppressed'))");
       const row = this.#db.prepare("SELECT * FROM telegram_outbox WHERE state='queued' ORDER BY created,part,id LIMIT 1").get();
@@ -612,7 +631,7 @@ export class ContactStore {
     const notices = this.#db.prepare("SELECT * FROM followup_notices WHERE state='ready' ORDER BY created,id").all()
       .map(row => ({ id: row.id, commitment: row.commitment, version: row.version, created: row.created,
         ...this.#open(`followup-notice:${row.id}`, row.payload) }));
-    return { available: true, reviews_available: this.#version === 4, ...this.followupPage('active', 0), proposals, notices };
+    return { available: true, reviews_available: this.#version >= 4, ...this.followupPage('active', 0), proposals, notices };
   }
   #saveFollowupProposals(turn, proposals) {
     if (!Array.isArray(proposals) || proposals.length > 4) throw new Error('CONTACT_FOLLOWUP_INVALID');
@@ -637,7 +656,7 @@ export class ContactStore {
     }
   }
   #suppressFollowup(id) {
-    if (this.#version === 4) this.#cancelReviews(id, 'CONTACT_REVIEW_SUPERSEDED');
+    if (this.#version >= 4) this.#cancelReviews(id, 'CONTACT_REVIEW_SUPERSEDED');
     // Already-sending/sent/unknown deliveries remain honest history. Only queued
     // transmissions can be suppressed; cancellation cannot retract a sent alert.
     this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='FOLLOWUP_SUPERSEDED' WHERE state='queued' AND id IN(SELECT telegram_id FROM followup_notices WHERE commitment=?)").run(id);
@@ -735,10 +754,10 @@ export class ContactStore {
     this.#check();
     const turn = this.#db.prepare('SELECT state,device FROM turns WHERE seq=?').get(seq);
     if (turn?.state !== 'running') throw new Error('CONTACT_REQUEST_STOPPED');
-    this.#device(turn.device); this.#assertReviewAuthority(seq);
+    this.#device(turn.device); this.#assertReviewAuthority(seq); this.#assertProactiveAuthority(seq);
   }
   #assertReviewAuthority(seq) {
-    if (this.#version !== 4) return;
+    if (this.#version < 4) return;
     const row = this.#db.prepare('SELECT * FROM followup_reviews WHERE turn=?').get(seq);
     if (!row) return;
     const work = this.#db.prepare('SELECT version,state,device FROM followups WHERE id=?').get(row.commitment);
@@ -762,19 +781,19 @@ export class ContactStore {
     return value;
   }
   reviewState(commitment, version) {
-    this.#check(); if (this.#version !== 4) return null;
+    this.#check(); if (this.#version < 4) return null;
     const row = this.#db.prepare('SELECT r.*,t.state turn_state,t.error turn_error FROM followup_reviews r LEFT JOIN turns t ON t.seq=r.turn WHERE r.commitment=? AND r.version=?').get(commitment, version);
     return row ? { id: row.id, state: row.state === 'cancelled' ? 'cancelled' : row.turn_state ?? row.state,
       turn: row.turn, error: row.error ?? row.turn_error, due: row.due } : null;
   }
   reviewForTurn(seq) {
-    this.#check(); if (this.#version !== 4) return null;
+    this.#check(); if (this.#version < 4) return null;
     const row = this.#db.prepare('SELECT * FROM followup_reviews WHERE turn=?').get(seq);
     return row ? { ...this.#reviewPayload(row), id: row.id } : null;
   }
   armReview(device, commitment, version, consent, now = Date.now()) {
     this.#check();
-    if (this.#version !== 4) throw new Error('CONTACT_REVIEW_UPGRADE_REQUIRED');
+    if (this.#version < 4) throw new Error('CONTACT_REVIEW_UPGRADE_REQUIRED');
     if (!isFollowupId(commitment) || !counter(version) || version < 1 || !counter(now)
         || consent !== 'one_local_read_only_review') throw new Error('CONTACT_REVIEW_CONSENT_REQUIRED');
     return this.#tx(() => {
@@ -807,7 +826,7 @@ export class ContactStore {
     this.#db.prepare("UPDATE followup_reviews SET state='cancelled',error=? WHERE commitment=? AND (? IS NULL OR version=?) AND (state='armed' OR (state='queued' AND turn IN(SELECT seq FROM turns WHERE state IN('cancelled','queued','running'))))").run(error, commitment, version, version);
   }
   cancelReview(device, commitment, version) {
-    this.#check(); if (this.#version !== 4) throw new Error('CONTACT_REVIEW_UPGRADE_REQUIRED');
+    this.#check(); if (this.#version < 4) throw new Error('CONTACT_REVIEW_UPGRADE_REQUIRED');
     return this.#tx(() => {
       this.#device(device);
       if (!isFollowupId(commitment) || !counter(version) || this.followup(commitment)?.version !== version) throw new Error('CONTACT_FOLLOWUP_STALE');
@@ -828,7 +847,7 @@ export class ContactStore {
     }
   }
   reviewTick(now = Date.now()) {
-    this.#check(); if (this.#version !== 4) return 0;
+    this.#check(); if (this.#version < 4) return 0;
     if (!counter(now)) throw new Error('CONTACT_FOLLOWUP_TIME_INVALID');
     return this.#tx(() => {
       this.#sweepReviews(now); let count = 0;
@@ -847,7 +866,7 @@ export class ContactStore {
     });
   }
   async upgradeReviews() {
-    this.#check(); if (this.#version === 4) return null;
+    this.#check(); if (this.#version >= 4) return null;
     if (this.#version !== 3) throw new Error('CONTACT_FOLLOWUP_UPGRADE_REQUIRED');
     if (this.#db.prepare("SELECT seq FROM turns WHERE state='running'").get()
         || this.#db.prepare("SELECT id FROM telegram_outbox WHERE state='sending'").get()) throw new Error('CONTACT_UPGRADE_BUSY');
@@ -879,6 +898,125 @@ export class ContactStore {
         this.#db.prepare('UPDATE identity SET schema_hash=? WHERE singleton=1').run(hash(SCHEMA_V3));
       });
       this.#version = 3; return path;
+    } finally { this.#upgrading = false; }
+  }
+
+  // v5 settings are encrypted in the same journal, never model-owned authority.
+  #setting(name) {
+    this.#check(); if (this.#version < 5) return null;
+    const row = this.#db.prepare('SELECT payload FROM assistance_settings WHERE name=?').get(name);
+    const value = row ? this.#open(`setting:${name}`, row.payload) : null;
+    if (value !== null) {
+      const valid = name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
+        : name === 'proactive' && Object.keys(value).sort().join(',') === 'device,enabled,epoch,last_fingerprint,next_at,timezone,version'
+          && value.version === 1 && typeof value.enabled === 'boolean' && isFollowupId(value.epoch) && isFollowupId(value.device)
+          && counter(value.next_at) && typeof value.timezone === 'string'
+          && (value.last_fingerprint === null || /^[a-f0-9]{64}$/u.test(value.last_fingerprint));
+      if (!valid) throw Error('CONTACT_SETTING_INVALID');
+      if (name === 'proactive') followupTimezone(value.timezone);
+    }
+    return value;
+  }
+  #saveSetting(name, value) {
+    if (this.#version < 5) throw Error('CONTACT_ASSISTANCE_UPGRADE_REQUIRED');
+    this.#db.prepare('INSERT INTO assistance_settings VALUES(?,?) ON CONFLICT(name) DO UPDATE SET payload=excluded.payload')
+      .run(name, this.#seal(`setting:${name}`, value));
+  }
+  assertDevice(device) { this.#check(); this.#device(device); }
+  mobileCredential() { return this.#setting('mobile'); }
+  saveMobileCredential(device, token) {
+    this.#tx(() => {
+      this.#device(device);
+      if (token !== null && (typeof token !== 'string' || !/^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(token))) throw Error('CONTACT_TELEGRAM_TOKEN_INVALID');
+      this.#saveSetting('mobile', token === null ? null : { token });
+    });
+  }
+  proactiveForTurn(seq) {
+    if (this.#version < 5) return null;
+    const row = this.#db.prepare('SELECT * FROM proactive_runs WHERE turn=?').get(seq);
+    if (!row) return null;
+    const value = this.#open(`proactive:${seq}`, row.payload);
+    if (Object.keys(value).sort().join(',') !== 'created,epoch,fingerprint,turn' || ['turn', 'epoch', 'fingerprint', 'created'].some(k => value[k] !== row[k])) throw Error('CONTACT_PROACTIVE_INVALID');
+    return value;
+  }
+  #proactiveLive(run, now = Date.now()) {
+    const grant = this.#setting('proactive');
+    if (!grant?.enabled || run.epoch !== grant.epoch) return false;
+    try { this.#device(grant.device, now); return true; } catch { return false; }
+  }
+  #assertProactiveAuthority(seq) {
+    const run = this.proactiveForTurn(seq);
+    if (run && (!this.#proactiveLive(run) || run.fingerprint !== this.#proactiveFingerprint())) throw Error('CONTACT_PROACTIVE_STOPPED');
+  }
+  #sweepProactive(now = Date.now()) {
+    if (this.#version < 5) return;
+    for (const run of this.#db.prepare('SELECT * FROM proactive_runs').all()) {
+      this.proactiveForTurn(run.turn);
+      if (this.#proactiveLive(run, now) && run.fingerprint === this.#proactiveFingerprint()) continue;
+      this.#db.prepare("UPDATE turns SET state='cancelled',error='CONTACT_PROACTIVE_STOPPED' WHERE seq=? AND state IN('queued','running')").run(run.turn);
+      this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='CONTACT_PROACTIVE_STOPPED' WHERE turn=? AND state='queued'").run(run.turn);
+    }
+  }
+  proactiveStatus() {
+    const grant = this.#setting('proactive');
+    const live = grant && this.#proactiveLive({ epoch: grant.epoch });
+    const last = this.#version >= 5 ? this.#db.prepare('SELECT t.state,t.error,r.created FROM proactive_runs r JOIN turns t ON t.seq=r.turn ORDER BY r.turn DESC LIMIT 1').get() : null;
+    return { available: this.#version >= 5, enabled: !!live, timezone: grant?.timezone ?? null,
+      next_at: live ? grant.next_at : null, blocked_reason: live && this.usage().requests >= 60 ? 'usage_limit' : null, last: last ?? null };
+  }
+  configureProactive(device, enabled, consent, timezone, now = Date.now()) {
+    if (typeof enabled !== 'boolean' || (enabled && consent !== 'daily_conversation_suggestions_v1') || (!enabled && consent !== null)) throw Error('CONTACT_PROACTIVE_CONSENT_REQUIRED');
+    followupTimezone(timezone);
+    return this.#tx(() => {
+      this.#device(device);
+      const old = this.#setting('proactive');
+      if (enabled && old?.enabled && this.#proactiveLive({ epoch: old.epoch })) return this.proactiveStatus();
+      this.#saveSetting('proactive', { version: 1, enabled, epoch: randomUUID(), device, timezone, next_at: old?.next_at ?? now, last_fingerprint: old?.last_fingerprint ?? null });
+      this.#sweepProactive(now); return this.proactiveStatus();
+    });
+  }
+  #proactiveFingerprint() {
+    const recent = this.#db.prepare('SELECT max(seq) seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs)').get().seq;
+    const work = this.#db.prepare("SELECT f.id,f.version,f.state,d.revoked,d.expires FROM followups f JOIN devices d ON d.id=f.device ORDER BY f.id").all();
+    return hash(JSON.stringify([recent, work]));
+  }
+  proactiveTick(now = Date.now()) {
+    if (this.#version < 5) return 0;
+    return this.#tx(() => {
+      this.#sweepProactive(now);
+      const grant = this.#setting('proactive');
+      if (!grant?.enabled || !this.#proactiveLive({ epoch: grant.epoch }, now) || now < grant.next_at) return 0;
+      const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: grant.timezone, hour: '2-digit', hourCycle: 'h23' }).format(now));
+      if (hour < 9 || hour >= 21) return 0;
+      if (this.#db.prepare("SELECT seq FROM turns WHERE state IN('queued','running')").get()) return 0;
+      const recent = this.#db.prepare('SELECT max(seq) seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs)').get().seq;
+      if (!recent || this.usage().requests >= 60 || this.#db.prepare('SELECT count(*) n FROM turns').get().n >= 1000) return 0;
+      const fingerprint = this.#proactiveFingerprint();
+      if (fingerprint === grant.last_fingerprint) return 0;
+      const requestId = `proactive_${randomUUID()}`;
+      const text = '예약된 먼저 챙겨보기입니다(사람이 보낸 새 메시지가 아님). 최근 대화와 저장된 일을 살펴 새로 도움이 될 일을 제안하세요.';
+      const result = this.#db.prepare("INSERT INTO turns(request_id,device,state,payload,created) VALUES(?,?,'queued',?,?)")
+        .run(requestId, grant.device, this.#seal(`turn:${requestId}`, { text }), now);
+      const seq = Number(result.lastInsertRowid);
+      this.#db.prepare('INSERT INTO proactive_runs VALUES(?,?,?,?,?)').run(seq, grant.epoch, fingerprint, now, this.#seal(`proactive:${seq}`, { turn: seq, epoch: grant.epoch, fingerprint, created: now }));
+      this.#saveSetting('proactive', { ...grant, next_at: now + 86400000, last_fingerprint: fingerprint });
+      return 1;
+    });
+  }
+  async upgradeAssistance() {
+    this.#check(); if (this.#version >= 5) return null;
+    if (this.#version !== 4) throw Error('CONTACT_REVIEW_UPGRADE_REQUIRED');
+    if (this.#db.prepare("SELECT seq FROM turns WHERE state='running'").get()
+        || this.#db.prepare("SELECT id FROM telegram_outbox WHERE state='sending'").get()) throw Error('CONTACT_UPGRADE_BUSY');
+    const path = join(this.#root, `before-assistance-${randomUUID()}.sqlite`);
+    this.#upgrading = true;
+    try {
+      closeSync(openSync(path, 'wx', 0o600)); await backup(this.#db, path);
+      const fd = openSync(path, 'r+'); try { fsyncSync(fd); } finally { closeSync(fd); }
+      if (process.platform !== 'win32') { const dir = openSync(this.#root, 'r'); try { fsyncSync(dir); } finally { closeSync(dir); } }
+      this.#upgrading = false;
+      this.#tx(() => { this.#db.exec(ASSISTANCE_SCHEMA); this.#db.prepare('UPDATE identity SET schema_hash=? WHERE singleton=1').run(hash(SCHEMA_V5)); });
+      this.#version = 5; return path;
     } finally { this.#upgrading = false; }
   }
 

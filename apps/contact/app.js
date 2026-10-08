@@ -8,6 +8,16 @@ let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = 
 let turns = new Map();
 const notice = text => { $('notice').textContent = text; $('notice').hidden = !text; };
 const errors = {
+  CONTACT_PROACTIVE_CONSENT_REQUIRED: '먼저 챙겨보기의 범위와 사용량 안내를 확인해 주세요.',
+  CONTACT_ASSISTANCE_UPGRADE_REQUIRED: 'Tada를 다시 열어 기록 업데이트를 완료해 주세요. 원본은 먼저 백업합니다.',
+  CONTACT_MOBILE_BUSY: '휴대폰 연결을 확인하고 있어요. 잠시 후 다시 시도해 주세요.',
+  CONTACT_MOBILE_RECONNECT: 'Telegram 연결을 다시 확인해야 해요. 연결 키를 확인하고 다시 연결해 주세요.',
+  CONTACT_TELEGRAM_TOKEN_INVALID: 'BotFather가 준 연결 키 전체를 붙여 넣어 주세요.',
+  CONTACT_TELEGRAM_ACCESS_DENIED: 'Telegram이 연결 키를 허용하지 않았어요. BotFather에서 현재 키를 확인해 주세요.',
+  CONTACT_TELEGRAM_WEBHOOK_PRESENT: '다른 서비스가 사용하는 봇이에요. Tada 전용 봇을 만들어 연결해 주세요.',
+  CONTACT_TELEGRAM_BOT_CHANGED: '이 대화에 연결했던 봇과 달라요. 기존 봇의 연결 키를 사용해 주세요.',
+  CONTACT_TELEGRAM_POLL_CONFLICT: '다른 프로그램이 이 봇에 연결 중이에요. 그 연결을 종료하고 다시 연결해 주세요.',
+
   CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED: '예약된 자료 재확인은 현재 로컬 모델에서만 지원합니다. 지금 대화로 자료 확인을 맡길 수 있습니다.',
   CONTACT_REVIEW_UPGRADE_REQUIRED: '이 호스트는 자동 확인용 기록 전환이 필요합니다. 호스트에서 --upgrade-contact로 백업 후 전환해 주세요.',
   CONTACT_REVIEW_CONSENT_REQUIRED: '일회성 로컬 확인 범위를 명시적으로 승인해야 합니다.',
@@ -37,14 +47,14 @@ async function api(path, data) {
 }
 function paired(yes) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings').hidden = !yes; if (!yes) $('followups').hidden = true;
-  if (!yes) { requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
+  if (!yes) { $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
   cancelled: '이 요청은 취소했어요.', interrupted: 'Tada가 멈춰 답변을 끝내지 못했어요. 요청은 남아 있어요.',
   failed: '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.' };
 function render() {
-  const list = [...turns.values()].sort((a, b) => a.seq - b.seq);
+  const list = [...turns.values()].filter(t => !t.answer?.quiet && (t.origin !== 'proactive' || t.state === 'answered')).sort((a, b) => a.seq - b.seq);
   const fingerprint = JSON.stringify(list);
   if (fingerprint === rendered) return;
   const nearEnd = window.innerHeight + window.scrollY >= document.body.scrollHeight - 200;
@@ -59,7 +69,7 @@ function render() {
   const fragment = document.createDocumentFragment();
   for (const turn of list) {
     const article = document.createElement('article'); article.className = 'turn';
-    const user = document.createElement('div'); user.className = 'user'; user.textContent = turn.text; article.append(user);
+    const user = document.createElement('div'); user.className = turn.origin === 'proactive' ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'proactive' ? '먼저 챙겨봤어요' : turn.text; article.append(user);
     if (turn.answer) {
       if (turn.answer.document) {
         const doc = turn.answer.document, card = document.createElement('div'); card.className = 'document-card';
@@ -72,8 +82,8 @@ function render() {
       if (turn.answer.notice) { const note = document.createElement('p'); note.className = 'status'; note.textContent = turn.answer.notice; article.append(note); }
       if (turn.answer.sources.length) {
         const details = document.createElement('details'); details.className = 'source-list';
-        const summary = document.createElement('summary'); summary.textContent = '참고한 자료'; details.append(summary);
-        for (const source of turn.answer.sources) { const item = document.createElement('div'); item.textContent = `[${source.id}] ${source.source}/${source.path}`; details.append(item); }
+        const summary = document.createElement('summary'); summary.textContent = turn.answer.verification === 'saved_document_sources_checked' ? '저장된 문서의 당시 참고 자료' : '참고한 자료'; details.append(summary);
+        for (const source of turn.answer.sources) { const item = document.createElement('div'); item.textContent = `[${source.id}] ${source.source}/${source.path}${turn.answer.verification === 'saved_document_sources_checked' ? ' · 당시 확인 시각 ' + source.observed_at : ''}`; details.append(item); }
         article.append(details);
       }
     } else {
@@ -87,7 +97,7 @@ function render() {
         const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '취소';
         cancel.onclick = () => api('/api/cancel', { seq: turn.seq }).then(() => refresh()).catch(e => notice(e.message)); status.append(cancel);
       }
-      if (['failed', 'interrupted'].includes(turn.state)) {
+      if (turn.origin !== 'proactive' && ['failed', 'interrupted'].includes(turn.state)) {
         const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '이 요청 다시 작성';
         retry.onclick = () => {
           if ($('send').disabled) { notice('접수 확인이 끝나면 다시 작성할 수 있어요. 잠시만 기다려 주세요.'); return; }
@@ -117,11 +127,12 @@ async function refresh(older = false, quiet = false) {
     $('older').hidden = nextBefore === null;
     render();
     renderFollowups(result.followups);
+    renderAssistance(result);
     $('provider-info').textContent = result.provider ? `${result.provider.provider === 'chatgpt-subscription' ? 'ChatGPT 구독' : '로컬 모델'} · ${result.provider.model}${result.provider.account ? ' · ' + result.provider.account : ''}` : '';
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
     $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
-      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 예약된 자동 자료 확인은 아직 지원하지 않습니다.'
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 먼저 챙겨보기를 켜면 대화와 저장된 일에서 새 제안을 찾습니다. 외부 자료의 예약 확인은 아직 지원하지 않습니다.'
       : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
@@ -257,6 +268,74 @@ $('followup-more').onclick = async () => {
 for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 확인할 항목을 체크리스트 문서로 만들어줘.'], ['suggest-remember', '잊지 않게 챙겨줬으면 하는 일이 있어.']]) {
   $(id).onclick = () => { if (!$('message').value.trim()) $('message').value = text; $('message').focus(); };
 }
+let proactiveEnabled = false;
+function renderAssistance(result) {
+  const state = result.proactive;
+  proactiveEnabled = state?.enabled === true;
+  $('proactive-settings').hidden = !state?.available;
+  $('proactive-toggle').textContent = proactiveEnabled ? '먼저 챙겨보기 끄기' : '먼저 챙겨보기 켜기';
+  $('proactive-status').textContent = proactiveEnabled
+    ? (state.blocked_reason === 'usage_limit' ? '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.'
+      : state.last?.state === 'failed' || state.last?.state === 'interrupted' ? '최근 확인을 끝내지 못했어요. 기록은 남아 있고 자동으로 재시도하지 않아요.'
+      : '켜져 있어요. 도움이 될 새 내용이 없으면 조용히 기다려요.')
+    : '꺼져 있어요. 켜면 같은 비서가 먼저 챙겨봅니다.';
+  const mobile = result.mobile;
+  $('mobile-settings').hidden = !mobile?.available;
+  if (!mobile?.available) return;
+  $('mobile-status').textContent = mobile.suspended || mobile.error ? '연결을 다시 확인해야 해요. 저장된 연결로 다시 시도해 주세요.'
+    : mobile.paired && mobile.enabled ? (mobile.online ? '연결됐어요. Telegram에서 바로 이야기하세요.' : 'Telegram 연결을 확인하고 있어요. 대화는 그대로 보관됩니다.')
+    : mobile.enabled ? '이제 휴대폰에서 링크를 열고 연결을 마쳐 주세요.' : '아직 연결하지 않았어요.';
+  $('mobile-reconnect').hidden = !mobile.configured || (mobile.enabled && !mobile.suspended && !mobile.error);
+  $('mobile-form').hidden = mobile.enabled && !mobile.suspended && !mobile.error;
+  $('mobile-pair').hidden = !mobile.enabled || mobile.paired || mobile.suspended;
+  $('mobile-disconnect').hidden = !mobile.configured && !mobile.enabled && !mobile.paired;
+  if (mobile.paired || !mobile.enabled) {
+    $('mobile-link').hidden = true; $('mobile-copy').hidden = true; $('mobile-link-help').hidden = true;
+  }
+  $('mobile-candidates').replaceChildren(...(mobile.candidates ?? []).map(candidate => {
+    const card = element('div', '', 'mobile-candidate');
+    card.append(element('p', `Telegram 사용자 ${candidate.user}의 연결 요청입니다. 본인이 방금 시작을 눌렀을 때만 연결해 주세요.`, 'muted'));
+    const approve = element('button', '내 휴대폰이 맞아요'); approve.type = 'button';
+    approve.onclick = async () => {
+      approve.disabled = true;
+      try { await api('/api/mobile/approve', { candidate: candidate.candidate }); notice('휴대폰과 연결됐어요. 같은 비서에게 이야기해 보세요.'); await refresh(); }
+      catch (error) { notice(error.message); approve.disabled = false; }
+    };
+    card.append(approve); return card;
+  }));
+}
+$('proactive-toggle').onclick = async () => {
+  const button = $('proactive-toggle'); button.disabled = true;
+  try { await api('/api/proactive', { enabled: !proactiveEnabled, consent: proactiveEnabled ? null : 'daily_conversation_suggestions_v1' }); notice(''); await refresh(); }
+  catch (error) { notice(error.message); } finally { button.disabled = false; }
+};
+$('mobile-form').onsubmit = async event => {
+  event.preventDefault(); const button = $('mobile-connect'); button.disabled = true;
+  const token = $('mobile-token').value.trim(); $('mobile-token').value = '';
+  try { await api('/api/mobile/connect', { token, consent: 'private_telegram_contact_v1' }); notice(''); await refresh(); }
+  catch (error) { notice(error.message); } finally { button.disabled = false; }
+};
+$('mobile-reconnect').onclick = async () => {
+  const button = $('mobile-reconnect'); button.disabled = true;
+  try { await api('/api/mobile/reconnect', {}); notice(''); await refresh(); }
+  catch (error) { notice(error.message); } finally { button.disabled = false; }
+};
+$('mobile-pair').onclick = async () => {
+  try {
+    const result = await api('/api/mobile/pair', {});
+    $('mobile-link').href = result.url; $('mobile-link').hidden = false; $('mobile-copy').hidden = false; $('mobile-link-help').hidden = false;
+  } catch (error) { notice(error.message); }
+};
+$('mobile-copy').onclick = async () => {
+  try { await navigator.clipboard.writeText($('mobile-link').href); notice('연결 링크를 복사했어요. 본인 휴대폰에서 열어 주세요.'); }
+  catch { notice('복사하지 못했어요. 연결 링크를 길게 누르거나 마우스 오른쪽 버튼으로 복사해 주세요.'); }
+};
+$('mobile-disconnect').onclick = async () => {
+  const button = $('mobile-disconnect'); button.disabled = true;
+  try { await api('/api/mobile/disconnect', {}); notice('휴대폰 연결을 해제했어요. 대화는 그대로 보관됩니다.'); await refresh(); }
+  catch (error) { notice(error.message); } finally { button.disabled = false; }
+};
+
 $('message').onkeydown = event => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault(); $('message-form').requestSubmit();

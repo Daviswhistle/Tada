@@ -25,7 +25,7 @@ Optional: --provider chatgpt|ollama --model MODEL
           --login (reauthorize saved registration) --logout (stop and disconnect profile)
           --ask-passphrase (explicit legacy/manual encryption mode)
           --telegram (explicit private Telegram contact, same conversation)
-          --upgrade-contact (back up and upgrade an existing contact journal to v4)
+          --upgrade-contact (back up and upgrade an existing contact journal to v5)
           --timezone IANA_ZONE (display and resolve times, e.g. Asia/Seoul)
           --broker ABSOLUTE_READ_BROKER --allow-read DIRECTORY (repeatable)
           --endpoint http://127.0.0.1:11434
@@ -132,7 +132,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
   if (options.help) { process.stdout.write(HELP); return; }
   if (!ui && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
   if (ui && (options.askPassphrase || options.telegram || options.logout)) throw Error('CONTACT_APP_ADVANCED_MODE');
-  let accountStore, account, store, service, host, prompt, telegram;
+  let accountStore, account, store, service, host, prompt, telegram, mobile;
   const profile = options.provider === 'chatgpt' ? resolve(options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`) : undefined;
   let passphrase;
   if (options.askPassphrase) {
@@ -198,7 +198,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     ui?.signal.throwIfAborted();
     const route = contactRoute({ version: 1, provider: identity.provider, model: identity.model,
       digest: identity.model_digest, endpoint: options.endpoint, scopes });
-    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize });
+    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize, assistance: options.initialize });
     if (options.initialize) ui?.initialized?.();
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
     passphrase = '';
@@ -207,10 +207,11 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       const messagingBackup = await store.upgradeMessaging();
       const followupBackup = await store.upgradeFollowups();
       const reviewBackup = await store.upgradeReviews();
-      for (const path of [messagingBackup, followupBackup, reviewBackup].filter(Boolean)) process.stdout.write(`이전 연락 기록 백업: ${path}\n`);
-      process.stdout.write('연락 기록 v4 · 맡긴 일과 일회성 자동 확인을 사용할 수 있습니다.\n');
+      const assistanceBackup = await store.upgradeAssistance();
+      for (const path of [messagingBackup, followupBackup, reviewBackup, assistanceBackup].filter(Boolean)) process.stdout.write(`이전 연락 기록 백업: ${path}\n`);
+      process.stdout.write('연락 기록 v5 · 먼저 챙겨보기와 휴대폰 연결을 설정할 수 있습니다.\n');
     }
-    if (store.contactVersion !== 4) throw new Error('CONTACT_REVIEW_UPGRADE_REQUIRED');
+    if (store.contactVersion < 5) throw new Error('CONTACT_ASSISTANCE_UPGRADE_REQUIRED');
     if (options.telegram) {
       if (store.contactVersion < 2) throw new Error('CONTACT_MESSAGING_UPGRADE_REQUIRED');
       if (!await telegramConsent(process.stdin, process.stdout)) throw new Error('CONTACT_TELEGRAM_CONSENT_REQUIRED');
@@ -224,8 +225,12 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       telegram.on('pairing', ({ candidate, user }) => process.stdout.write(`텔레그램 연결 요청 · 사용자 ID ${user}. 본인이 방금 연 채팅인지 확인한 뒤 /telegram-approve ${candidate}\n`));
       telegram.on('status', code => process.stderr.write(`텔레그램 연락 상태: ${code}. 브라우저의 대화와 결과는 유지됩니다.\n`));
     }
+    if (!options.telegram) {
+      const { MobileContact } = await import('./mobile-contact.mjs');
+      mobile = new MobileContact(store, service); await mobile.restore();
+    }
     const tls = options['tls-cert'] ? { cert: readFileSync(options['tls-cert']), key: readFileSync(options['tls-key']) } : undefined;
-    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, messaging: () => ({ enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
+    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
     if (ui) {
       service.on('fault', () => ui.fail());
       ui.signal.throwIfAborted();
@@ -262,7 +267,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       } else if (/^\/revoke [a-f0-9-]{36}$/u.test(line)) service.revoke(line.slice(8));
       else process.stdout.write('대화는 연결한 브라우저에서 하세요. 호스트 명령: /pair, /devices, /revoke DEVICE_ID, /quit\n');
     }
-  } finally { passphrase = ''; prompt?.close(); await telegram?.close(); await host?.close(); await service?.close(); store?.close(); await account?.stop(); accountStore?.close(); }
+  } finally { passphrase = ''; prompt?.close(); await mobile?.close(); await telegram?.close(); await host?.close(); await service?.close(); store?.close(); await account?.stop(); accountStore?.close(); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {

@@ -13,6 +13,7 @@ const assets = new Map([
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
 const messages = {
+  CONTACT_ASSISTANCE_UPGRADE_REQUIRED: '먼저 챙겨보기와 휴대폰 연결을 추가하려면 기록 업데이트가 필요해요. 원본을 백업한 뒤 기존 대화를 그대로 이어갑니다.',
   CONTACT_REVIEW_UPGRADE_REQUIRED: '이전 버전에서 남긴 대화예요. 먼저 원본을 백업하고, 지금 버전에서 이어 쓸 수 있도록 기록을 업데이트할 수 있어요.',
   CONTACT_APP_ACTION_REQUIRES_RESTART: '다시 연결하거나 기록을 업데이트하려면 실행 중인 Tada를 종료한 뒤 다시 열어 주세요. 대화는 그대로 보관돼요.',
   CONTACT_APP_SETTINGS_IN_USE: 'Tada가 다른 설정으로 실행 중이에요. 현재 열린 Tada를 종료한 뒤 새 설정으로 열어 주세요.',
@@ -68,7 +69,7 @@ export async function serveSetup({ run, autoStart = true }) {
       fail: () => controller.abort(Error('CONTACT_STORAGE_FAILED')),
     };
     task = Promise.resolve().then(() => run(ui)).catch(error => {
-      const needsUpgrade = !signal.aborted && error?.message === 'CONTACT_REVIEW_UPGRADE_REQUIRED';
+      const needsUpgrade = !signal.aborted && ['CONTACT_REVIEW_UPGRADE_REQUIRED', 'CONTACT_ASSISTANCE_UPGRADE_REQUIRED'].includes(error?.message);
       if (!closed) publish('error', { message: setupError(signal.aborted ? signal.reason : error), retryable: !needsUpgrade && error?.retryable !== false, upgrade: needsUpgrade, reauthorize: ['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN', 'CHATGPT_PLAN_PERMISSION_REQUIRED'].includes(error?.message) });
     }).finally(() => {
       task = null; answer = null;

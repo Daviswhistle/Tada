@@ -14,6 +14,10 @@ At development baseline `4e9dbdc`, the contact browser and ordinary CI passed, b
 
 The user explicitly rejected a developer-operated product. A browser-first setup now replaces terminal questions on the default `npm start` route, and the continuing conversation moves management details out of the foreground. This closes a concrete usability problem; it does not close installation, live provider proof, useful general actions, durable long-term memory or acceptance. Read [the implementation and evidence](experience-2026-10-08.md). Judge the remaining work from first launch through verified useful results, not the count of passing checks.
 
+## Proactive and phone priority — 2026-10-08
+
+The user requires unsolicited useful proposals and phone contact. The [v5 slice](proactive-and-mobile.md) connects standing daily suggestions from existing conversation/work/documents and browser-based Telegram setup. Live usefulness, physical-phone delivery and an always-on operating host remain acceptance gates; the local tests do not close them. Email/calendar/source observation and broader execution remain on the same assistant path.
+
 ## Current execution slice — 2026-10-08
 
 The user rejected reassuring conversation copy as a substitute for a working secretary. [Saved documents](contact-documents.md) add a concrete result path to the same conversation: preparation, citation checks, atomic encrypted persistence, authenticated download and revision after restart. Synthetic integration evidence does not qualify real account/model behavior. Live sign-in has been requested from the owner; broader execution and release work remain open.

@@ -11,10 +11,12 @@ export class TelegramContact extends EventEmitter {
   #store; #service; #api; #bot; #codes = new Map(); #candidates = new Map(); #abort = new AbortController();
   #polling; #sending; #closed = false; #online = false; #nextSend = 0; #lastError = null; #pairWindow = 0; #pairCount = 0; #suspended = false; #pollActive = false;
   constructor(store, service, api) { super(); this.#store = store; this.#service = service; this.#api = api; }
-  async initialize() {
+  async initialize(assertAuthority = () => {}) {
     if (this.#closed || this.#bot) throw new Error('CONTACT_TELEGRAM_ALREADY_STARTED');
     if (this.#store.contactVersion < 2) throw new Error('CONTACT_MESSAGING_UPGRADE_REQUIRED');
     const bot = await this.#api.inspect(this.#abort.signal);
+    if (this.#closed) throw Error('CONTACT_TELEGRAM_CLOSED');
+    assertAuthority();
     this.#store.telegramConfigure(bot.id); this.#bot = bot;
     return bot;
   }
@@ -89,7 +91,7 @@ export class TelegramContact extends EventEmitter {
       this.#store.telegramNote(noteKey, '아직 이 연락 경로에서는 텍스트만 읽을 수 있어요. 음성·사진·첨부 내용은 읽은 것으로 처리하지 않았어요.'); return;
     }
     const scheduled = /^\/(review|review-cancel) ([a-f0-9-]{36}) ([1-9][0-9]{0,8})$/u.exec(text);
-    if (scheduled && this.#store.contactVersion === 4) {
+    if (scheduled && this.#store.contactVersion >= 4) {
       try {
         const result = scheduled[1] === 'review'
           ? this.#service.armReview(binding.device, scheduled[2], Number(scheduled[3]), 'one_local_read_only_review')
@@ -113,7 +115,7 @@ export class TelegramContact extends EventEmitter {
           text = `${result.replay ? '이 확인은 이미 처리됐어요.' : '확정한 내용을 같은 비서의 맡긴 일에 저장했어요.'} 현재 상태: ${{ open: '챙길 일', waiting: '회신·조건 대기', done: '사용자 확인 완료', cancelled: '취소' }[item.state]}.`;
           if (['open', 'waiting'].includes(item.state) && item.notify_at) text += ` 확인 시각: ${item.notify_at}. 실행 중인 호스트에서 한 번 알려드려요.`;
         }
-        if (result.status === 'approved' && this.#store.contactVersion === 4 && this.#service.localReviews) {
+        if (result.status === 'approved' && this.#store.contactVersion >= 4 && this.#service.localReviews) {
           const item = this.#store.followup(result.commitment);
           if (['open', 'waiting'].includes(item.state) && item.notify_at) text += `\n현재 허용된 로컬 자료와 로컬 모델 최대 8회 호출로 한 번 직접 확인하려면 /review ${item.id} ${item.version}\n메일·웹·파일 수정·타인 연락은 포함되지 않고, 기존 전체 사용 한도를 공유해요. 24시간 넘게 늦으면 실행하지 않아요. 취소: /review-cancel ${item.id} ${item.version}`;
         }

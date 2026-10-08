@@ -1,5 +1,9 @@
 # Repository instructions
 
+## Proactive assistance and phone contact — user correction, 2026-10-08
+
+The user explicitly requires finding and proposing useful work without a new assignment and being reachable from a phone. `docs/proactive-and-mobile.md` records the current v5 implementation: opt-in daily conversation/work/document suggestions on the same selected provider, and on-screen private Telegram setup. Reuse the same journal, model loop and delivery outbox. This standing grant is suggestion-only and does not expand old local review grants or permit new sources/actions. Preserve v1–v4 schema strings; existing journals require explicit backup migration. Do not equate synthetic useful suggestions, a mobile-sized viewport, or a configured adapter with live model/physical-phone acceptance or always-on operation.
+
 ## Human experience first — user correction, 2026-10-08
 
 The user rejected the developer-operated experience and asked to rebuild it for people. Judge each change by the effort and uncertainty it removes for the person using it. The normal entry is now `npm start`: a local browser setup leads into the existing continuing conversation. Keep account connection, model selection, retry and ordinary interaction on screen; retain `contact` as the advanced CLI. Do not present warm copy or a redesigned screen as completed assistant capability or release qualification. Preserve records, show meaningful recovery, keep management details secondary, and never make the user interpret an internal error code or prepare technical inputs the app can derive.

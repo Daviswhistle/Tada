@@ -41,7 +41,8 @@ const copy = {
 function render(state) {
   if (current?.revision === state.revision) return;
   current = state;
-  const [step, title, description] = copy[state.stage] ?? copy.error;
+  const [step, title, description] = state.stage === 'error' && state.upgrade === true
+    ? ['업데이트 준비', '새 기능을 준비했어요.', ''] : copy[state.stage] ?? copy.error;
   $('step').textContent = step; $('title').textContent = title; $('description').textContent = state.message ?? description;
   for (const id of ['consent', 'login', 'model', 'ready', 'error']) $(id).hidden = id !== state.stage;
   $('retry').hidden = state.retryable === false;

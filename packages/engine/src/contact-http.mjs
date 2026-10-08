@@ -39,7 +39,7 @@ export function validateContactAddress({ origin, bind = '127.0.0.1', port, tls }
   if (tls && url.protocol !== 'https:') throw new Error('CONTACT_REMOTE_TLS_REQUIRED');
   return url;
 }
-export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, messaging = () => store.messagingStatus() }) {
+export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, mobile = null, messaging = () => store.messagingStatus() }) {
   const url = validateContactAddress({ origin, bind, port, tls });
   const cookieName = url.protocol === 'https:' ? '__Host-tada' : 'tada_local';
   const pairing = new Map();
@@ -101,7 +101,23 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       if (req.method === 'GET' && target.pathname === '/api/state') {
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
-        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion === 4 && service.localReviews }, provider: service.providerStatus, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), mobile: mobile?.status() ?? null, host_stopping: service.stopped });
+      }
+      if (req.method === 'POST' && target.pathname === '/api/proactive' && !target.search) {
+        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        return send(res, 200, service.configureProactive(device, data.enabled, data.consent));
+      }
+      if (req.method === 'POST' && target.pathname.startsWith('/api/mobile/') && !target.search && mobile) {
+        const data = await jsonBody(req);
+        // Recheck after body receipt and inside the controller after async inspection.
+        store.assertDevice(device);
+        if (target.pathname === '/api/mobile/connect') {
+          object(data, ['token', 'consent']); return send(res, 200, await mobile.connect(device, data.token, data.consent));
+        }
+        if (target.pathname === '/api/mobile/reconnect') { object(data, []); return send(res, 200, await mobile.reconnect(device)); }
+        if (target.pathname === '/api/mobile/pair') { object(data, []); return send(res, 200, mobile.pair(device)); }
+        if (target.pathname === '/api/mobile/approve') { object(data, ['candidate']); return send(res, 200, mobile.approve(device, data.candidate)); }
+        if (target.pathname === '/api/mobile/disconnect') { object(data, []); return send(res, 200, await mobile.disconnect(device)); }
       }
       if (req.method === 'GET' && target.pathname === '/api/events' && !target.search) {
         if (streams.size >= 16) return send(res, 429, { error: 'CONTACT_CONNECTION_LIMIT' });
