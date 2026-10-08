@@ -155,7 +155,7 @@ try {
     writeFileSync('/tmp/tada-experience-' + label + '.png', Buffer.from(shot.data, 'base64'));
   }
   await evaluate(pc, 'document.getElementById("suggest-plan").click()');
-  assert.ok((await evaluate(pc, 'document.getElementById("message").value')).includes('어디서부터'));
+  assert.ok((await evaluate(pc, 'document.getElementById("message").value')).includes('문서로 만들어줘'));
   assert.equal(requests, 0, 'a suggestion drafts but never sends a message');
   await evaluate(pc, 'document.getElementById("message").value=""');
   if (subscriptionFixture) {
