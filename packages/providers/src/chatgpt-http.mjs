@@ -53,8 +53,8 @@ export async function bodyText(res, maxBytes = 262144) {
     return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
-export async function jsonResponse(fetcher, url, options) {
-  try { return JSON.parse(await bodyText(await response(fetcher, url, options))); }
+export async function jsonResponse(fetcher, url, options, maxBytes = 262144) {
+  try { return JSON.parse(await bodyText(await response(fetcher, url, options), maxBytes)); }
   catch (error) {
     if (/^CHATGPT_[A-Z_]+$|^ASSISTANT_CANCELLED$/u.test(error?.message)) throw error;
     throw Error('CHATGPT_RESPONSE_INVALID');

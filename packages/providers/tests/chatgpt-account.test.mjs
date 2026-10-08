@@ -396,3 +396,21 @@ for (const version of [2, 3]) test(`browser recovery upgrades v${version} only a
     assert.equal(journal.usage().requests, 0);
   } finally { journal?.close(); await browser?.host.close(); globalThis.fetch = nativeFetch; env.close(); }
 });
+
+for (const bytes of [614000, 2 * 1024 * 1024 + 1]) test(`account catalog has a separate bounded metadata budget: ${bytes}`, async () => {
+  const env = setup();
+  try {
+    await login(env);
+    const account = new ChatGPTAccount(env.store, { fetcher: async (url, options) => {
+      assert.equal(url, 'https://api.openai.com/v1/models'); assert.equal(options.redirect, 'error');
+      return json({ models: [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list', metadata: 'x'.repeat(bytes) }] });
+    } });
+    if (bytes > 2 * 1024 * 1024) await assert.rejects(account.models(), /CHATGPT_RESPONSE_LIMIT/);
+    else assert.deepEqual(await account.models(), [{ slug: 'fixture-model', display_name: 'Fixture Model' }]);
+    await account.stop();
+  } finally { env.close(); }
+});
+test('catalog allowance does not increase the default authentication JSON response limit', async () => {
+  const { jsonResponse } = await import('../src/chatgpt-http.mjs');
+  await assert.rejects(jsonResponse(async () => json({ metadata: 'x'.repeat(300000) }), 'https://auth.openai.com/fixture', {}), /CHATGPT_RESPONSE_LIMIT/);
+});

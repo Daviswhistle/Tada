@@ -18,6 +18,8 @@ const messages = {
   CONTACT_APP_SETTINGS_IN_USE: 'Tada가 다른 설정으로 실행 중이에요. 현재 열린 Tada를 종료한 뒤 새 설정으로 열어 주세요.',
   CONTACT_APP_WINDOW_UNAVAILABLE: '실행 중인 Tada에 연결하지 못했어요. 잠시 후 Tada를 다시 열어 주세요.',
   CONTACT_APP_PRIVATE_PATH_REQUIRED: 'Tada의 시작 정보를 안전하게 보관할 수 없어요. 본인 전용 저장 위치인지 확인해 주세요.',
+  CHATGPT_RESPONSE_LIMIT: 'ChatGPT에서 받은 정보가 Tada의 처리 범위를 넘었어요. 연결된 계정은 보존돼요. Tada 업데이트가 필요합니다.',
+  CHATGPT_NETWORK_FAILED: 'ChatGPT에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 열어 주세요. 저장된 계정은 그대로예요.',
   CHATGPT_PROFILE_IN_USE: '같은 ChatGPT 연결을 다른 Tada에서 사용 중이에요. 그 Tada를 종료한 뒤 다시 열어 주세요.',
   CHATGPT_SIGN_IN_REQUIRED: 'ChatGPT 연결이 만료됐어요. 다시 연결하면 같은 대화로 돌아올 수 있어요.',
   CHATGPT_REFRESH_UNCERTAIN: 'ChatGPT 연결을 다시 확인해야 해요. 다시 로그인하면 같은 대화를 이어갈 수 있어요.',

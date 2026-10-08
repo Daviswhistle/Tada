@@ -1,13 +1,32 @@
 const $ = id => document.getElementById(id);
+const storageKey = 'tada-setup';
+const validToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(value);
 let token = new URLSearchParams(location.hash.slice(1)).get('setup');
 history.replaceState(null, '', location.pathname);
-try { if (token) sessionStorage.setItem('tada-setup', token); else token = sessionStorage.getItem('tada-setup'); } catch { /* memory-only remains usable */ }
+// Keep access to this still-running local server across desktop/browser restarts.
+// A server restart invalidates the token; no provider credentials are stored here.
+for (const name of ['localStorage', 'sessionStorage']) {
+  try { if (!validToken(token)) token = window[name].getItem(storageKey); } catch { /* storage can be unavailable */ }
+}
+if (!validToken(token)) token = null;
+for (const name of ['localStorage', 'sessionStorage']) {
+  try { if (token) window[name].setItem(storageKey, token); } catch { /* memory-only startup remains usable */ }
+}
+window.addEventListener('hashchange', () => {
+  if (validToken(new URLSearchParams(location.hash.slice(1)).get('setup'))) location.reload();
+});
 let current, busy = false, stopped = false;
 const feedback = text => { $('feedback').textContent = text; $('feedback').hidden = !text; };
 async function request(path, body) {
   const response = await fetch(path, { method: body ? 'POST' : 'GET', cache: 'no-store', credentials: 'omit',
     headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-  if (response.status === 401) { stopped = true; throw Error('시작 링크를 다시 열어 주세요. 이 창에서는 연결 권한을 확인할 수 없어요.'); }
+  if (response.status === 401) {
+    stopped = true;
+    for (const name of ['localStorage', 'sessionStorage']) { try { window[name].removeItem(storageKey); } catch { /* unavailable storage */ } }
+    const message = '이 시작 화면의 연결이 만료됐어요. Tada를 다시 실행하면 저장된 계정으로 이어갈 수 있어요.';
+    render({ stage: 'error', revision: 'unauthorized', message, retryable: false });
+    throw Error(message);
+  }
   if (!response.ok) throw Error('화면 상태가 바뀌었어요. 잠시 후 다시 눌러 주세요.');
   return response.json();
 }

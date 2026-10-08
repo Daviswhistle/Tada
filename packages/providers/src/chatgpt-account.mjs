@@ -151,7 +151,9 @@ export class ChatGPTAccount {
   }
   async models(signal) {
     const combined = this.#signal(signal), token = await this.accessToken(combined);
-    const raw = await jsonResponse(this.#fetch, `${API}/models`, { signal: combined, headers: { Authorization: `Bearer ${token}` } });
+    // The account catalog includes rich model metadata; the live catalog exceeds
+    // the small auth-response budget. Keep this larger bound local to discovery.
+    const raw = await jsonResponse(this.#fetch, `${API}/models`, { signal: combined, headers: { Authorization: `Bearer ${token}` } }, 2 * 1024 * 1024);
     if (!Array.isArray(raw.models)) throw Error('CHATGPT_CATALOG_INVALID');
     const models = raw.models.filter(item => item.visibility === 'list');
     if (!models.length || models.length > 200 || models.some(item => typeof item.slug !== 'string' || !/^[a-zA-Z0-9._:-]{1,128}$/u.test(item.slug)
