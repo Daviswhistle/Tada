@@ -13,6 +13,14 @@ const assets = new Map([
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
 const messages = {
+  CONTACT_GOOGLE_CLIENT_CONFIG_PRIVATE_PATH_REQUIRED: 'Google 연결 준비 정보를 안전하게 읽을 수 없어요. Tada의 개인 저장 위치와 파일 접근 권한을 확인한 뒤 다시 열어 주세요. 기존 대화는 그대로예요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_KEY_REQUIRED: 'Google 연결 준비 정보를 여는 보호 키를 확인할 수 없어요. 원래 기기의 보호 키를 복원한 뒤 Tada를 다시 열어 주세요. 기존 대화는 지우지 않았어요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_INVALID: 'Google 연결 준비 정보를 확인할 수 없어요. 원래 기기의 보호 키와 설정 백업을 복원한 뒤 Tada를 다시 열어 주세요. 기존 대화와 파일은 지우지 않았어요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_EXISTS: 'Google 연결 준비 정보가 이미 저장돼 있어 덮어쓰지 않았어요. 기존 설정으로 Tada를 다시 열어 주세요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_SAVE_FAILED: 'Google 연결 준비 정보를 안전하게 저장하지 못했어요. 저장 공간과 개인 접근 권한을 확인한 뒤 다시 시도해 주세요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_OWNER_REQUIRED: 'Google 연결 준비 정보를 저장하려면 같은 Tada 기록을 안전하게 열어야 해요. 실행 중인 Tada를 종료한 뒤 기존 보호 키로 설정을 복원해 주세요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_GRANT_PRESENT: '이미 연결된 Google 계정의 앱 설정을 바꾸지 않았어요. 기존 설정을 사용하거나 Tada 설정에서 Google 연결을 해제한 뒤 다시 준비해 주세요.',
+  CONTACT_GOOGLE_CLIENT_CONFIG_UPGRADE_REQUIRED: 'Google 연결 준비 정보를 저장하려면 기록 업데이트가 필요해요. Tada를 열고 원본을 백업한 뒤 기존 대화를 이어 쓸 수 있도록 업데이트해 주세요.',
   CONTACT_ASSISTANCE_UPGRADE_REQUIRED: '먼저 챙겨보기와 휴대폰 연결을 추가하려면 기록 업데이트가 필요해요. 원본을 백업한 뒤 기존 대화를 그대로 이어갑니다.',
   CONTACT_REVIEW_UPGRADE_REQUIRED: '이전 버전에서 남긴 대화예요. 먼저 원본을 백업하고, 지금 버전에서 이어 쓸 수 있도록 기록을 업데이트할 수 있어요.',
   CONTACT_APP_ACTION_REQUIRES_RESTART: '다시 연결하거나 기록을 업데이트하려면 실행 중인 Tada를 종료한 뒤 다시 열어 주세요. 대화는 그대로 보관돼요.',

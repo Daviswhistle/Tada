@@ -273,3 +273,92 @@ for (const body of ['x'.repeat(4096), '"x"'.repeat(1300)]) test(`subscription do
     assert.ok(measured.every(size => size <= 14000));
   } finally { await service?.close(); store?.close(); await f.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+const itemDone = (item, output_index = 0) => ({ type: 'response.output_item.done', output_index, item });
+const finalItem = () => ({ ...message('준비됐어요.'), id: 'msg_synthetic', phase: 'final_answer' });
+const itemAdded = (item, output_index = 0) => ({ type: 'response.output_item.added', output_index, item: { ...item, status: 'in_progress', content: [] } });
+for (const mime of [null, 'text/event-stream']) test(`item.done supplies completed output when terminal output is empty (${mime})`, async () => {
+  const item = finalItem();
+  const env = await serverFixture((_body, res) => stream(res, [itemAdded(item), { type: 'response.output_text.delta', delta: 'never collect partial text' }, itemDone(item), completed([])], mime));
+  try {
+    const result = await env.provider.chat([{ role: 'user', content: 'synthetic request' }], [], new AbortController().signal);
+    assert.equal(result.message.content, '준비됐어요.');
+    assert.equal(result.input_tokens, 12); assert.equal(result.output_tokens, 8);
+    assert.deepEqual(responsesInput([result.message]), result.message.provider_state.items);
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+test('streamed tool and encrypted reasoning preserve ordered continuation without duplicated terminal output', async () => {
+  const reason = { type: 'reasoning', id: 'reason_synthetic', encrypted_content: 'synthetic-ciphertext', summary: [] };
+  const fn = { ...call('list_sources', {}), id: 'tool_synthetic' };
+  const env = await serverFixture((_body, res) => stream(res, [itemDone(fn, 1), itemDone(reason), completed([])]));
+  try {
+    const result = await env.provider.chat([{ role: 'user', content: 'synthetic request' }], [tool], new AbortController().signal);
+    assert.deepEqual(result.message.provider_state.items, [reason, fn]);
+    assert.equal(result.message.tool_calls.length, 1);
+    assert.equal(responsesInput([result.message, { role: 'tool', tool_name: 'list_sources', content: '{}' }]).at(-1).call_id, fn.call_id);
+  } finally { await env.close(); }
+});
+
+test('matching full terminal output is admitted once', async () => {
+  const item = finalItem();
+  const env = await serverFixture((_body, res) => stream(res, [itemAdded(item), itemDone(item), completed([item])]));
+  try {
+    const result = await env.provider.chat([{ role: 'user', content: 'synthetic request' }], [], new AbortController().signal);
+    assert.equal(result.message.content, '준비됐어요.'); assert.equal(result.message.provider_state.items.length, 1);
+  } finally { await env.close(); }
+});
+
+for (const [label, events, expected] of [
+  ['no response completion', [itemDone(finalItem())], 'CHATGPT_INCOMPLETE_TURN'],
+  ['no finalized item', [itemAdded(finalItem()), completed([])], 'CHATGPT_INCOMPLETE_TURN'],
+  ['index gap', [itemDone(finalItem(), 1), completed([])], 'CHATGPT_INCOMPLETE_TURN'],
+  ['duplicate finalized index', [itemDone(finalItem()), itemDone(finalItem()), completed([])], 'CHATGPT_STREAM_INVALID'],
+  ['duplicate item identity', [itemDone(finalItem()), itemDone(finalItem(), 1), completed([])], 'CHATGPT_STREAM_INVALID'],
+  ['negative index', [itemDone(finalItem(), -1), completed([])], 'CHATGPT_STREAM_INVALID'],
+  ['too many items', [itemDone(finalItem(), 24), completed([])], 'CHATGPT_STREAM_INVALID'],
+  ['missing item identity', [itemDone(message('invalid')), completed([])], 'CHATGPT_STREAM_INVALID'],
+  ['identity changed', [itemAdded(finalItem()), itemDone({ ...finalItem(), id: 'different' }), completed([])], 'CHATGPT_STREAM_INVALID'],
+  ['unfinished second item', [itemDone(finalItem()), itemAdded({ ...finalItem(), id: 'second' }, 1), completed([])], 'CHATGPT_INCOMPLETE_TURN'],
+  ['terminal conflict', [itemDone(finalItem()), completed([{ ...finalItem(), content: [{ type: 'output_text', text: 'conflicting answer' }] }])], 'CHATGPT_STREAM_INVALID'],
+  ['invalid finalized status', [itemDone({ ...finalItem(), status: 'in_progress' }), completed([])], 'CHATGPT_OUTPUT_UNSUPPORTED'],
+  ['missing usage', [itemDone(finalItem()), { type: 'response.completed', response: { status: 'completed', output: [] } }], 'CHATGPT_INCOMPLETE_TURN'],
+  ['missing output array', [itemDone(finalItem()), { type: 'response.completed', response: { status: 'completed', usage: { input_tokens: 1, output_tokens: 1 } } }], 'CHATGPT_INCOMPLETE_TURN'],
+  ['wrong tool namespace', [itemDone({ ...call('list_sources', {}), id: 'tool', namespace: 'other' }), completed([])], 'CHATGPT_TOOL_CALL_INVALID'],
+  ['incomplete terminal', [itemDone(finalItem()), { type: 'response.incomplete' }], 'CHATGPT_INCOMPLETE_TURN'],
+  ['late stream failure', [itemDone(finalItem()), completed([]), { type: 'response.failed' }], 'CHATGPT_STREAM_AFTER_COMPLETION'],
+]) test(`stream item assembly rejects ${label} without releasing output or retrying`, async () => {
+  const env = await serverFixture((_body, res) => stream(res, events));
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'synthetic request' }], [tool], new AbortController().signal), error => error.message === expected);
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+for (const fullTerminal of [false, true]) test(`streamed function call accepts optional item ID absence with ${fullTerminal ? 'full' : 'empty'} terminal output`, async () => {
+  const fn = call('list_sources', {});
+  const env = await serverFixture((_body, res) => stream(res, [
+    { type: 'response.output_item.added', output_index: 0, item: { ...fn, status: 'in_progress', arguments: '' } },
+    itemDone(fn), completed(fullTerminal ? [fn] : []),
+  ]));
+  try {
+    const result = await env.provider.chat([{ role: 'user', content: 'synthetic request' }], [tool], new AbortController().signal);
+    assert.equal(result.message.tool_calls[0].function.name, 'list_sources');
+    assert.deepEqual(result.message.provider_state.items, [fn]);
+    assert.equal(responsesInput([result.message, { role: 'tool', tool_name: 'list_sources', content: '{}' }]).at(-1).call_id, fn.call_id);
+  } finally { await env.close(); }
+});
+
+for (const change of ['call identity', 'optional item identity', 'duplicate call identity']) test(`streamed calls reject changed or duplicated ${change}`, async () => {
+  const fn = { ...call('list_sources', {}), id: 'tool_synthetic' };
+  const events = change === 'duplicate call identity'
+    ? [itemDone(fn), itemDone({ ...fn, id: 'second_item' }, 1)]
+    : [{ type: 'response.output_item.added', output_index: 0, item: { ...fn, status: 'in_progress' } },
+      itemDone({ ...fn, ...(change === 'call identity' ? { call_id: 'different_call' } : { id: 'different_item' }) })];
+  const env = await serverFixture((_body, res) => stream(res, [...events, completed([])]));
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'synthetic request' }], [tool], new AbortController().signal), /CHATGPT_STREAM_INVALID/u);
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});

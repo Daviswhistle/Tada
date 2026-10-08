@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { API, response, providerError } from './chatgpt-http.mjs';
 import { parseUniqueJson } from '../../engine/src/json.mjs';
 const validName = name => typeof name === 'string' && /^[a-zA-Z_][a-zA-Z0-9_]{0,63}$/u.test(name);
@@ -106,6 +107,30 @@ async function collect(res, signal) {
   if (!res.body) throw Error('CHATGPT_STREAM_INCOMPLETE');
   const reader = res.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true });
   let buffer = '', bytes = 0, events = 0, terminal;
+  const added = new Map(), finished = new Map(), itemIds = new Map();
+  function outputItem(event) {
+    const index = event.output_index, value = event.item;
+    if (!Number.isSafeInteger(index) || index < 0 || index >= 24 || !value
+      || typeof value.type !== 'string') throw Error('CHATGPT_STREAM_INVALID');
+    // Function calls are identified by required call_id; their item id is
+    // optional in the Responses protocol, including streamed output items.
+    const identity = value.type === 'function_call' ? value.call_id : value.id;
+    if (typeof identity !== 'string' || !identity
+      || (value.id !== undefined && (typeof value.id !== 'string' || !value.id))) throw Error('CHATGPT_STREAM_INVALID');
+    const keys = value.type === 'function_call' ? [`call:${identity}`] : [];
+    if (value.id !== undefined) keys.push(`item:${value.id}`);
+    for (const key of keys) {
+      if (itemIds.has(key) && itemIds.get(key) !== index) throw Error('CHATGPT_STREAM_INVALID');
+      itemIds.set(key, index);
+    }
+    const previous = added.get(index);
+    if (finished.has(index) || (previous && (previous.identity !== identity || previous.type !== value.type
+      || (previous.id !== undefined && value.id !== undefined && previous.id !== value.id)))) throw Error('CHATGPT_STREAM_INVALID');
+    if (event.type === 'response.output_item.added') {
+      if (previous) throw Error('CHATGPT_STREAM_INVALID');
+      added.set(index, { id: value.id, identity, type: value.type });
+    } else finished.set(index, value);
+  }
   function event(block) {
     const lines = block.split('\n');
     // Some subscription responses omit MIME metadata. Require SSE field framing
@@ -122,6 +147,7 @@ async function collect(res, signal) {
       throw providerError(code, 200, item.response?.error?.param ?? item.param);
     }
     if (item.type === 'response.incomplete') throw Error('CHATGPT_INCOMPLETE_TURN');
+    if (item.type === 'response.output_item.added' || item.type === 'response.output_item.done') outputItem(item);
     if (item.type === 'response.completed') terminal = item.response;
   }
   try {
@@ -138,6 +164,22 @@ async function collect(res, signal) {
     if (buffer.trim()) throw Error('CHATGPT_STREAM_INCOMPLETE');
     signal?.throwIfAborted();
     if (!terminal) throw Error('CHATGPT_INCOMPLETE_TURN');
+    // A subscription stream may carry the complete items only in item.done.
+    // Never promote deltas: require the response completion, usage, clean EOF
+    // and a contiguous set of finalized items before admitting any output.
+    if (Array.isArray(terminal.output)) {
+      if (added.size && [...added.keys()].some(index => !finished.has(index))) throw Error('CHATGPT_INCOMPLETE_TURN');
+      if (terminal.output.length === 0 && finished.size) {
+        const output = [];
+        for (let index = 0; index < finished.size; index++) {
+          if (!finished.has(index)) throw Error('CHATGPT_INCOMPLETE_TURN');
+          output.push(finished.get(index));
+        }
+        terminal = { ...terminal, output };
+      } else if ([...finished].some(([index, item]) => !isDeepStrictEqual(terminal.output[index], item))) {
+        throw Error('CHATGPT_STREAM_INVALID');
+      }
+    }
     return terminal;
   } catch (error) {
     if (signal?.aborted) throw Error('ASSISTANT_CANCELLED');

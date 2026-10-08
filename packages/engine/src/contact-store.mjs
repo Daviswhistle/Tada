@@ -938,6 +938,10 @@ export class ContactStore {
       .run(name, this.#seal(`setting:${name}`, value));
   }
   assertDevice(device) { this.#check(); this.#device(device); }
+  assertStorageDirectory(directory) {
+    this.#check();
+    if (resolve(directory) !== this.#root) throw Error('CONTACT_STORAGE_OWNER_MISMATCH');
+  }
   googleCredential() { const value = this.#setting('google'); return value ? structuredClone(value) : null; }
   googleDisconnectStatus() {
     const value = this.#setting('google_disconnect');

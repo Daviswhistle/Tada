@@ -39,7 +39,7 @@ npm run contact -- --provider ollama --data ./tada-local-private --init --model 
 
 가짜 OAuth/JWKS와 로컬 HTTP SSE 서버로 state/PKCE/서명/issuer/audience/nonce/계정/scope, 암호화 복원, 독점 소유권, 갱신과 로그아웃, function tool 왕복, 취소·실패·리다이렉트 거절을 검사한다. 같은 연락 서비스와 실제 SQLite, 선택적 실제 Rust 읽기 브로커를 통한 자료 탐색·인용·두 기기·재시작도 검사한다. 이것은 실제 구독 서버의 모델 응답이나 제품 이해 능력 증명이 아니다.
 
-**2026-10-08 사용자 로그인 후 저장된 연결로 실제 계정 모델 목록 조회에 성공했다. 2026-10-09 실제 추론 요청 두 건은 아래 기록처럼 완료 응답을 확인하기 전에 실패했다.** Windows/macOS 새 인증 경로도 미검증이다. CLI 설정은 개발용이며 설치형 온보딩과 장기 기억·일반 실행 도구·16건 제품 수용 평가가 남아 있다. 로컬 공개소스 앱의 공식 연결 자격을 유료/중앙 호스팅 제품의 출시 허가로 해석하지 않는다. 비상업 DevKit 코드를 사용하지 않고 공개 프로토콜과 MIT 라이선스 `jose`를 사용했다.
+**2026-10-08 사용자 로그인 후 저장된 연결로 실제 계정 모델 목록 조회에 성공했다. 2026-10-09 두 차례 승인 범위에서 실제 추론 요청 총 네 건을 시도했으며, 마지막 진단은 완료 이벤트와 답변 항목을 확인했지만 앱은 이를 아직 성공으로 수락하지 못했다.** Windows/macOS 새 인증 경로도 미검증이다. CLI 설정은 개발용이며 설치형 온보딩과 장기 기억·일반 실행 도구·16건 제품 수용 평가가 남아 있다. 로컬 공개소스 앱의 공식 연결 자격을 유료/중앙 호스팅 제품의 출시 허가로 해석하지 않는다. 비상업 DevKit 코드를 사용하지 않고 공개 프로토콜과 MIT 라이선스 `jose`를 사용했다.
 
 공식 근거: [등록과 로그인](https://developers.openai.com/siwc/token-sharing-open-source/sign-in), [계정과 세션](https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions), [모델과 추론](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference), [현재 제약](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations), [도구 namespace](https://developers.openai.com/api/docs/guides/function-calling#defining-namespaces).
 
@@ -70,6 +70,14 @@ Tada 시작 실패는 별도로 재현했다. 저장된 사용자 연결의 `GET
 
 사용자가 승인한 백업을 거쳐 기존 연락 기록을 v5로 이전하고 같은 대화가 다시 열리는 것을 확인했다. 저장된 구독 계정과 선택 모델은 바꾸지 않았다. 이후 별도 임시 저널에서 합성 Gmail/Calendar 자료로 미팅 준비를 맡기는 요청 한 건을 보냈다. 두 번째는 저널이나 ContactService를 거치지 않고 ChatGPTSubscription에 자료 도구 없는 합성 문장을 직접 보내 전송 형식을 확인했다. 첫 요청은 자료 호출 없이 `CHATGPT_STREAM_REQUIRED`로 실패했다. 두 번째 요청도 같은 오류로 실패했으며, HTTP 200·Content-Type 누락·SSE처럼 보이는 본문 형식만 확인했다. 응답 원문이나 계정 정보는 진단 기록에 저장하지 않았고, 완료 이벤트와 사용량을 확인하지 못했으므로 성공으로 처리하거나 자동 재시도하지 않았다.
 
-로컬 수정은 Content-Type이 정말 없는 응답만 기존 SSE 파서로 전달한다. 이 경로에서는 comment/data/event/id/retry 필드 형식을 확인하고, HTML·JSON에 끼워 넣은 `data:` 줄도 거절한다. 명시된 media type은 정확히 `text/event-stream`이어야 하며, 본문 없음·불완전 종료·늦은 실패·잘못된 도구 호출은 계속 실패한다. 1 MiB·4,096 이벤트 상한과 전체 완료/EOF 검증은 유지한다. `Accept` 추가는 기대 형식을 명시하는 것이며, 헤더 누락의 원인이었다는 증거는 없다. 수정 후 실제 구독 요청은 아직 실행하지 않았으므로 완료된 추론·자료 작업·제품 수용 성공은 미확인이다.
+로컬 수정은 Content-Type이 정말 없는 응답만 기존 SSE 파서로 전달한다. 이 경로에서는 comment/data/event/id/retry 필드 형식을 확인하고, HTML·JSON에 끼워 넣은 `data:` 줄도 거절한다. 명시된 media type은 정확히 `text/event-stream`이어야 하며, 본문 없음·불완전 종료·늦은 실패·잘못된 도구 호출은 계속 실패한다. 1 MiB·4,096 이벤트 상한과 전체 완료/EOF 검증은 유지한다. `Accept` 추가는 기대 형식을 명시하는 것이며, 헤더 누락의 원인이었다는 증거는 없다. 이 헤더 수정 직후의 추가 승인 시험 결과는 아래와 같다.
 
-Google 프로젝트와 Gmail/Calendar API 준비는 확인했지만, OAuth 앱 정책·클라이언트 설정과 개인 계정의 자료 접근 동의는 아직 완료되지 않았다. 합성 Google 자료로 실행한 전송 시도는 실제 Google 연결이나 개인 받은편지함·일정 접근의 증거가 아니다. 연결 범위와 동의 경계는 [Google 연결 문서](google-connection.md)를 따른다.
+Google 프로젝트와 Gmail/Calendar API, 사용자 승인에 따른 OAuth 앱 정책 동의·테스트 모드 데스크톱 클라이언트 등록은 완료했다. 개인 계정의 받은편지함·일정 자료 접근 동의는 아직 완료되지 않았다. 합성 Google 자료로 실행한 전송 시도는 실제 Google 연결이나 개인 받은편지함·일정 접근의 증거가 아니다. 연결 범위와 동의 경계는 [Google 연결 문서](google-connection.md)를 따른다.
+
+## 2026-10-09 완료된 스트림 항목 복원
+
+헤더 수정 후 새로 승인한 두 사용자 턴 중 첫 미팅 준비 요청은 자료 호출 전에 `CHATGPT_INCOMPLETE_TURN`으로 실패했다. 마지막 한 턴은 자료 도구 없는 합성 문장으로 전송 구조만 확인했다. HTTP 200, MIME 누락, 올바른 SSE 12개 이벤트, assistant의 완료된 `response.output_item.done`, `response.completed`와 실제 사용량(입력 19·출력 8)을 확인했다. 그러나 마지막 완료 이벤트의 `output`이 빈 배열이라 기존 파서가 앞서 도착한 답변을 놓쳤다. 원문·계정 정보·reasoning은 진단에 저장하지 않았다. 네 요청 모두 앱 수락 기준에서는 실패이며 자동 재시도하지 않았다.
+
+이 경우에만 완료된 항목을 `output_index` 순서로 복원한다. [공식 스트림 명세](https://developers.openai.com/api/reference/resources/responses/streaming-events)는 `response.output_item.done`에 완료된 항목이 전달됨을 정의한다. 부분 텍스트 delta는 답변이나 도구 실행에 사용하지 않는다. 전체 완료·사용량·EOF, 항목 식별자/순서/중복(함수 호출은 필수 `call_id`와 제공된 경우의 선택적 `id`), 미완료 항목, 도구 namespace와 기존 출력 검증은 유지한다. 완료 응답에도 항목이 있으면 중복 추가하지 않고 앞선 완료 항목과 일치하는지 검사한다. 불일치·중단·잘못된 도구는 실패한다.
+
+이 수정은 관측된 형태를 재현한 합성 회귀 검사로 검증한다. 수정 후 실제 구독 재시험과 Gmail/Calendar를 통한 실제 사용자 작업은 아직 미실행이다. 완료된 단문 응답도 미팅 준비·수정·지속 기록·제품 수용의 증거와 구분한다.

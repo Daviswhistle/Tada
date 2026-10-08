@@ -12,6 +12,7 @@ import { serveContact, validateContactAddress } from './contact-http.mjs';
 import { followupTimezone } from './followup-contract.mjs';
 import { contactStorageKey } from './contact-key.mjs';
 import { GoogleConnection } from './google-connection.mjs';
+import { loadGoogleClientConfig } from './google-client-config.mjs';
 import { openSystemBrowser } from './system-browser.mjs';
 
 export const HELP = `Tada contact host — one continuing conversation across browsers and optional private messaging
@@ -205,10 +206,10 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize, assistance: options.initialize });
     if (options.initialize) ui?.initialized?.();
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
+    const googleClient = loadGoogleClientConfig({ data: options.data, passphrase, store });
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone });
-    const google = new GoogleConnection({ store, clientId: process.env.TADA_GOOGLE_OAUTH_CLIENT_ID ?? '',
-      clientSecret: process.env.TADA_GOOGLE_OAUTH_CLIENT_SECRET ?? '', openBrowser: openSystemBrowser });
+    const google = new GoogleConnection({ store, ...googleClient, openBrowser: openSystemBrowser });
     service.attachGoogle(google);
     if (options.upgrade || ui?.upgrade === true) {
       const messagingBackup = await store.upgradeMessaging();
