@@ -89,6 +89,7 @@ export class ContactService extends EventEmitter {
           return response;
         } };
         if (typeof this.#model.contextBytes === 'function') metered.contextBytes = (messages, tools) => this.#model.contextBytes(messages, tools);
+        if (this.#model.contextLimitBytes !== undefined) metered.contextLimitBytes = this.#model.contextLimitBytes;
         const assistant = new ConversationAssistant(metered, sources);
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());

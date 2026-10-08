@@ -81,3 +81,9 @@ Google 프로젝트와 Gmail/Calendar API, 사용자 승인에 따른 OAuth 앱 
 이 경우에만 완료된 항목을 `output_index` 순서로 복원한다. [공식 스트림 명세](https://developers.openai.com/api/reference/resources/responses/streaming-events)는 `response.output_item.done`에 완료된 항목이 전달됨을 정의한다. 부분 텍스트 delta는 답변이나 도구 실행에 사용하지 않는다. 전체 완료·사용량·EOF, 항목 식별자/순서/중복(함수 호출은 필수 `call_id`와 제공된 경우의 선택적 `id`), 미완료 항목, 도구 namespace와 기존 출력 검증은 유지한다. 완료 응답에도 항목이 있으면 중복 추가하지 않고 앞선 완료 항목과 일치하는지 검사한다. 불일치·중단·잘못된 도구는 실패한다.
 
 이 수정은 관측된 형태를 재현한 합성 회귀 검사로 검증한다. 수정 후 실제 구독 재시험과 Gmail/Calendar를 통한 실제 사용자 작업은 아직 미실행이다. 완료된 단문 응답도 미팅 준비·수정·지속 기록·제품 수용의 증거와 구분한다.
+
+## Native conversation context budget
+
+The subscription provider declares a trusted, fixed 64 KiB budget for the complete serialized request, including tool schemas and encrypted reasoning continuation. The conversation engine captures and validates the declaration (at most 64 KiB) before inference; the contact service forwards it through request metering. Inference admission and tool-result sizing use the same budget. Providers without a declaration, including the local compatibility route, retain the 14,000-byte default. This is Tada's local resource policy, not a claim about a model's advertised context window.
+
+A real connected-account delegation reached `ASSISTANT_CONTEXT_LIMIT` after three completed requests under the old 14,000-byte cap. The original failed run did not retain transient tool contents, so its exact byte composition is unknown. A synthetic native SSE regression reproduces the capacity problem with chained tool calls and encrypted continuation, then verifies source rechecking and conversation recovery across a journal restart under the new bounded budget. No continuation is dropped or rewritten to make a request fit. Existing source, document, request-count, time, grant and journal limits are unchanged. This regression does not by itself qualify live delegation.

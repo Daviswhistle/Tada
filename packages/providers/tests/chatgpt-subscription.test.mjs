@@ -168,7 +168,7 @@ for (const contentType of ['text/event-stream', null]) test(`same contact conver
       assert.ok(outputs.some(item => item.output.includes('계약 검토')));
       output = message('앞서 확인한 남은 일은 계약 검토입니다. [S1]');
     }
-    phase++; stream(res, [completed([{ type: 'reasoning', id: `rs_fixture_${phase}`, encrypted_content: `opaque-encrypted-fixture-${phase}`, summary: [{ type: 'summary_text', text: 'private summary fixture' }] }, output])], contentType);
+    phase++; stream(res, [completed([{ type: 'reasoning', id: `rs_fixture_${phase}`, encrypted_content: `opaque-encrypted-fixture-${phase}${'x'.repeat(5000)}`, summary: [{ type: 'summary_text', text: 'private summary fixture' }] }, output])], contentType);
   });
   const passphrase = 'synthetic contact encryption passphrase', route = contactRoute({ provider: env.provider.identity });
   let store, service;
@@ -198,13 +198,16 @@ for (const contentType of ['text/event-stream', null]) test(`same contact conver
     assert.ok(JSON.stringify(store.checkpoint()).includes('opaque-encrypted-fixture'));
     assert.equal(JSON.stringify(store.page()).includes('opaque-encrypted-fixture'), false);
     assert.equal(JSON.stringify(store.checkpoint()).includes('private summary fixture'), false);
-    assert.ok(env.requests[1].input.some(item => item.type === 'reasoning' && item.encrypted_content === 'opaque-encrypted-fixture-1'));
+    assert.ok(env.requests[1].input.some(item => item.type === 'reasoning' && item.encrypted_content === `opaque-encrypted-fixture-1${'x'.repeat(5000)}`));
     assert.equal(env.requests[1].input.find(item => item.type === 'function_call').call_id, env.requests[1].input.find(item => item.type === 'function_call_output').call_id);
     assert.ok(store.page().turns.some(turn => turn.answer?.text.includes('11월 2일')));
     await service.close(); store.close();
     store = new ContactStore({ directory, passphrase, route }); service = new ContactService(store, env.provider, sources);
     const followup = service.submit(second.id, randomUUID(), '남은 일이 뭐였지?'); await service.idle();
     assert.equal(store.turn(followup.seq).state, 'answered'); assert.equal(phase, 5); assert.equal(store.usage().requests, 5);
+    const wireSizes = env.requests.map(request => Buffer.byteLength(JSON.stringify(request)));
+    assert.ok(wireSizes.some(bytes => bytes > 14000), 'native continuation must survive the old preview cap');
+    assert.ok(wireSizes.every(bytes => bytes <= 65536), 'full subscription requests stay bounded');
     await service.close(); store.close();
     assert.throws(() => new ContactStore({ directory, passphrase, route: contactRoute({ account: 'different' }) }), /CONTACT_ROUTE_CHANGED/);
   } finally { await service?.close(); store?.close(); await env.close(); rmSync(root, { recursive: true, force: true }); }

@@ -233,3 +233,27 @@ test('an invalid or over-budget provider context measurement stops before any in
     assert.equal(called, false); assert.equal(trace.filter(event => event.kind === 'model_request').length, 0);
   }
 });
+
+test('a trusted larger context budget covers both inference and tool-result admission', async () => {
+  const model = sequence([toolTurn([proposal('list_sources')]), answer('Done.')]);
+  model.contextLimitBytes = 32768;
+  model.contextBytes = (messages, tools) => 15000 + Buffer.byteLength(JSON.stringify({ messages, tools }));
+  const port = sources();
+  const assistant = new ConversationAssistant(model, port);
+  assert.equal((await assistant.ask('Find my sources.')).text, 'Done.');
+  assert.equal(port.invoked.length, 1);
+  assert.equal(JSON.parse(model.seen[1].at(-1).content).error, undefined);
+});
+
+test('invalid declared context limits fail before inference, and a captured limit cannot grow', async () => {
+  for (const contextLimitBytes of [null, NaN, Infinity, 0, -1, 1.5, 65537, '65536']) {
+    assert.throws(() => new ConversationAssistant({ contextLimitBytes, chat: async () => assert.fail('no inference') }, sources()), /ASSISTANT_CONTEXT_LIMIT_INVALID/u);
+  }
+  let called = false;
+  const model = { contextLimitBytes: 32768, contextBytes: () => 32769,
+    chat: async () => { called = true; return answer('unused'); } };
+  const assistant = new ConversationAssistant(model, sources());
+  model.contextLimitBytes = 65536;
+  await assert.rejects(assistant.ask('hello'), /ASSISTANT_CONTEXT_LIMIT/u);
+  assert.equal(called, false);
+});

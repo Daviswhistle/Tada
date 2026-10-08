@@ -9,6 +9,7 @@ function validProviderState(value: ProviderState): boolean {
     && value.items.every(item => !!item && typeof item === 'object' && ['reasoning', 'function_call', 'message'].includes(String(item.type)));
 }
 export interface ModelPort {
+  readonly contextLimitBytes?: number;
   contextBytes?(messages: Message[], tools: unknown[]): number;
   chat(messages: Message[], tools: unknown[], signal: AbortSignal): Promise<{
     message: Message; input_tokens: number; output_tokens: number; refused?: boolean;
@@ -97,7 +98,13 @@ export class ConversationAssistant {
   private model: ModelPort;
   private sources: SourcePort;
   private trace: (event: Trace) => void;
+  private contextLimitBytes: number;
   constructor(model: ModelPort, sources: SourcePort, trace: (event: Trace) => void = () => {}) {
+    // A trusted provider may budget for its native continuation envelope. This
+    // is not a model/source argument and cannot change during an active turn.
+    const limit = model.contextLimitBytes === undefined ? 14000 : model.contextLimitBytes;
+    if (!Number.isSafeInteger(limit) || limit < 2 || limit > 65536) throw new Error('ASSISTANT_CONTEXT_LIMIT_INVALID');
+    this.contextLimitBytes = limit;
     this.model = model;
     this.sources = sources;
     this.trace = trace;
@@ -194,7 +201,7 @@ export class ConversationAssistant {
         const contextBytes = this.model.contextBytes
           ? this.model.contextBytes(copy(this.history), copy(definitions))
           : size({ messages: this.history, tools: definitions });
-        if (!Number.isSafeInteger(contextBytes) || contextBytes < 2 || contextBytes > 14000) {
+        if (!Number.isSafeInteger(contextBytes) || contextBytes < 2 || contextBytes > this.contextLimitBytes) {
           throw new Error('ASSISTANT_CONTEXT_LIMIT');
         }
         this.used.requests++;
@@ -275,7 +282,7 @@ export class ConversationAssistant {
                 const measured = this.model.contextBytes
                   ? this.model.contextBytes(copy(projected), copy(definitions))
                   : size({ messages: projected, tools: definitions });
-                return Number.isSafeInteger(measured) && measured >= 2 && measured <= 14000;
+                return Number.isSafeInteger(measured) && measured >= 2 && measured <= this.contextLimitBytes;
               } };
               result = await this.sources.execute(name, args, abort.signal, budget);
               abort.signal.throwIfAborted();

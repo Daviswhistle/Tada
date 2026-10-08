@@ -188,6 +188,9 @@ async function collect(res, signal) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
 }
 export class ChatGPTSubscription {
+  // Bound the complete stateless wire request, including encrypted reasoning
+  // continuation. Source and document limits remain independent and smaller.
+  get contextLimitBytes() { return 65536; }
   constructor({ account, model, fetcher = globalThis.fetch }) { this.account = account; this.model = model; this.fetcher = fetcher; this.identity = null; }
   async inspect(signal) {
     const catalog = await this.account.models(signal), item = catalog.find(item => item.slug === this.model);
