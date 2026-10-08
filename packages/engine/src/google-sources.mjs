@@ -216,7 +216,7 @@ function validDateTime(value, zoned) {
   if (!offset) return zoned;
   return offset === 'Z' || Number(offset.slice(1, 3)) <= 23 && Number(offset.slice(4, 6)) <= 59;
 }
-function checkedDatePart(value) {
+export function checkedDatePart(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !['date', 'dateTime', 'timeZone'].includes(key))) return null;
   if (Object.hasOwn(value, 'date') && Object.keys(value).includes('dateTime')) return null;
   const zoned = Object.hasOwn(value, 'timeZone');

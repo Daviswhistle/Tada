@@ -1,3 +1,5 @@
+import { observeAttention, eventKey, reminderDue, reminderText } from './attention.mjs';
+import { createHash } from 'node:crypto';
 import { ProactiveSources } from './proactive-sources.mjs';
 import { EventEmitter } from 'node:events';
 import { DocumentSources } from './document-sources.mjs';
@@ -9,7 +11,7 @@ import { followupTimezone } from './followup-contract.mjs';
 
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
-  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null;
+  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #attention = null; #attentionAbort = null; #wakeRequested = false;
   constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone } = {}) {
     super();
     this.#store = store; this.#model = model; this.#sources = sources; this.#timezone = followupTimezone(timezone);
@@ -23,20 +25,22 @@ export class ContactService extends EventEmitter {
             catch { this.#active.abort.abort(); this.#google?.deviceRevoked(this.#active.device); }
           }
           this.#google?.sweepAuthority();
+          this.checkAttention();
           if (this.tickFollowups()) { this.emit('change'); this.start(); }
         }
         catch (error) { this.#stopped = true; clearInterval(this.#timer); this.#active?.abort.abort(); this.emit('fault', safeCode(error)); }
       }, 1000);
       this.#timer.unref();
-      this.tickFollowups();
+      this.tickFollowups(); this.checkAttention();
     }
+    this.#wakeRequested = true;
     if (!this.#drain && !this.#stopped) {
       // Schedule outside request handling. Disconnecting the requester neither
       // cancels the accepted turn nor holds an HTTP response open for the model.
-      this.#drain = Promise.resolve().then(() => this.#run()).catch(error => {
+      this.#drain = Promise.resolve().then(() => { this.#wakeRequested = false; return this.#run(); }).catch(error => {
         this.#stopped = true;
         this.emit('fault', safeCode(error));
-      }).finally(() => { this.#drain = null; });
+      }).finally(() => { this.#drain = null; if (this.#wakeRequested && !this.#stopped) this.start(); });
     }
   }
   submit(device, requestId, text) {
@@ -96,6 +100,7 @@ export class ContactService extends EventEmitter {
         for (const stopped of this.#store.stoppedSince(prior.through, job.seq)) {
           if (stopped.origin !== 'proactive') assistant.noteStopped(stopped.text, stopped.state);
         }
+        assistant.noteContext(this.#store.reminderContext(prior.through, job.seq));
         const answer = await assistant.ask(job.text, abort.signal);
         abort.signal.throwIfAborted(); sources.assertCurrent?.(abort.signal);
         const proposals = !proactive && base instanceof FollowupSources ? base.proposals() : [];
@@ -144,13 +149,14 @@ export class ContactService extends EventEmitter {
   configureProactive(device, enabled, consent) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     const result = this.#store.configureProactive(device, enabled, consent, this.#timezone);
+    this.#attentionAbort?.abort();
     this.#abortStale(); this.emit('change'); this.start(); return result;
   }
   attachGoogle(connection) {
     if (!connection || typeof connection.connect !== 'function' || typeof connection.status !== 'function' || this.#google) throw Error('CONTACT_GOOGLE_SETUP_INVALID');
     this.#google = connection;
     connection.on('change', change => {
-      if (change?.authorityChanged && this.#active?.google) this.#active.abort.abort();
+      if (change?.authorityChanged) { this.#attentionAbort?.abort(); if (this.#active?.google) this.#active.abort.abort(); }
       this.emit('change');
     });
   }
@@ -190,6 +196,37 @@ export class ContactService extends EventEmitter {
     this.#abortStale();
     return queued + this.#store.followupTick(now) + this.#store.proactiveTick(now, this.#google?.status().connected === true);
   }
+  async validateDelivery(delivery, signal) {
+    if (!delivery.turn) return true;
+    const notice = this.#store.attentionDelivery(delivery.turn);
+    if (!notice) return true;
+    if (notice.stopped || this.#stopped || !this.#google) return false;
+    const observation = await observeAttention(this.#store, this.#google, notice.ticket, signal, Date.now(), true);
+    this.#store.assertAttentionDelivery(delivery.id, delivery.turn, notice.ticket);
+    const event = observation.events.find(item => eventKey(observation.account, item) === notice.key);
+    // Missing in a partial page is not cancellation, but also not permission to
+    // send a stale scheduled alert. The existing in-app historical record stays.
+    return !!event && reminderDue(event, Date.now(), notice.ticket.timezone)
+      && reminderText(event, notice.created, notice.ticket.timezone) === notice.text;
+  }
+  checkAttention(now = Date.now()) {
+    if (this.#attention || this.#stopped) return this.#attention;
+    const ticket = this.#store.claimAttention(now);
+    if (!ticket) return null;
+    const abort = new AbortController(); this.#attentionAbort = abort;
+    this.#attention = Promise.resolve().then(async () => {
+      try {
+        const observation = ticket.google_epoch ? await observeAttention(this.#store, this.#google, ticket, abort.signal, now)
+          : { fingerprint: createHash('sha256').update(ticket.local_fingerprint).digest('hex'), events: [], truncated: false, observed_at: now };
+        abort.signal.throwIfAborted();
+        const changed = this.#store.finishAttention(ticket, observation, Math.max(now, Date.now()));
+        if (changed) this.start();
+      } catch (error) { this.#store.failAttention(ticket, safeCode(error)); }
+      finally { this.emit('change'); }
+    }).catch(error => { this.#stopped = true; this.#active?.abort.abort(); this.emit('fault', safeCode(error)); })
+      .finally(() => { this.#attention = null; this.#attentionAbort = null; });
+    return this.#attention;
+  }
   get localReviews() { return !this.#model.identity || this.#model.identity.provider === 'ollama-local'; }
   get providerStatus() {
     const identity = this.#model.identity;
@@ -197,10 +234,12 @@ export class ContactService extends EventEmitter {
       account: identity.account_label ?? null, usage_url: identity.provider === 'chatgpt-subscription' ? 'https://chatgpt.com/settings/usage' : null } : null;
   }
   get stopped() { return this.#stopped; }
-  async idle() { await this.#drain; }
+  async idle() { while (this.#drain) await this.#drain; }
   async close() {
     this.#stopped = true;
     clearInterval(this.#timer);
+    this.#attentionAbort?.abort(); this.#active?.abort.abort();
+    await this.#attention;
     this.#google?.close();
     this.#active?.abort.abort();
     await this.#drain;

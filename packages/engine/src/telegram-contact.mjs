@@ -143,12 +143,20 @@ export class TelegramContact extends EventEmitter {
     const delivery = this.#store.telegramClaimDelivery(now);
     if (!delivery) return false;
     this.#nextSend = now + 1100;
+    let sending = false;
     try {
+      if (this.#service.validateDelivery && !await this.#service.validateDelivery(delivery, this.#abort.signal)) {
+        this.#store.telegramDelivery(delivery.id, 'suppressed', { error: 'CONTACT_SOURCE_CHANGED' }); return true;
+      }
+      this.#store.assertTelegramDelivery(delivery);
+      sending = true;
       const receipt = await this.#api.send(delivery, this.#abort.signal);
       this.#store.telegramDelivery(delivery.id, 'sent', { receipt });
     } catch (error) {
       const code = safe(error);
-      if (code === 'CONTACT_TELEGRAM_RATE_LIMIT' && error.definitelyRejected && error.retryAfter) {
+      if (!sending) {
+        this.#store.telegramDelivery(delivery.id, 'queued', { retryAt: Date.now() + 15 * 60000, error: code });
+      } else if (code === 'CONTACT_TELEGRAM_RATE_LIMIT' && error.definitelyRejected && error.retryAfter) {
         this.#store.telegramDelivery(delivery.id, 'queued', { retryAt: Date.now() + error.retryAfter * 1000, error: code });
       } else this.#store.telegramDelivery(delivery.id, error.definitelyRejected ? 'rejected' : 'unknown', { error: code });
       this.#lastError = code;

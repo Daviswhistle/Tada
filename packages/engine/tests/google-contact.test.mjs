@@ -71,7 +71,7 @@ async function googleServer({ holdInbox = false, holdAuthorization = false, hold
   const inboxClosed = new Promise(resolve => { inboxClosedResolve = resolve; });
   const authorizationStarted = new Promise(resolve => { authorizationStartedResolve = resolve; });
   const authorizationClosed = new Promise(resolve => { authorizationClosedResolve = resolve; });
-  let refreshStartedResolve, refreshClosedResolve, revokeStartedResolve, releaseRevoke;
+  let refreshStartedResolve, refreshClosedResolve, releaseRefresh, revokeStartedResolve, releaseRevoke;
   const refreshStarted = new Promise(resolve => { refreshStartedResolve = resolve; });
   const refreshClosed = new Promise(resolve => { refreshClosedResolve = resolve; });
   const revokeStarted = new Promise(resolve => { revokeStartedResolve = resolve; });
@@ -109,7 +109,8 @@ async function googleServer({ holdInbox = false, holdAuthorization = false, hold
         if (form.get('grant_type') !== 'refresh_token' || form.get('refresh_token') !== refreshToken) return json(res, 400, { error: 'invalid_request' });
         refreshCount++; refreshStartedResolve();
         if (holdRefresh) {
-          await new Promise(resolve => { res.once('close', () => { refreshClosedResolve(); resolve(); }); }); return;
+          const resumed = await new Promise(resolve => { releaseRefresh = () => resolve(true); res.once('close', () => { refreshClosedResolve(); resolve(false); }); });
+          if (!resumed) return;
         }
         if (overridden(res, 'refresh')) return;
         if (invalidGrant || (grantWideRevocation && !activeGrant)) return json(res, 400, { error: 'invalid_grant' });
@@ -193,7 +194,7 @@ async function googleServer({ holdInbox = false, holdAuthorization = false, hold
   });
   const address = `http://127.0.0.1:${server.address().port}`;
   return { address, requests, inboxStarted, inboxClosed, authorizationStarted, authorizationClosed, refreshStarted, refreshClosed, revokeStarted, releaseRevoke,
-    resumeRefresh: () => { holdRefresh = false; }, restoreRefreshScopes: () => { wrongRefreshScope = false; },
+    resumeRefresh: () => { holdRefresh = false; releaseRefresh?.(); }, restoreRefreshScopes: () => { wrongRefreshScope = false; },
     removeInboxId: id => removedInbox.add(id), ageEmails: () => { oldDates = true; },
     counts: () => ({ authorizationCount, refreshCount, revokeCount, inboxCount, calendarCount, profileCount }),
     async close() { releaseRevoke(); await new Promise(resolve => server.close(resolve)); } };
@@ -1091,7 +1092,10 @@ for (const stage of ['refresh', 'api']) for (const cause of ['timeout', 'caller'
       replacement = makeCredential(owner.id); e.store.saveGoogleCredential(owner.id, replacement, null);
       await disconnecting;
     }
-    await rejected; await (stage === 'refresh' ? fake.refreshClosed : fake.inboxClosed);
+    await rejected;
+    // Canceling a read leaves account refresh available to other current reads.
+    if (stage === 'refresh' && cause === 'caller') fake.resumeRefresh();
+    await (stage === 'refresh' ? fake.refreshClosed : fake.inboxClosed);
     const current = e.store.googleCredential();
     assert.equal(current.epoch, replacement?.epoch ?? grant.epoch);
     assert.equal(current.last_error, cause === 'timeout' ? 'temporarily_unavailable' : null);
@@ -1665,4 +1669,23 @@ for (const scenario of ['corrected', 'corrected_empty', 'ignored', 'calendar_fai
     assert.equal(e.store.proactiveTick(noon + 1000, true), 0);
     assert.equal(e.store.usage().requests, calls);
   } finally { await service.close(); connection.close(); e.close(); await fake.close(); }
+});
+
+
+for (const cause of ['cancel', 'revoke']) test(`the first refresh caller's ${cause} does not cancel another current account read`, async () => {
+  const e = environment(), fake = await googleServer({ holdRefresh: true }), owner = e.store.addDevice('Owner'), firstDevice = e.store.addDevice('First reader');
+  const grant = makeCredential(owner.id); e.store.saveGoogleCredential(owner.id, grant, null);
+  const connection = makeConnection(e.store, null, fake), caller = new AbortController();
+  const profile = new URL('https://gmail.googleapis.com/gmail/v1/users/me/profile');
+  try {
+    const first = connection.apiJson(firstDevice.id, grant.epoch, profile, caller.signal);
+    const rejected = assert.rejects(first, /CONTACT_/u);
+    await fake.refreshStarted;
+    const second = connection.apiJson(owner.id, grant.epoch, profile, new AbortController().signal);
+    if (cause === 'cancel') { caller.abort(); await rejected; }
+    else { connection.deviceRevoked(firstDevice.id); e.store.revoke(firstDevice.id); }
+    fake.resumeRefresh(); await rejected;
+    assert.equal((await second).emailAddress, 'owner@example.test');
+    assert.equal(fake.counts().refreshCount, 1); assert.equal(connection.status().connected, true);
+  } finally { connection.close(); e.close(); await fake.close(); }
 });

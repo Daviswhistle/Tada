@@ -6,6 +6,7 @@ import { validateFollowupProposal, followupTimezone, followupInstant, isFollowup
 import { randomBytes, randomUUID, createHash, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
 import { mkdirSync, lstatSync, existsSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
+import { ATTENTION_CONSENT, ATTENTION_INTERVAL, validAttention, localDay, localHour, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { GOOGLE_SCOPES, validGoogleCredential, validGoogleDisconnect } from './google-contract.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -504,7 +505,7 @@ export class ContactStore {
       const id = hash(`${key}:${part}`);
       if (this.#db.prepare('SELECT id FROM telegram_outbox WHERE id=?').get(id)) continue;
       this.#db.prepare("INSERT INTO telegram_outbox(id,device,turn,part,payload,state,created) VALUES(?,?,?,?,?,'queued',?)")
-        .run(id, device, turn, part, this.#seal(`telegram-out:${id}`, { chat: binding.chat, bot: binding.bot, text: parts[part] }), Date.now());
+        .run(id, device, turn, part, this.#seal(`telegram-out:${id}`, { chat: binding.chat, bot: binding.bot, text: parts[part], group: hash(key) }), Date.now());
     }
   }
   telegramNote(key, text) {
@@ -523,7 +524,7 @@ export class ContactStore {
       const rows = this.#db.prepare("SELECT * FROM turns WHERE seq>? AND state IN('answered','failed','cancelled','interrupted') ORDER BY seq").all(binding.since_seq);
       for (const row of rows) {
         const proactive = this.proactiveForTurn(row.seq);
-        if (proactive && (row.state !== 'answered' || this.#turn(row).answer?.quiet || !this.#proactiveLive(proactive))) continue;
+        if (proactive && (row.state !== 'answered' || this.#turn(row).answer?.quiet || !this.#proactiveLive(proactive) || !this.#attentionNoticeLive(row.seq))) continue;
         const key = `result:${binding.device}:${row.seq}`;
         if (this.#db.prepare('SELECT id FROM telegram_outbox WHERE id=?').get(hash(`${key}:0`))) continue;
         const fromTelegram = row.device === binding.device;
@@ -568,22 +569,55 @@ export class ContactStore {
         this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='CONTACT_REVIEW_SUPERSEDED' WHERE state='queued' AND turn IN(SELECT r.turn FROM followup_reviews r JOIN followups f ON f.id=r.commitment JOIN devices d ON d.id=r.device JOIN devices w ON w.id=f.device WHERE r.state='cancelled' OR r.version<>f.version OR f.state NOT IN('open','waiting') OR d.revoked=1 OR d.expires<=? OR w.revoked=1 OR w.expires<=?)").run(now, now);
       }
       this.#sweepProactive(now);
+      for (const row of this.#db.prepare("SELECT id,turn FROM telegram_outbox WHERE state='queued' AND turn IS NOT NULL").all()) if (!this.#attentionNoticeLive(row.turn)) this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='CONTACT_SOURCE_CHANGED' WHERE id=?").run(row.id);
       // A lost first part must not be followed by dangling continuation parts.
       this.#db.exec("UPDATE telegram_outbox AS o SET state='suppressed',error='PREVIOUS_PART_UNCONFIRMED' WHERE o.state='queued' AND o.turn IS NOT NULL AND EXISTS(SELECT 1 FROM telegram_outbox p WHERE p.device=o.device AND p.turn=o.turn AND p.part<o.part AND p.state IN('unknown','rejected','suppressed'))");
-      const row = this.#db.prepare("SELECT * FROM telegram_outbox WHERE state='queued' ORDER BY created,part,id LIMIT 1").get();
-      if (!row || row.not_before > now) return null;
+      const candidates = this.#db.prepare("SELECT o.* FROM telegram_outbox o WHERE o.state='queued' AND o.not_before<=? AND NOT EXISTS(SELECT 1 FROM telegram_outbox p WHERE p.device=o.device AND p.turn=o.turn AND p.part<o.part AND p.state IN('queued','sending')) ORDER BY o.created,o.part,o.id").all(now);
+      const row = candidates.find(candidate => {
+        if (candidate.turn !== null || candidate.part === 0) return true;
+        const value = this.#open(`telegram-out:${candidate.id}`, candidate.payload);
+        const earlier = this.#db.prepare("SELECT * FROM telegram_outbox WHERE device=? AND turn IS NULL AND part<? AND state<>'sent'").all(candidate.device, candidate.part);
+        for (const previous of earlier) {
+          const prior = this.#open(`telegram-out:${previous.id}`, previous.payload);
+          if (value.group ? value.group !== prior.group : prior.group) continue;
+          if (['queued', 'sending'].includes(previous.state)) return false;
+          if (value.group && ['unknown', 'rejected', 'suppressed'].includes(previous.state)) {
+            this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='PREVIOUS_PART_UNCONFIRMED' WHERE id=?").run(candidate.id); return false;
+          }
+        }
+        return true;
+      });
+      if (!row) return null;
       if (this.#db.prepare("SELECT id FROM telegram_outbox WHERE state='sending'").get()) return null;
       this.#device(row.device);
       const payload = this.#open(`telegram-out:${row.id}`, row.payload);
       const binding = this.telegramBinding();
       if (!binding?.live || binding.device !== row.device || payload.chat !== binding.chat || payload.bot !== binding.bot) throw new Error('CONTACT_TELEGRAM_BINDING_INVALID');
       this.#db.prepare("UPDATE telegram_outbox SET state='sending' WHERE id=?").run(row.id);
-      return { id: row.id, device: row.device, ...payload };
+      return { id: row.id, device: row.device, turn: row.turn, ...payload };
     });
+  }
+  assertTelegramDelivery(delivery) {
+    this.#check();
+    const row = this.#db.prepare('SELECT * FROM telegram_outbox WHERE id=?').get(delivery.id);
+    const binding = this.telegramBinding();
+    if (row?.state !== 'sending' || row.device !== delivery.device || row.turn !== delivery.turn
+        || !binding?.live || binding.device !== row.device) throw Error('CONTACT_TELEGRAM_DELIVERY_STOPPED');
+    this.#device(row.device);
+    const payload = this.#open(`telegram-out:${row.id}`, row.payload);
+    if (payload.chat !== binding.chat || payload.bot !== binding.bot || ['chat', 'bot', 'text', 'group'].some(k => payload[k] !== delivery[k])) throw Error('CONTACT_TELEGRAM_DELIVERY_STOPPED');
+    if (row.turn !== null) { this.#assertReviewAuthority(row.turn); this.#assertProactiveAuthority(row.turn); }
+    if (this.#version >= 3) {
+      const notice = this.#db.prepare('SELECT n.state,n.version,f.version current_version,f.state work_state,f.device FROM followup_notices n JOIN followups f ON f.id=n.commitment WHERE n.telegram_id=?').get(row.id);
+      if (notice) {
+        this.#device(notice.device);
+        if (notice.state !== 'ready' || notice.version !== notice.current_version || !['open', 'waiting'].includes(notice.work_state)) throw Error('CONTACT_TELEGRAM_DELIVERY_STOPPED');
+      }
+    }
   }
   telegramDelivery(id, state, { receipt = null, retryAt = 0, error = null } = {}) {
     this.#messaging();
-    if (!['sent','unknown','rejected','queued'].includes(state) || !counter(retryAt)
+    if (!['sent','unknown','rejected','queued','suppressed'].includes(state) || !counter(retryAt)
         || (error !== null && !/^[A-Z_]{1,64}$/u.test(error))) throw new Error('CONTACT_DELIVERY_INVALID');
     this.#tx(() => {
       const row = this.#db.prepare('SELECT * FROM telegram_outbox WHERE id=?').get(id);
@@ -923,8 +957,9 @@ export class ContactStore {
       const valid = name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
         : name === 'google' ? validGoogleCredential(value)
         : name === 'google_disconnect' ? validGoogleDisconnect(value)
+        : name === 'attention' ? validAttention(value)
         : name === 'proactive' && Object.keys(value).sort().join(',') === 'device,enabled,epoch,last_fingerprint,next_at,timezone,version'
-          && value.version === 1 && typeof value.enabled === 'boolean' && isFollowupId(value.epoch) && isFollowupId(value.device)
+          && [1, 2].includes(value.version) && typeof value.enabled === 'boolean' && isFollowupId(value.epoch) && isFollowupId(value.device)
           && counter(value.next_at) && typeof value.timezone === 'string'
           && (value.last_fingerprint === null || /^[a-f0-9]{64}$/u.test(value.last_fingerprint));
       if (!valid) throw Error('CONTACT_SETTING_INVALID');
@@ -1041,15 +1076,20 @@ export class ContactStore {
     if (!grant?.enabled || run.epoch !== grant.epoch) return false;
     try { this.#device(grant.device, now); return true; } catch { return false; }
   }
+  #proactiveCurrent(run, now = Date.now()) {
+    if (!this.#proactiveLive(run, now)) return false;
+    const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(run.turn);
+    return this.#turn(row).answer?.calendar_reminder ? this.#attentionNoticeLive(run.turn) : run.fingerprint === this.#proactiveFingerprint();
+  }
   #assertProactiveAuthority(seq) {
     const run = this.proactiveForTurn(seq);
-    if (run && (!this.#proactiveLive(run) || run.fingerprint !== this.#proactiveFingerprint())) throw Error('CONTACT_PROACTIVE_STOPPED');
+    if (run && !this.#proactiveCurrent(run)) throw Error('CONTACT_PROACTIVE_STOPPED');
   }
   #sweepProactive(now = Date.now()) {
     if (this.#version < 5) return;
     for (const run of this.#db.prepare('SELECT * FROM proactive_runs').all()) {
       this.proactiveForTurn(run.turn);
-      if (this.#proactiveLive(run, now) && run.fingerprint === this.#proactiveFingerprint()) continue;
+      if (this.#proactiveCurrent(run, now)) continue;
       this.#db.prepare("UPDATE turns SET state='cancelled',error='CONTACT_PROACTIVE_STOPPED' WHERE seq=? AND state IN('queued','running')").run(run.turn);
       this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='CONTACT_PROACTIVE_STOPPED' WHERE turn=? AND state='queued'").run(run.turn);
     }
@@ -1059,16 +1099,18 @@ export class ContactStore {
     const live = grant && this.#proactiveLive({ epoch: grant.epoch });
     const last = this.#version >= 5 ? this.#db.prepare('SELECT t.state,t.error,r.created FROM proactive_runs r JOIN turns t ON t.seq=r.turn ORDER BY r.turn DESC LIMIT 1').get() : null;
     return { available: this.#version >= 5, enabled: !!live, timezone: grant?.timezone ?? null,
+      mode: grant?.version === 2 ? 'continuous' : 'daily', attention: grant?.version === 2 ? this.attentionStatus() : null,
       next_at: live ? grant.next_at : null, blocked_reason: live && this.usage().requests >= 60 ? 'usage_limit' : null, last: last ?? null };
   }
   configureProactive(device, enabled, consent, timezone, now = Date.now()) {
-    if (typeof enabled !== 'boolean' || (enabled && consent !== 'daily_conversation_suggestions_v1') || (!enabled && consent !== null)) throw Error('CONTACT_PROACTIVE_CONSENT_REQUIRED');
+    if (typeof enabled !== 'boolean' || (enabled && !['daily_conversation_suggestions_v1', ATTENTION_CONSENT].includes(consent)) || (!enabled && consent !== null)) throw Error('CONTACT_PROACTIVE_CONSENT_REQUIRED');
     followupTimezone(timezone);
     return this.#tx(() => {
       this.#device(device);
       const old = this.#setting('proactive');
-      if (enabled && old?.enabled && this.#proactiveLive({ epoch: old.epoch })) return this.proactiveStatus();
-      this.#saveSetting('proactive', { version: 1, enabled, epoch: randomUUID(), device, timezone, next_at: old?.next_at ?? now, last_fingerprint: old?.last_fingerprint ?? null });
+      const version = enabled ? (consent === ATTENTION_CONSENT ? 2 : 1) : (old?.version ?? 1);
+      if (enabled && old?.enabled && old.version === version && this.#proactiveLive({ epoch: old.epoch })) return this.proactiveStatus();
+      this.#saveSetting('proactive', { version, enabled, epoch: randomUUID(), device, timezone, next_at: old?.version === version ? old.next_at : now, last_fingerprint: old?.last_fingerprint ?? null });
       this.#sweepProactive(now); return this.proactiveStatus();
     });
   }
@@ -1083,7 +1125,7 @@ export class ContactStore {
     return this.#tx(() => {
       this.#sweepProactive(now);
       const grant = this.#setting('proactive');
-      if (!grant?.enabled || !this.#proactiveLive({ epoch: grant.epoch }, now) || now < grant.next_at) return 0;
+      if (grant?.version === 2 || !grant?.enabled || !this.#proactiveLive({ epoch: grant.epoch }, now) || now < grant.next_at) return 0;
       const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: grant.timezone, hour: '2-digit', hourCycle: 'h23' }).format(now));
       if (hour < 9 || hour >= 21) return 0;
       if (this.#db.prepare("SELECT seq FROM turns WHERE state IN('queued','running')").get()) return 0;
@@ -1100,6 +1142,127 @@ export class ContactStore {
       this.#db.prepare('INSERT INTO proactive_runs VALUES(?,?,?,?,?)').run(seq, grant.epoch, fingerprint, now, this.#seal(`proactive:${seq}`, { turn: seq, epoch: grant.epoch, fingerprint, created: now }));
       this.#saveSetting('proactive', { ...grant, next_at: now + 86400000, last_fingerprint: fingerprint });
       return 1;
+    });
+  }
+  #attentionNoticeLive(seq) {
+    const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq);
+    if (!row || !this.#turn(row).answer?.calendar_reminder) return true;
+    const state = this.#setting('attention');
+    return state?.google_epoch === this.googleEpoch() && state?.notified.some(n => n.turn === seq && n.active) === true;
+  }
+  attentionDelivery(seq) {
+    const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq);
+    if (!row || !this.#turn(row).answer?.calendar_reminder) return null;
+    const run = this.proactiveForTurn(seq), grant = this.#setting('proactive');
+    if (!this.#proactiveLive(run) || !this.#attentionNoticeLive(seq)) return { stopped: true };
+    const receipt = this.#setting('attention').notified.find(n => n.turn === seq);
+    return { key: receipt.key, text: this.#turn(row).answer.text, created: row.created, ticket: { epoch: grant.epoch, device: grant.device, google_epoch: this.googleEpoch(), local_fingerprint: this.#proactiveFingerprint(), timezone: grant.timezone, claimed_at: Date.now() } };
+  }
+  assertAttentionDelivery(id, seq, ticket) {
+    this.assertAttention(ticket); this.#assertProactiveAuthority(seq);
+    const row = this.#db.prepare('SELECT * FROM telegram_outbox WHERE id=?').get(id);
+    if (row?.state !== 'sending' || row.turn !== seq || !this.#attentionNoticeLive(seq)) throw Error('CONTACT_PROACTIVE_STOPPED');
+    this.#device(row.device);
+    const binding = this.telegramBinding();
+    if (!binding?.live || binding.device !== row.device) throw Error('CONTACT_PROACTIVE_STOPPED');
+  }
+  reminderContext(_after, before) {
+    if (this.#version < 5) return '';
+    const rows = this.#db.prepare("SELECT t.* FROM turns t JOIN proactive_runs r ON r.turn=t.seq WHERE t.seq<? AND t.state='answered' ORDER BY t.seq DESC LIMIT 20").all(before);
+    const notices = rows.map(row => this.#turn(row)).filter(t => t.answer?.calendar_reminder).slice(0, 3)
+      .map(t => ({ id: t.seq, at: new Date(t.created).toISOString(), excerpt: [...t.answer.text].slice(0, 60).join('') }));
+    return notices.length ? JSON.stringify(notices) : '';
+  }
+  attentionStatus() {
+    const value = this.#setting('attention');
+    return value ? { observed_at: value.observed_at || null, error: value.error, checks_today: value.model_day === localDay(Date.now(), this.#setting('proactive').timezone) ? value.model_runs : 0 } : null;
+  }
+  #attentionState(grant) {
+    const old = this.#setting('attention');
+    // Retain cooldown and sent identities across toggles. Neither a toggle nor
+    // reconnect resets resource use; a new Google epoch has different event keys.
+    return { version: 1, epoch: grant.epoch, google_epoch: this.googleEpoch(), observed_at: 0, error: null, fingerprint: null,
+      model_next_at: old?.model_next_at ?? 0, model_day: old?.model_day ?? '', model_runs: old?.model_runs ?? 0, notified: old?.notified ?? [],
+      ...(old?.epoch === grant.epoch && old.google_epoch === this.googleEpoch() ? old : {}) };
+  }
+  assertAttention(ticket) {
+    const grant = this.#setting('proactive');
+    if (grant?.version !== 2 || ticket.epoch !== grant.epoch || ticket.device !== grant.device
+        || !this.#proactiveLive(ticket) || ticket.google_epoch !== this.googleEpoch()) throw Error('CONTACT_PROACTIVE_STOPPED');
+    if (ticket.google_epoch && !this.googleConnected()) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+  }
+  claimAttention(now = Date.now()) {
+    if (this.#version < 5) return null;
+    return this.#tx(() => {
+      this.#sweepProactive(now);
+      const grant = this.#setting('proactive');
+      if (grant?.version !== 2 || !this.#proactiveLive(grant, now) || now < grant.next_at) return null;
+      this.#saveSetting('proactive', { ...grant, next_at: now + ATTENTION_INTERVAL });
+      return { epoch: grant.epoch, device: grant.device, google_epoch: this.googleEpoch(), local_fingerprint: this.#proactiveFingerprint(), claimed_at: now, has_context: !!this.#db.prepare('SELECT seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs) LIMIT 1').get() };
+    });
+  }
+  failAttention(ticket, error) {
+    return this.#tx(() => {
+      const grant = this.#setting('proactive');
+      if (grant?.version !== 2 || ticket.epoch !== grant.epoch || ticket.device !== grant.device
+          || !this.#proactiveLive(ticket) || ticket.google_epoch !== this.googleEpoch()) return false;
+      // Authentication failure changes the Google status/fingerprint itself;
+      // record that failure without restoring any withdrawn read authority.
+      const state = this.#attentionState(grant);
+      this.#saveSetting('attention', { ...state, error: /^[A-Z_]{1,64}$/u.test(error) ? error : 'CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE' });
+      return true;
+    });
+  }
+  #enqueueProactive(grant, now, text, answer = null) {
+    if (this.#db.prepare('SELECT count(*) n FROM turns').get().n >= 1000) return null;
+    const requestId = `proactive_${randomUUID()}`, fingerprint = this.#proactiveFingerprint();
+    const result = this.#db.prepare('INSERT INTO turns(request_id,device,state,payload,answer,created) VALUES(?,?,?,?,?,?)')
+      .run(requestId, grant.device, answer ? 'answered' : 'queued', this.#seal(`turn:${requestId}`, { text }), answer ? this.#seal(`answer:${requestId}`, answer) : null, now);
+    const seq = Number(result.lastInsertRowid);
+    this.#db.prepare('INSERT INTO proactive_runs VALUES(?,?,?,?,?)').run(seq, grant.epoch, fingerprint, now, this.#seal(`proactive:${seq}`, { turn: seq, epoch: grant.epoch, fingerprint, created: now }));
+    return seq;
+  }
+  finishAttention(ticket, observation, now = Date.now()) {
+    return this.#tx(() => {
+      this.assertAttention(ticket);
+      const grant = this.#setting('proactive'), state = this.#attentionState(grant);
+      // Only trusted host observation enters here, never an HTTP/model payload.
+      if (!observation || !/^[a-f0-9]{64}$/u.test(observation.fingerprint) || !Array.isArray(observation.events)
+          || observation.events.length > 20 || (observation.error != null && !/^[A-Z_]{1,64}$/u.test(observation.error)) || observation.observed_at < ticket.claimed_at || now - observation.observed_at > 60000) throw Error('CONTACT_GOOGLE_SOURCE_STALE');
+      const keys = new Set(observation.events.map(event => eventKey(observation.account, event)));
+      let notified = state.notified.filter(n => n.until > now), changes = 0;
+      // Suppress undelivered alerts removed or rescheduled in a complete view.
+      // A truncated observation cannot establish absence.
+      for (const old of notified) {
+        const event = observation.events.find(item => eventKey(observation.account, item) === old.key);
+        const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(old.turn);
+        const changedTitle = event && row && reminderText(event, row.created, grant.timezone) !== this.#turn(row).answer.text;
+        if ((!observation.truncated && !keys.has(old.key)) || changedTitle) {
+          old.active = false;
+          this.#db.prepare("UPDATE telegram_outbox SET state='suppressed',error='CONTACT_SOURCE_CHANGED' WHERE turn=? AND state='queued'").run(old.turn);
+        }
+      }
+      for (const event of observation.events) {
+        const key = eventKey(observation.account, event);
+        if (!reminderDue(event, now, grant.timezone) || notified.some(n => n.key === key) || notified.length >= 200) continue;
+        const text = reminderText(event, now, grant.timezone);
+        const seq = this.#enqueueProactive(grant, now, '일정 시각에 맞춘 자동 알림', { text, sources: [], verification: 'not_applicable', calendar_reminder: true, observed_at: observation.observed_at });
+        if (seq) { notified.push({ key, turn: seq, until: now + 8 * 86400000, active: true }); changes++; }
+      }
+      const day = localDay(now, grant.timezone), hour = localHour(now, grant.timezone);
+      const fingerprint = hash(JSON.stringify([observation.fingerprint, ticket.local_fingerprint, day]));
+      let runs = state.model_day === day ? state.model_runs : 0, next = state.model_next_at, acceptedFingerprint = state.fingerprint;
+      if (!observation.error && !this.#db.prepare("SELECT seq FROM turns WHERE state IN('queued','running')").get()
+          && ticket.local_fingerprint === this.#proactiveFingerprint()
+          && (ticket.google_epoch || ticket.has_context) && hour >= 9 && hour < 21 && now >= next && runs < 4 && this.usage().requests < 60 && fingerprint !== state.fingerprint) {
+        const seq = this.#enqueueProactive(grant, now, '자동 확인: 새로운 메일·일정 변화와 미완료 업무를 확인하고 필요한 제안만 알려 주세요.');
+        if (seq) { runs++; changes++; next = now + 3600000; acceptedFingerprint = fingerprint; }
+      }
+      this.#saveSetting('attention', { ...state, observed_at: observation.observed_at, error: observation.error ?? null, fingerprint: acceptedFingerprint,
+        model_day: day, model_runs: runs, model_next_at: next, notified });
+      const due = observation.events.filter(e => e.start !== null && e.start - 1800000 > now).map(e => e.start - 1800000);
+      this.#saveSetting('proactive', { ...grant, next_at: Math.min(now + ATTENTION_INTERVAL, ...due) });
+      return changes;
     });
   }
   async upgradeAssistance() {

@@ -35,7 +35,7 @@ export class FollowupSources {
   get definitions() { return [...this.#base.definitions, ...structuredClone(FOLLOWUP_TOOLS)]; }
   get hostContext() {
     const proactive = this.#store.proactiveStatus();
-    const standing = proactive.available ? ` Daily proactive suggestions from saved conversation/work/documents are ${proactive.enabled ? 'enabled' : 'disabled'} in Settings. This does not authorize other background tasks, new source access or changes. The owner can control it in Settings.` : '';
+    const standing = proactive.available ? ` Proactive suggestions from saved conversation/work/documents are ${proactive.enabled ? 'enabled' : 'disabled'} in Settings. This does not authorize other background tasks, new source access or changes. The owner can control it in Settings.` : '';
     const base = this.#base.hostContext ? `${this.#base.hostContext}\n` : '';
     return `${base}Host time: ${new Date(this.#clock()).toISOString()}; timezone: ${this.#timezone}. Retrieve saved work before changes. Proposals need owner confirmation; do not investigate deferred work early.${this.#store.contactVersion >= 4 && this.#localReviews ? ' After saving, the owner may separately approve one local read-only review on its card or via /review COMMITMENT_ID VERSION in Telegram. Only an armed review runs later; a reminder alone does not. Review results do not prove completion.' : ' No automatic source reviews with this provider. Reminders never run a model; offer investigation now or a reminder.'}${standing}`; }
   get verificationKind() { return this.#base.verificationKind; }

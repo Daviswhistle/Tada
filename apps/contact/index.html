@@ -17,8 +17,8 @@
           <p class="eyebrow">말을 걸기 전에도</p><h2>먼저 챙겨보기</h2>
           <p class="muted">메일과 다가오는 일정, 맡긴 일을 살펴 필요한 제안과 오늘 챙길 일을 먼저 알려드려요.</p>
           <p id="proactive-status" role="status"></p><button id="proactive-toggle" type="button">먼저 챙겨보기 켜기</button>
-          <dl class="setting-facts"><div><dt>확인 주기</dt><dd>하루 한 번 · 오전 9시~오후 9시</dd></div><div><dt>사용량</dt><dd>현재 모델로 하루 최대 4회 요청</dd></div><div><dt>최근 자동 확인</dt><dd id="proactive-last">아직 확인 전</dd></div></dl>
-          <details class="setting-details"><summary>무엇을 살펴보나요?</summary><p id="proactive-scope" class="muted">최근 대화·맡긴 일·저장된 문서를 확인합니다. 연결된 Google 계정이 있으면 최근 메일과 다가오는 일정도 함께 살펴봅니다.</p><p class="muted">기한이 가까워졌거나 새로 달라진 내용이 있을 때 알려드려요. 새로 챙길 일이 없으면 불필요한 연락을 하지 않습니다. 별도 시각 알림은 대화에서 확정한 예약을 따릅니다.</p></details>
+          <button id="proactive-upgrade" type="button" hidden>수시 확인과 일정 알림 켜기</button><p id="proactive-upgrade-info" class="muted" hidden>15분마다 연결된 메일·일정의 변화를 확인합니다. 필요한 제안은 오전 9시~오후 9시, 하루 최대 4번 판단하며 현재 모델 요청을 최대 16회 사용합니다. 시간 일정은 30분 전, 종일 일정은 당일 오전에 알려드립니다.</p><dl class="setting-facts"><div><dt>확인 주기</dt><dd id="proactive-cadence">하루 한 번 · 오전 9시~오후 9시</dd></div><div><dt>사용량</dt><dd id="proactive-budget">현재 모델로 하루 최대 4회 요청</dd></div><div><dt>최근 자동 확인</dt><dd id="proactive-last">아직 확인 전</dd></div></dl>
+          <details class="setting-details"><summary>무엇을 살펴보나요?</summary><p id="proactive-scope" class="muted">최근 대화·맡긴 일·저장된 문서를 확인합니다. 연결된 Google 계정이 있으면 최근 메일과 다가오는 일정도 함께 살펴봅니다.</p><p class="muted">기한이 가까워졌거나 새로 달라진 내용이 있을 때 알려드려요. 새로 챙길 일이 없으면 불필요한 연락을 하지 않습니다. 수시 확인을 켜면 일정 시각도 자동으로 챙깁니다. 대화에서 확정한 알림도 함께 유지됩니다.</p></details>
         </section>
         <aside class="settings-note"><strong>자리를 비워도 이어서</strong><p>창을 닫아도 확인은 계속돼요. 이 컴퓨터가 켜져 있고 Tada가 실행 중이어야 합니다.</p><button id="settings-contact-link" class="text-button" type="button">휴대폰으로 알림 받기 →</button></aside>
       </div>

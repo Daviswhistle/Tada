@@ -102,7 +102,7 @@ function render() {
   const fragment = document.createDocumentFragment();
   for (const turn of list) {
     const article = document.createElement('article'); article.className = 'turn';
-    const user = document.createElement('div'); user.className = turn.origin === 'proactive' ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'proactive' ? '먼저 챙겨봤어요' : turn.text; article.append(user);
+    const user = document.createElement('div'); user.className = turn.origin === 'proactive' ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'proactive' ? (turn.answer?.calendar_reminder ? '일정 알림' : '먼저 챙겨봤어요') : turn.text; article.append(user);
     if (turn.answer) {
       if (turn.answer.document) {
         const doc = turn.answer.document, card = document.createElement('div'); card.className = 'document-card';
@@ -174,7 +174,7 @@ async function refresh(older = false, quiet = false) {
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
     $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
-      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 별도로 켜면 같은 범위에서 하루 한 번 살펴봅니다. 메일·일정의 예약 재확인은 지원하지 않습니다.'
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 켜면 같은 범위를 자동으로 살펴봅니다. 수시 확인을 켜면 15분마다 변화를 확인하고 일정 시각도 챙깁니다.'
       : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
@@ -231,7 +231,7 @@ const googleSection = document.createElement('section');
 googleSection.id = 'google-settings';
 googleSection.hidden = true; googleSection.className = 'setting-card';
 googleSection.append(element('h2', 'Gmail과 일정 연결'));
-const googleConsent = element('p', '최근 메일과 다가오는 일정을 읽고, 필요한 발췌를 선택한 Tada 모델로 전송해요. 먼저 챙겨보기를 따로 켜면 같은 범위에서 하루 한 번 살펴봅니다.', 'muted');
+const googleConsent = element('p', '최근 메일과 다가오는 일정을 읽고, 필요한 발췌를 선택한 Tada 모델로 전송해요. 먼저 챙겨보기를 따로 켜면 설정한 주기에 맞춰 같은 범위를 자동으로 살펴봅니다.', 'muted');
 googleConsent.id = 'google-consent'; googleSection.append(googleConsent);
 const googleStatus = element('p', '', 'muted'); googleStatus.id = 'google-status'; googleStatus.setAttribute('role', 'status'); googleStatus.tabIndex = -1; googleSection.append(googleStatus);
 const googleConnect = element('button', '내용을 확인하고 Google 연결'); googleConnect.id = 'google-connect'; googleConnect.type = 'button'; googleSection.append(googleConnect);
@@ -325,7 +325,7 @@ $('followup-more').onclick = async () => {
 for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 확인할 항목을 체크리스트 문서로 만들어줘.'], ['suggest-remember', '잊지 않게 챙겨줬으면 하는 일이 있어.']]) {
   $(id).onclick = () => { if (!$('message').value.trim()) $('message').value = text; $('message').focus(); };
 }
-let proactiveEnabled = false;
+let proactiveEnabled = false; let proactiveMode = 'daily';
 function renderGoogle(state) {
   googleSection.hidden = state?.available !== true;
   if (!state?.available) return;
@@ -357,12 +357,20 @@ function renderAssistance(result) {
     : '현재 선택한 모델의 사용량을 씁니다. Google 연결만으로 먼저 챙겨보기가 켜지지는 않습니다.';
   const state = result.proactive;
   proactiveEnabled = state?.enabled === true;
+  proactiveMode = state?.mode ?? 'daily';
+  $('proactive-upgrade').hidden = proactiveMode === 'continuous' || !state?.mode;
+  $('proactive-upgrade-info').hidden = proactiveMode === 'continuous' || !state?.mode;
+  $('proactive-cadence').textContent = proactiveMode === 'continuous' ? '메일·일정 15분마다 · 시간 일정 30분 전 알림' : '하루 한 번 · 오전 9시~오후 9시';
+  $('proactive-budget').textContent = proactiveMode === 'continuous' ? '변화가 있을 때 하루 최대 4번 판단 · 모델 요청 최대 16회' : '현재 모델로 하루 최대 4회 요청';
   $('proactive-last').textContent = state?.last ? new Intl.DateTimeFormat('ko-KR', { timeZone: state.timezone ?? undefined, month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(state.last.created) + ({ queued: ' · 대기', running: ' · 확인 중', failed: ' · 확인 실패', interrupted: ' · 중단', cancelled: ' · 취소', answered: '' }[state.last.state] ?? '') : '아직 확인 전';
+  if (proactiveMode === 'continuous' && state.attention?.observed_at) $('proactive-last').textContent = new Intl.DateTimeFormat('ko-KR', { timeZone: state.timezone, month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(state.attention.observed_at) + (state.attention.error ? ' · 최근 확인 실패' : ' · 확인 완료');
+  if (proactiveMode === 'continuous') $('proactive-scope').textContent = '최근 7일 받은편지함과 앞으로 7일 기본 캘린더를 각각 최대 20개 살펴봅니다. 새 메일·일정 변화와 날짜가 바뀔 때 필요한 내용을 현재 모델로 판단합니다. 새로운 내용이 없으면 모델을 호출하지 않습니다. 종일 일정은 오전 9시 이후, 시간 일정은 야간에도 30분 전에 알립니다.';
   $('proactive-settings').hidden = !state?.available;
   $('proactive-toggle').setAttribute('aria-pressed', String(proactiveEnabled));
   $('proactive-toggle').textContent = proactiveEnabled ? '먼저 챙겨보기 끄기' : '먼저 챙겨보기 켜기';
   $('proactive-status').textContent = proactiveEnabled
-    ? (state.blocked_reason === 'usage_limit' ? '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.'
+    ? (state.attention?.error ? '최근 자동 확인을 마치지 못했어요. 확인하지 못한 정보는 다음 주기에 다시 살펴봅니다. 현재 확인된 일정의 알림은 계속됩니다.'
+      : state.blocked_reason === 'usage_limit' ? (proactiveMode === 'continuous' ? '새 제안을 판단하는 AI 사용은 잠시 멈췄어요. 일정 확인과 시각 알림은 계속됩니다.' : '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.')
       : state.last?.state === 'failed' || state.last?.state === 'interrupted' ? '최근 확인을 끝내지 못했어요. 기록은 남아 있고 자동으로 재시도하지 않아요.'
       : result.google?.connected ? '켜져 있어요. 메일과 일정을 확인하고, 가까워진 기한과 필요한 일을 먼저 알려드려요.'
       : '켜져 있어요. 맡긴 일과 대화에서 챙길 일을 먼저 찾아요.')
@@ -408,9 +416,14 @@ $('google-disconnect').onclick = async () => {
   } catch (error) { notice(error.message); }
   finally { googleDisconnect.disabled = false; }
 };
+$('proactive-upgrade').onclick = async () => {
+  const button = $('proactive-upgrade'); button.disabled = true;
+  try { await api('/api/proactive', { enabled: true, consent: 'connected_attention_v2' }); notice(''); await refresh(); }
+  catch (error) { notice(error.message); } finally { button.disabled = false; }
+};
 $('proactive-toggle').onclick = async () => {
   const button = $('proactive-toggle'); button.disabled = true;
-  try { await api('/api/proactive', { enabled: !proactiveEnabled, consent: proactiveEnabled ? null : 'daily_conversation_suggestions_v1' }); notice(''); await refresh(); }
+  try { await api('/api/proactive', { enabled: !proactiveEnabled, consent: proactiveEnabled ? null : proactiveMode === 'continuous' ? 'connected_attention_v2' : 'daily_conversation_suggestions_v1' }); notice(''); await refresh(); }
   catch (error) { notice(error.message); } finally { button.disabled = false; }
 };
 $('mobile-form').onsubmit = async event => {

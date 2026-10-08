@@ -88,7 +88,7 @@ test('Google settings use the inserted controls and render configuration, accoun
   assert.ok(section.children.includes(c.get('google-connect')));
   const consent = c.get('google-consent'), details = c.get('google-scope-details');
   assert.ok(section.children.indexOf(consent) < section.children.indexOf(c.get('google-connect')));
-  assert.match(consent.textContent, /선택한 Tada 모델로 전송/u); assert.match(consent.textContent, /따로 켜면.*하루 한 번/u);
+  assert.match(consent.textContent, /선택한 Tada 모델로 전송/u); assert.match(consent.textContent, /따로 켜면.*설정한 주기.*같은 범위/u);
   assert.equal(details.tagName, 'DETAILS'); assert.equal(details.children[0].tagName, 'SUMMARY');
   assert.equal(details.children[0].textContent, '확인하는 자료와 범위');
   assert.ok(section.children.indexOf(details) > section.children.indexOf(c.get('google-connect')));

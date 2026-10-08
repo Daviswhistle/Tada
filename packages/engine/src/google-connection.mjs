@@ -351,17 +351,17 @@ export class GoogleConnection extends EventEmitter {
     let pending = this.#refreshes.get(epoch);
     if (!pending) {
       const epochSignal = this.#epochSignal(epoch), timeoutSignal = AbortSignal.timeout(12000);
-      const signal = AbortSignal.any([sourceSignal, epochSignal, timeoutSignal]);
+      const signal = AbortSignal.any([epochSignal, timeoutSignal]);
       pending = (async () => {
         try {
-          const current = this.#assertAuthority(device, epoch, signal);
+          const current = this.#assertAuthority(grant.device, epoch, signal);
           const form = new URLSearchParams({ client_id: this.#clientId, refresh_token: current.refresh_token, grant_type: 'refresh_token' });
           if (this.#clientSecret) form.set('client_secret', this.#clientSecret);
           const response = await this.#fetch(this.#endpoint('token', TOKEN_ENDPOINT), { method: 'POST', redirect: 'error', signal,
             headers: { ...jsonHeaders, 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
-          this.#assertAuthority(device, epoch, signal);
+          this.#assertAuthority(grant.device, epoch, signal);
           const result = await responseJson(response, MAX_TOKEN_BYTES);
-          this.#assertAuthority(device, epoch, signal);
+          this.#assertAuthority(grant.device, epoch, signal);
           if (!response.ok) {
             const error = result?.error === 'invalid_grant' ? 'CONTACT_GOOGLE_RECONNECT_REQUIRED'
               : result?.error === 'invalid_scope' ? 'CONTACT_GOOGLE_SCOPE_DENIED' : 'CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE';
@@ -383,11 +383,18 @@ export class GoogleConnection extends EventEmitter {
           this.#store.noteGoogleCheck(epoch, this.#clock()); this.#lastError = null;
           const token = { token: result.access_token, expires_at: this.#clock() + result.expires_in * 1000 };
           this.#access.set(epoch, token); this.#changed(); return token.token;
-        } catch (error) { this.#requestFailure(error, device, epoch, sourceSignal, epochSignal, timeoutSignal); }
+        } catch (error) { this.#requestFailure(error, grant.device, epoch, undefined, epochSignal, timeoutSignal); }
       })().finally(() => { if (this.#refreshes.get(epoch) === pending) this.#refreshes.delete(epoch); });
       this.#refreshes.set(epoch, pending);
     }
-    const token = await pending;
+    // Refresh belongs to the connected account, not its first caller. Stopping
+    // one observation must not cancel another caller sharing this refresh.
+    const token = await new Promise((resolve, reject) => {
+      const cleanup = () => sourceSignal?.removeEventListener('abort', stopped);
+      const stopped = () => { cleanup(); reject(Error('CONTACT_GOOGLE_AUTHORITY_CHANGED')); };
+      pending.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
+      if (sourceSignal?.aborted) stopped(); else sourceSignal?.addEventListener('abort', stopped, { once: true });
+    });
     this.#assertAuthority(device, epoch, sourceSignal);
     return token;
   }
