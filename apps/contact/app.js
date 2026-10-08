@@ -31,6 +31,18 @@ const errors = {
   CONTACT_FOLLOWUP_EXPIRED: '제안의 유효시간이 지났습니다. 현재 의도와 시각을 확인해 새로 맡겨 주세요.',
   CONTACT_FOLLOWUP_TIME_INVALID: '확인 시각이 지났거나 날짜·시간대가 유효하지 않습니다. 새 시각으로 이야기해 주세요.',
   CONTACT_FOLLOWUP_DECISION_CONFLICT: '이미 처리되거나 다른 변경으로 대체된 제안입니다. 최신 업무 기록을 확인해 주세요.',
+  CONTACT_GOOGLE_NOT_CONFIGURED: '이 Tada에서는 아직 Google 연결을 준비하지 못했어요. 계정이나 연결 키를 직접 입력할 필요는 없습니다.',
+  CONTACT_GOOGLE_CONSENT_REQUIRED: 'Google에서 읽을 항목과 선택한 모델로의 전송 안내를 확인해 주세요.',
+  CONTACT_GOOGLE_BUSY: 'Google 연결을 이미 확인 중이에요. 브라우저의 권한 화면을 마친 뒤 돌아와 주세요.',
+  CONTACT_GOOGLE_BROWSER_FAILED: '이 컴퓨터에서 Google 권한 화면을 열지 못했어요. 브라우저를 확인한 뒤 다시 시도해 주세요.',
+  CONTACT_GOOGLE_CONNECT_FAILED: 'Google 연결을 시작하지 못했어요. Tada 설정에서 다시 시도해 주세요.',
+  CONTACT_GOOGLE_AUTHORITY_CHANGED: 'Google 연결이나 기기 권한이 바뀌어 확인을 멈췄어요. 현재 연결 상태를 확인해 주세요.',
+  CONTACT_GOOGLE_RECONNECT_REQUIRED: 'Google을 다시 연결해야 해요. 설정의 Gmail과 일정 연결에서 다시 연결한 뒤 말씀해 주세요. 대화와 이전 답변은 보존했어요.',
+  CONTACT_GOOGLE_SCOPE_DENIED: 'Google에서 필요한 읽기 권한을 허용하지 않았어요. 설정에서 다시 연결해 주세요.',
+  CONTACT_GOOGLE_PERMISSION_DENIED: 'Google 계정이나 조직 설정에서 읽기 권한을 허용하지 않았어요. Tada 설정에서 연결 상태와 허용한 권한을 확인해 주세요.',
+  CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE: 'Google 정보를 지금 확인하지 못했어요. 잠시 후 새로 말씀해 주세요. 대화는 보존했고 자동으로 다시 실행하지 않았어요.',
+  CONTACT_GOOGLE_RESPONSE_INVALID: 'Google에서 받은 정보를 확인할 수 없어 답변을 멈췄어요. 잠시 후 새로 말씀해 주세요. 대화는 보존했고 자동으로 다시 실행하지 않았어요.',
+  CONTACT_GOOGLE_RESPONSE_LIMIT: 'Google에서 받은 자료가 너무 커 확인을 마치지 못했어요. 요청 내용을 좁히거나 다른 자료로 이어서 말씀해 주세요. 대화는 보존했고 자동으로 다시 실행하지 않았어요.',
 };
 async function api(path, data) {
   let response;
@@ -93,6 +105,15 @@ function render() {
       if (turn.error === 'CHATGPT_TEMPORARILY_UNAVAILABLE') status.textContent = '지금 ChatGPT 연결 서비스를 사용할 수 없어요. 연결과 대화는 보존했어요. 잠시 후 다시 말씀해 주세요.';
       if (['CHATGPT_PLAN_UNAVAILABLE', 'CHATGPT_PERMISSION_DENIED'].includes(turn.error)) status.textContent = '선택한 ChatGPT 계정이나 워크스페이스 정책에서 이 연결을 허용하지 않아요. 계정 설정을 확인해 주세요. 다른 결제 방식으로 전환하지 않았어요.';
       if (['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN'].includes(turn.error)) status.textContent = 'ChatGPT 연결을 갱신해야 해요. 컴퓨터에서 Tada 연결을 다시 열어 로그인해 주세요. 대화는 보존했어요.';
+      if (['failed', 'interrupted'].includes(turn.state) && turn.error?.startsWith('CONTACT_GOOGLE_') && Object.hasOwn(errors, turn.error)) status.textContent = errors[turn.error];
+      if (['failed', 'interrupted'].includes(turn.state) && ['CONTACT_GOOGLE_RECONNECT_REQUIRED', 'CONTACT_GOOGLE_SCOPE_DENIED', 'CONTACT_GOOGLE_PERMISSION_DENIED'].includes(turn.error)) {
+        const settings = document.createElement('button'); settings.type = 'button'; settings.textContent = 'Google 연결 설정';
+        settings.onclick = () => {
+          $('settings').open = true;
+          googleStatus.scrollIntoView({ block: 'nearest' }); googleStatus.focus({ preventScroll: true });
+        };
+        status.append(settings);
+      }
       if (['queued', 'running'].includes(turn.state)) {
         const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '취소';
         cancel.onclick = () => api('/api/cancel', { seq: turn.seq }).then(() => refresh()).catch(e => notice(e.message)); status.append(cancel);
@@ -132,7 +153,7 @@ async function refresh(older = false, quiet = false) {
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
     $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
-      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 먼저 챙겨보기를 켜면 대화와 저장된 일에서 새 제안을 찾습니다. 외부 자료의 예약 확인은 아직 지원하지 않습니다.'
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 별도로 켜면 같은 범위에서 하루 한 번 살펴봅니다. 메일·일정의 예약 재확인은 지원하지 않습니다.'
       : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
@@ -185,6 +206,21 @@ function element(tag, text, className) {
   if (className) item.className = className;
   return item;
 }
+const googleSection = document.createElement('section');
+googleSection.id = 'google-settings';
+googleSection.hidden = true;
+googleSection.append(element('h2', 'Gmail과 일정 연결'));
+const googleConsent = element('p', '최근 메일과 다가오는 일정을 읽고, 필요한 발췌를 선택한 Tada 모델로 전송해요. 먼저 챙겨보기를 따로 켜면 같은 범위에서 하루 한 번 살펴봅니다.', 'muted');
+googleConsent.id = 'google-consent'; googleSection.append(googleConsent);
+const googleStatus = element('p', '', 'muted'); googleStatus.id = 'google-status'; googleStatus.setAttribute('role', 'status'); googleStatus.tabIndex = -1; googleSection.append(googleStatus);
+const googleConnect = element('button', '내용을 확인하고 Google 연결'); googleConnect.id = 'google-connect'; googleConnect.type = 'button'; googleSection.append(googleConnect);
+const googleDisconnect = element('button', 'Google 연결 해제'); googleDisconnect.id = 'google-disconnect'; googleDisconnect.type = 'button'; googleDisconnect.hidden = true; googleSection.append(googleDisconnect);
+const googleDetails = document.createElement('details'); googleDetails.id = 'google-scope-details';
+googleDetails.append(element('summary', '확인하는 자료와 범위'));
+googleDetails.append(element('p', '최근 7일 받은편지함의 보낸 사람·제목·미리보기와 필요한 메일의 짧은 본문, 앞으로 7일 기본 캘린더 일정만 읽어요. 목록은 각각 최대 20개이며, 자료가 많으면 일부만 살펴봅니다.', 'muted'));
+googleDetails.append(element('p', '보낸편지함과 전체 대화는 읽지 않아 답장 여부는 확인할 수 없어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다. Google 권한 화면에서도 읽기 범위를 확인할 수 있어요.', 'muted'));
+googleSection.append(googleDetails);
+$('proactive-settings').before(googleSection);
 function when(value, timezone) {
   if (value === null) return '시간 알림 없음';
   try { return new Intl.DateTimeFormat('ko', { timeZone: timezone, year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'shortOffset' }).format(new Date(value)) + ` · ${timezone}`; }
@@ -269,7 +305,36 @@ for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 �
   $(id).onclick = () => { if (!$('message').value.trim()) $('message').value = text; $('message').focus(); };
 }
 let proactiveEnabled = false;
+function renderGoogle(state) {
+  googleSection.hidden = state?.available !== true;
+  if (!state?.available) return;
+  googleConnect.disabled = !state.configured || state.pending || state.state === 'upgrade_required';
+  googleConnect.textContent = state.connected || state.state === 'reconnect_required' ? 'Google 다시 연결' : '내용을 확인하고 Google 연결';
+  googleDisconnect.hidden = !state.has_credential && !state.pending;
+  googleDisconnect.textContent = state.has_credential ? state.pending ? '연결 취소 및 Google 연결 해제' : 'Google 연결 해제' : '연결 취소';
+  googleStatus.textContent = state.state === 'upgrade_required' ? errors.CONTACT_ASSISTANCE_UPGRADE_REQUIRED
+    : !state.configured ? state.has_credential
+    ? '이 호스트의 Google 연결 설정이 없어 계정 자료를 읽지 않습니다. 저장된 연결은 아래에서 해제할 수 있어요.'
+    : 'Google 연결을 아직 준비하지 않았어요. Tada의 연결 설정이 필요합니다.'
+    : state.pending ? 'Google 연결을 준비하고 있어요. 이 컴퓨터에서 Google 권한 화면이 열리면 허용을 마친 뒤 돌아와 주세요.'
+    : state.error === 'reconnect_required' || state.state === 'reconnect_required' ? 'Google 연결을 다시 해야 해요. 답변과 저장된 대화는 그대로 남아 있습니다.'
+    : state.error === 'permission_denied' ? 'Google 계정이나 조직 정책에서 필요한 읽기 권한을 허용하지 않았어요.'
+    : state.error === 'temporarily_unavailable' ? `Google 정보를 확인하지 못했어요.${state.last_checked ? ` 최근 확인 ${new Date(state.last_checked).toLocaleString()}.` : ''} 다시 시도해 주세요.`
+    : state.error === 'authorization_denied' ? state.connected ? `${state.account}의 이전 연결은 유지돼요. 새 연결은 완료하지 않았습니다.` : 'Google 연결을 완료하지 않았어요. 원하면 다시 연결할 수 있어요.'
+    : state.connected ? `${state.account} 계정이 연결됐어요.${state.last_checked ? ` 최근 확인 ${new Date(state.last_checked).toLocaleString()}.` : ''}`
+    : state.last_disconnect?.local_removed ? state.last_disconnect.remote_revoked === null
+      ? 'Google 연결을 취소했어요. 원하면 바로 다시 연결할 수 있어요.'
+      : state.last_disconnect.remote_revoked === true
+      ? 'Google 연결을 해제했고 이 컴퓨터의 자격 증명을 지웠어요.'
+      : '이 컴퓨터의 자격 증명은 지웠어요. Google 서버의 연결 해제는 확인하지 못했습니다.'
+    : '아직 연결하지 않았어요.';
+}
 function renderAssistance(result) {
+  renderGoogle(result.google);
+  const proactiveCopy = $('proactive-settings').querySelectorAll('p.muted');
+  proactiveCopy[1].textContent = result.google?.connected
+    ? '현재 선택한 모델의 사용량을 씁니다. 연결된 Google 계정은 이 설정을 켠 경우에만 최근 메일과 다가오는 일정을 하루 한 번 살펴봅니다.'
+    : '현재 선택한 모델의 사용량을 씁니다. Google 연결만으로 먼저 챙겨보기가 켜지지는 않습니다.';
   const state = result.proactive;
   proactiveEnabled = state?.enabled === true;
   $('proactive-settings').hidden = !state?.available;
@@ -277,6 +342,7 @@ function renderAssistance(result) {
   $('proactive-status').textContent = proactiveEnabled
     ? (state.blocked_reason === 'usage_limit' ? '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.'
       : state.last?.state === 'failed' || state.last?.state === 'interrupted' ? '최근 확인을 끝내지 못했어요. 기록은 남아 있고 자동으로 재시도하지 않아요.'
+      : result.google?.connected ? '켜져 있어요. 최근 메일과 다가오는 일정도 하루 한 번 확인하며, 새 제안이 없으면 조용히 기다려요.'
       : '켜져 있어요. 도움이 될 새 내용이 없으면 조용히 기다려요.')
     : '꺼져 있어요. 켜면 같은 비서가 먼저 챙겨봅니다.';
   const mobile = result.mobile;
@@ -304,6 +370,22 @@ function renderAssistance(result) {
     card.append(approve); return card;
   }));
 }
+$('google-connect').onclick = async () => {
+  googleConnect.disabled = true;
+  try { await api('/api/google/connect', { consent: 'google_readonly_v1' }); notice(''); await refresh(); }
+  catch (error) { notice(error.message); await refresh(); }
+};
+$('google-disconnect').onclick = async () => {
+  googleDisconnect.disabled = true;
+  try {
+    const result = await api('/api/google/disconnect', {});
+    notice(result.remote_revoked === null ? 'Google 연결을 취소했어요. 원하면 바로 다시 연결할 수 있어요.' : result.remote_revoked === true
+      ? 'Google 연결을 해제했고 이 컴퓨터의 자격 증명을 지웠어요. 이전 대화와 답변은 보존됩니다.'
+      : '이 컴퓨터의 Google 자격 증명을 지웠어요. Google 서버 연결은 확인하지 못했습니다. 이전 대화와 답변은 보존됩니다.');
+    await refresh();
+  } catch (error) { notice(error.message); }
+  finally { googleDisconnect.disabled = false; }
+};
 $('proactive-toggle').onclick = async () => {
   const button = $('proactive-toggle'); button.disabled = true;
   try { await api('/api/proactive', { enabled: !proactiveEnabled, consent: proactiveEnabled ? null : 'daily_conversation_suggestions_v1' }); notice(''); await refresh(); }

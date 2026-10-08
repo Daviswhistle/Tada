@@ -8,35 +8,67 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../../apps/contact/app.js', import.meta.url), 'utf8');
 function client() {
-  class Element {
-    value = ''; hidden = false; disabled = false; textContent = ''; children = [];
-    focus() {}
-    append(...items) { this.children.push(...items); }
-    prepend(...items) { this.children.unshift(...items); }
-    replaceChildren(...items) { this.children = items; }
-  }
   const elements = new Map();
-  const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
-  const calls = [], pending = [];
+  let focused = null;
+  class Element {
+    value = ''; hidden = false; disabled = false; textContent = ''; children = []; className = ''; parentNode = null; attributes = new Map(); scrolls = [];
+    constructor(tag = 'div') { this.tagName = tag.toUpperCase(); }
+    get id() { return this.getAttribute('id') ?? ''; }
+    set id(value) {
+      if (elements.get(this.id) === this) elements.delete(this.id);
+      this.attributes.set('id', String(value)); elements.set(String(value), this);
+    }
+    setAttribute(name, value) { if (name === 'id') this.id = value; else this.attributes.set(name, String(value)); }
+    getAttribute(name) { return this.attributes.get(name) ?? null; }
+    focus() { focused = this; }
+    scrollIntoView(options) { this.scrolls.push(options); }
+    insert(index, items) {
+      for (const item of items) {
+        if (item.parentNode) item.parentNode.children.splice(item.parentNode.children.indexOf(item), 1);
+        item.parentNode = this;
+      }
+      this.children.splice(index, 0, ...items);
+    }
+    append(...items) { this.insert(this.children.length, items); }
+    prepend(...items) { this.insert(0, items); }
+    before(...items) { this.parentNode?.insert(this.parentNode.children.indexOf(this), items); }
+    replaceChildren(...items) { for (const item of this.children) item.parentNode = null; this.children = []; this.append(...items); }
+    querySelectorAll(selector) {
+      const match = /^([a-z]+)(?:\.([a-z-]+))?$/u.exec(selector); assert.ok(match, 'fixture supports tag/class selectors');
+      const found = [];
+      const visit = node => { for (const item of node.children) {
+        if (item.tagName === match[1].toUpperCase() && (!match[2] || item.className.split(/\s+/u).includes(match[2]))) found.push(item);
+        visit(item);
+      } };
+      visit(this); return found;
+    }
+  }
+  const body = new Element('body'); body.scrollHeight = 100;
+  const get = id => { if (!elements.has(id)) { const item = new Element(); item.id = id; body.append(item); } return elements.get(id); };
+  // The static page has these two explanatory paragraphs; the real client
+  // updates the second after a Google connection state changes.
+  for (let i = 0; i < 2; i++) { const p = new Element('p'); p.className = 'muted'; get('proactive-settings').append(p); }
+  const calls = [], pending = [], handlers = new Map();
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
     URLSearchParams, crypto: { randomUUID },
     location: { hash: '#pair=fixture', pathname: '/' }, history: { replaceState() {} },
-    document: { getElementById: get, hidden: false, body: { scrollHeight: 100 },
-      createElement: () => new Element(), createDocumentFragment: () => new Element() },
+    document: { getElementById: get, hidden: false, body,
+      createElement: tag => new Element(tag), createDocumentFragment: () => new Element() },
     window: { innerHeight: 800, scrollY: 0, scrollTo() {} },
     EventSource: class { addEventListener() {} close() {} },
     fetch: (path, options) => {
       calls.push({ path, body: options.body ? JSON.parse(options.body) : null });
       if (path === '/api/turns') return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
+      if (handlers.has(path)) return Promise.resolve({ ok: true, status: 200, json: async () => handlers.get(path)() });
       assert.equal(path, '/api/state');
       return Promise.resolve({ ok: true, status: 200, json: async () => state });
     },
   };
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
-  return { get, calls, pending, state, refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
+  return { get, calls, pending, state, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
     accept: () => pending.shift().resolve({ ok: true, status: 202, json: async () => ({ seq: 1 }) }),
     reject: () => pending.shift().reject(Error('fixture network loss')) };
 }
@@ -48,6 +80,135 @@ test('an accepted message does not erase the next draft typed while its request 
   c.accept(); await sending;
   assert.equal(c.get('message').value, 'The next instruction I am still writing');
   assert.equal(c.get('send').disabled, false);
+});
+
+test('Google settings use the inserted controls and render configuration, account and pending states without connecting automatically', async () => {
+  const c = client(), section = c.get('google-settings'), proactive = c.get('proactive-settings');
+  assert.equal(section.parentNode, proactive.parentNode);
+  assert.equal(section.parentNode.children.indexOf(section) + 1, section.parentNode.children.indexOf(proactive));
+  assert.equal(c.get('google-status').getAttribute('role'), 'status');
+  assert.ok(section.children.includes(c.get('google-connect')));
+  const consent = c.get('google-consent'), details = c.get('google-scope-details');
+  assert.ok(section.children.indexOf(consent) < section.children.indexOf(c.get('google-connect')));
+  assert.match(consent.textContent, /선택한 Tada 모델로 전송/u); assert.match(consent.textContent, /따로 켜면.*하루 한 번/u);
+  assert.equal(details.tagName, 'DETAILS'); assert.equal(details.children[0].tagName, 'SUMMARY');
+  assert.equal(details.children[0].textContent, '확인하는 자료와 범위');
+  assert.ok(section.children.indexOf(details) > section.children.indexOf(c.get('google-connect')));
+  c.state.google = { available: true, configured: false, connected: false, pending: false, has_credential: false };
+  await c.refresh();
+  assert.equal(section.hidden, false); assert.equal(c.get('google-connect').disabled, true);
+  assert.equal(c.get('google-disconnect').hidden, true); assert.match(c.get('google-status').textContent, /연결 설정/u);
+  c.state.google = { available: true, configured: true, connected: true, pending: false, has_credential: true, account: 'owner@example.test' };
+  await c.refresh();
+  assert.equal(c.get('google-connect').disabled, false); assert.equal(c.get('google-connect').textContent, 'Google 다시 연결');
+  assert.equal(c.get('google-disconnect').hidden, false); assert.match(c.get('google-status').textContent, /owner@example\.test/u);
+  c.state.google.pending = true; await c.refresh();
+  assert.equal(c.get('google-connect').disabled, true); assert.match(c.get('google-status').textContent, /Google 권한 화면/u);
+  assert.doesNotMatch(c.get('google-status').textContent, /열었어요/u);
+  assert.equal(c.get('google-disconnect').textContent, '연결 취소 및 Google 연결 해제');
+  assert.ok(c.calls.every(call => call.path === '/api/state'));
+});
+
+test('Google settings require journal update before OAuth and use the existing on-screen backup recovery guidance', async () => {
+  const c = client(); c.get('message').value = '작성 중인 다음 요청';
+  c.state.google = { available: true, configured: true, state: 'upgrade_required', connected: false, pending: false, has_credential: false };
+  await c.refresh();
+  assert.equal(c.get('google-settings').hidden, false); assert.equal(c.get('google-connect').disabled, true);
+  assert.equal(c.get('google-disconnect').hidden, true);
+  assert.match(c.get('google-status').textContent, /Tada를 다시 열어 기록 업데이트.*원본은 먼저 백업/u);
+  assert.doesNotMatch(c.get('google-status').textContent, /CONTACT_|다시 시도/u);
+  assert.equal(c.get('message').value, '작성 중인 다음 요청'); assert.ok(c.calls.every(call => call.path === '/api/state'));
+  c.state.google.state = 'disconnected'; await c.refresh();
+  assert.equal(c.get('google-connect').disabled, false);
+});
+
+for (const reconnect of [false, true]) test(`profile permission denial uses existing policy guidance ${reconnect ? 'while retaining the prior account' : 'without claiming a connected account'}`, async () => {
+  const c = client(); c.state.google = { available: true, configured: true, connected: reconnect, pending: false,
+    has_credential: reconnect, state: reconnect ? 'connected' : 'disconnected', account: reconnect ? 'owner@example.test' : null, error: 'permission_denied' };
+  await c.refresh();
+  assert.match(c.get('google-status').textContent, /Google 계정이나 조직 정책.*읽기 권한을 허용하지/u);
+  assert.doesNotMatch(c.get('google-status').textContent, /다시 시도|CONTACT_|연결됐어요/u);
+  assert.equal(c.get('google-connect').disabled, false); assert.equal(c.get('google-disconnect').hidden, !reconnect);
+  assert.ok(c.calls.every(call => call.path === '/api/state'));
+});
+
+test('a first Google OAuth attempt can be canceled and retried on screen without claiming removed credentials', async () => {
+  const c = client();
+  c.state.google = { available: true, configured: true, connected: false, pending: false, has_credential: false };
+  c.handle('/api/google/connect', () => { c.state.google.pending = true; return { state: 'waiting' }; });
+  c.handle('/api/google/disconnect', () => {
+    const result = { local_removed: true, remote_revoked: null };
+    c.state.google.pending = false; c.state.google.last_disconnect = result; return result;
+  });
+  await c.refresh(); await c.get('google-connect').onclick();
+  assert.equal(c.get('google-connect').disabled, true);
+  assert.equal(c.get('google-disconnect').hidden, false); assert.equal(c.get('google-disconnect').textContent, '연결 취소');
+  await c.get('google-disconnect').onclick();
+  assert.equal(c.get('google-disconnect').hidden, true); assert.equal(c.get('google-connect').disabled, false);
+  assert.match(c.get('notice').textContent, /Google 연결을 취소했어요/u);
+  assert.doesNotMatch(c.get('notice').textContent, /자격 증명/u);
+  assert.match(c.get('google-status').textContent, /Google 연결을 취소했어요/u);
+  await c.get('google-connect').onclick();
+  assert.equal(c.calls.filter(item => item.path === '/api/google/connect').length, 2);
+  assert.equal(c.get('google-disconnect').hidden, false);
+});
+
+test('canceling reconnection reports the existing credential removal accurately', async () => {
+  const c = client();
+  c.state.google = { available: true, configured: true, connected: true, pending: true, has_credential: true, account: 'owner@example.test' };
+  c.handle('/api/google/disconnect', () => {
+    const result = { local_removed: true, remote_revoked: true };
+    Object.assign(c.state.google, { connected: false, pending: false, has_credential: false, last_disconnect: result }); return result;
+  });
+  await c.refresh(); assert.equal(c.get('google-disconnect').textContent, '연결 취소 및 Google 연결 해제');
+  await c.get('google-disconnect').onclick();
+  assert.match(c.get('notice').textContent, /자격 증명을 지웠어요/u);
+  assert.match(c.get('google-status').textContent, /자격 증명을 지웠어요/u);
+});
+
+for (const error of ['CONTACT_GOOGLE_RECONNECT_REQUIRED', 'CONTACT_GOOGLE_SCOPE_DENIED', 'CONTACT_GOOGLE_PERMISSION_DENIED']) test(`a failed Google turn offers actionable settings recovery without resubmitting: ${error}`, async () => {
+  const c = client();
+  const reconnect = error !== 'CONTACT_GOOGLE_PERMISSION_DENIED';
+  c.state.google = { available: true, configured: true, connected: !reconnect, pending: false, has_credential: true,
+    state: reconnect ? 'reconnect_required' : 'connected', error: error === 'CONTACT_GOOGLE_RECONNECT_REQUIRED' ? 'reconnect_required' : 'permission_denied' };
+  c.state.turns = [{ seq: 1, request_id: randomUUID(), text: '최근 메일을 확인해줘.', state: 'failed', error }];
+  c.get('message').value = '작성 중인 새 이야기'; await c.refresh();
+  const status = c.get('messages').children[0].children[0].children[1];
+  assert.match(status.textContent, /Google/u); assert.match(status.textContent, /설정/u);
+  assert.doesNotMatch(status.textContent, /CONTACT_|이번 요청의 답변을 완료하지 못했어요/u);
+  const action = status.children.find(button => button.textContent === 'Google 연결 설정'); assert.ok(action);
+  assert.notEqual(c.get('settings').open, true); action.onclick();
+  assert.equal(c.get('settings').open, true); assert.equal(c.focused, c.get('google-status'));
+  assert.equal(c.get('google-status').tabIndex, -1); assert.equal(c.get('google-status').scrolls.at(-1).block, 'nearest');
+  assert.match(c.get('google-status').textContent, reconnect ? /Google 연결을 다시/u : /읽기 권한을 허용하지/u);
+  assert.equal(c.get('message').value, '작성 중인 새 이야기');
+  assert.equal(c.calls.filter(call => call.path !== '/api/state').length, 0);
+});
+
+for (const error of ['CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE', 'CONTACT_GOOGLE_RESPONSE_INVALID']) test(`a temporary Google failure explains a new explicit request without reconnecting or replaying: ${error}`, async () => {
+  const c = client(); c.state.turns = [{ seq: 1, text: '메일을 확인해줘.', state: 'failed', error }]; await c.refresh();
+  const status = c.get('messages').children[0].children[0].children[1];
+  assert.match(status.textContent, /Google/u); assert.match(status.textContent, /잠시 후 새로/u); assert.match(status.textContent, /자동으로 다시 실행하지 않았어요/u);
+  assert.doesNotMatch(status.textContent, /CONTACT_|다시 연결/u);
+  assert.equal(status.children.some(button => button.textContent === 'Google 연결 설정'), false);
+  assert.equal(c.calls.filter(call => call.path !== '/api/state').length, 0);
+});
+
+test('a Google response size failure offers a narrower request or different material without suggesting a blind retry', async () => {
+  const c = client(); c.state.turns = [{ seq: 1, text: '메일을 확인해줘.', state: 'failed', error: 'CONTACT_GOOGLE_RESPONSE_LIMIT' }]; await c.refresh();
+  const status = c.get('messages').children[0].children[0].children[1];
+  assert.match(status.textContent, /Google.*너무 커/u); assert.match(status.textContent, /내용을 좁히거나 다른 자료/u);
+  assert.match(status.textContent, /자동으로 다시 실행하지 않았어요/u); assert.doesNotMatch(status.textContent, /CONTACT_|잠시 후|다시 연결/u);
+  assert.equal(status.children.some(button => button.textContent === 'Google 연결 설정'), false);
+  assert.equal(c.calls.filter(call => call.path !== '/api/state').length, 0);
+});
+
+test('an unknown Google failure remains generic without exposing a diagnostic or offering account recovery', async () => {
+  const c = client(); c.state.turns = [{ seq: 1, text: '메일을 확인해줘.', state: 'failed', error: 'CONTACT_GOOGLE_UNKNOWN_FAILURE' }]; await c.refresh();
+  const status = c.get('messages').children[0].children[0].children[1];
+  assert.equal(status.textContent, '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.');
+  assert.equal(status.children.some(button => button.textContent === 'Google 연결 설정'), false);
+  assert.doesNotMatch(status.textContent, /CONTACT_|UNKNOWN/u);
 });
 
 test('duplicate form submission during admission cannot overlap or steal the next draft', async () => {

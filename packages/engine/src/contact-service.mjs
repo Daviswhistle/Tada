@@ -4,11 +4,12 @@ import { DocumentSources } from './document-sources.mjs';
 import { ConversationAssistant } from './conversation.ts';
 import { ReviewSources } from './review-sources.mjs';
 import { FollowupSources } from './followup-sources.mjs';
+import { GoogleSources } from './google-sources.mjs';
 import { followupTimezone } from './followup-contract.mjs';
 
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
-  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone;
+  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null;
   constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone } = {}) {
     super();
     this.#store = store; this.#model = model; this.#sources = sources; this.#timezone = followupTimezone(timezone);
@@ -16,7 +17,14 @@ export class ContactService extends EventEmitter {
   start() {
     if (!this.#timer && !this.#stopped && this.#store.contactVersion >= 3) {
       this.#timer = setInterval(() => {
-        try { if (this.tickFollowups()) { this.emit('change'); this.start(); } }
+        try {
+          if (this.#active && !this.#active.abort.signal.aborted) {
+            try { this.#store.assertDevice(this.#active.device); }
+            catch { this.#active.abort.abort(); this.#google?.deviceRevoked(this.#active.device); }
+          }
+          this.#google?.sweepAuthority();
+          if (this.tickFollowups()) { this.emit('change'); this.start(); }
+        }
         catch (error) { this.#stopped = true; clearInterval(this.#timer); this.#active?.abort.abort(); this.emit('fault', safeCode(error)); }
       }, 1000);
       this.#timer.unref();
@@ -34,6 +42,7 @@ export class ContactService extends EventEmitter {
   submit(device, requestId, text) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
     const accepted = this.#store.submit(device, requestId, text);
+    if (!accepted.replay && this.#active && this.#store.proactiveForTurn(this.#active.seq)) this.#active.abort.abort();
     this.emit('change'); this.start();
     return accepted;
   }
@@ -44,6 +53,7 @@ export class ContactService extends EventEmitter {
     return changed;
   }
   revoke(device) {
+    this.#google?.deviceRevoked(device);
     this.#store.revoke(device);
     this.#abortStale();
     if (this.#active?.device === device) this.#active.abort.abort();
@@ -54,27 +64,31 @@ export class ContactService extends EventEmitter {
       const job = this.#store.claim();
       if (!job) break;
       const abort = new AbortController();
-      this.#active = { seq: job.seq, device: job.device, abort };
+      this.#active = { seq: job.seq, device: job.device, abort, google: null };
       this.emit('change');
       try {
+        const proactive = this.#store.proactiveForTurn(job.seq);
+        const review = this.#store.reviewForTurn(job.seq);
+        if (review && !this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
+        // Local review grants are deliberately composed without Google. Normal
+        // turns and the separately opted-in daily suggestion path may use it.
+        const google = review || !this.#google ? null : new GoogleSources(this.#sources, this.#store, this.#google, job);
+        this.#active.google = google;
+        const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
+          : this.#store.contactVersion >= 3
+          ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : (google ?? this.#sources);
+        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job);
         const metered = { chat: async (messages, tools, signal) => {
-          signal.throwIfAborted();
+          signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
           const id = this.#store.reserve(job.seq);
           let response;
           try { response = await this.#model.chat(messages, tools, signal); }
           catch (error) { this.#store.observe(id, null); throw error; }
           this.#store.observe(id, response); // before discarding any late result
-          signal.throwIfAborted();
+          signal.throwIfAborted(); sources.assertCurrent?.(signal);
           return response;
         } };
         if (typeof this.#model.contextBytes === 'function') metered.contextBytes = (messages, tools) => this.#model.contextBytes(messages, tools);
-        const proactive = this.#store.proactiveForTurn(job.seq);
-        const review = this.#store.reviewForTurn(job.seq);
-        if (review && !this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
-        const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
-          : this.#store.contactVersion >= 3
-          ? new FollowupSources(this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : this.#sources;
-        const sources = proactive ? new ProactiveSources(this.#store, job) : review ? base : new DocumentSources(base, this.#store, job);
         const assistant = new ConversationAssistant(metered, sources);
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
@@ -82,17 +96,23 @@ export class ContactService extends EventEmitter {
           if (stopped.origin !== 'proactive') assistant.noteStopped(stopped.text, stopped.state);
         }
         const answer = await assistant.ask(job.text, abort.signal);
-        abort.signal.throwIfAborted();
+        abort.signal.throwIfAborted(); sources.assertCurrent?.(abort.signal);
         const proposals = !proactive && base instanceof FollowupSources ? base.proposals() : [];
         const document = !answer.refused && sources instanceof DocumentSources ? sources.prepared() : null;
         const checkpoint = assistant.checkpoint();
         // The full document stays in the encrypted answer. Persist a compact
         // receipt in model context; read_document retrieves it when needed.
+        const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events']);
         for (const message of checkpoint.history) {
           if (message.role === 'tool' && message.tool_name === 'read_document') {
             const newline = message.content.indexOf('\n');
             const result = JSON.parse(newline < 0 ? message.content : message.content.slice(0, newline));
             if (newline >= 0 || typeof result.content === 'string') { delete result.content; message.content = JSON.stringify({ ...result, note: 'Read again for the full document.' }); }
+          }
+          if (message.role === 'tool' && privateGoogleTools.has(message.tool_name)) {
+            // Mail/calendar bodies and summaries are transient model input. The
+            // final answer and compact evidence receipt remain in encrypted history.
+            message.content = JSON.stringify({ note: 'Google account content was not retained in the checkpoint. Re-read current account data when needed.' });
           }
         }
         if (document) {
@@ -110,6 +130,7 @@ export class ContactService extends EventEmitter {
             else last.content = answer.text;
           }
         }
+        sources.assertCurrent?.(abort.signal);
         this.#store.finish(job.seq, answer, checkpoint, proposals, document);
       } catch (error) {
         this.#store.fail(job.seq, safeCode(error), this.#stopped ? 'interrupted' : 'failed');
@@ -123,6 +144,26 @@ export class ContactService extends EventEmitter {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     const result = this.#store.configureProactive(device, enabled, consent, this.#timezone);
     this.#abortStale(); this.emit('change'); this.start(); return result;
+  }
+  attachGoogle(connection) {
+    if (!connection || typeof connection.connect !== 'function' || typeof connection.status !== 'function' || this.#google) throw Error('CONTACT_GOOGLE_SETUP_INVALID');
+    this.#google = connection;
+    connection.on('change', change => {
+      if (change?.authorityChanged && this.#active?.google) this.#active.abort.abort();
+      this.emit('change');
+    });
+  }
+  googleStatus() { return this.#google?.status() ?? { available: false, configured: false, connected: false, pending: false, state: 'unavailable', account: null, last_checked: null, error: null, last_disconnect: null }; }
+  connectGoogle(device, consent) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
+    return this.#google.connect(device, consent);
+  }
+  async disconnectGoogle(device) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
+    const result = await this.#google.disconnect(device);
+    this.emit('change'); return result;
   }
   confirmFollowup(device, id, decision) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
@@ -146,7 +187,7 @@ export class ContactService extends EventEmitter {
     if (this.#stopped || this.#store.contactVersion < 3) return 0;
     const queued = this.localReviews ? this.#store.reviewTick(now) : 0;
     this.#abortStale();
-    return queued + this.#store.followupTick(now) + this.#store.proactiveTick(now);
+    return queued + this.#store.followupTick(now) + this.#store.proactiveTick(now, this.#google?.status().connected === true);
   }
   get localReviews() { return !this.#model.identity || this.#model.identity.provider === 'ollama-local'; }
   get providerStatus() {
@@ -159,6 +200,7 @@ export class ContactService extends EventEmitter {
   async close() {
     this.#stopped = true;
     clearInterval(this.#timer);
+    this.#google?.close();
     this.#active?.abort.abort();
     await this.#drain;
   }

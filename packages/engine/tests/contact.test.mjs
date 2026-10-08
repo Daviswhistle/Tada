@@ -222,8 +222,11 @@ test('second live store cannot reclaim ownership and a crashed process releases 
     assert.throws(() => new ContactStore({ directory: env.directory, passphrase, route }), /CONTACT_ALREADY_OWNED/);
     env.store.close();
     const module = new URL('../src/contact-store.mjs', import.meta.url).href;
+    // A live process is not itself a live store. Keep the owner reachable and
+    // exercised so SQLite finalization cannot release an otherwise unused lock.
     const child = spawn(process.execPath, ['--input-type=module', '-e', `import {ContactStore} from ${JSON.stringify(module)};
-      new ContactStore(${JSON.stringify({ directory: env.directory, passphrase, route })}); console.log('locked'); setInterval(()=>{},1000);`], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const store = new ContactStore(${JSON.stringify({ directory: env.directory, passphrase, route })});
+      console.log('locked'); setInterval(()=>{ store.page(); },1000);`], { stdio: ['ignore', 'pipe', 'pipe'] });
     const exit = once(child, 'exit');
     try {
       await Promise.race([once(child.stdout, 'data'), new Promise((_, reject) => setTimeout(() => reject(Error('CHILD_START_TIMEOUT')), 10000).unref())]);

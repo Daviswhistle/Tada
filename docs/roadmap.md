@@ -16,7 +16,7 @@ The user explicitly rejected a developer-operated product. A browser-first setup
 
 ## Proactive and phone priority — 2026-10-08
 
-The user requires unsolicited useful proposals and phone contact. The [v5 slice](proactive-and-mobile.md) connects standing daily suggestions from existing conversation/work/documents and browser-based Telegram setup. Live usefulness, physical-phone delivery and an always-on operating host remain acceptance gates; the local tests do not close them. Email/calendar/source observation and broader execution remain on the same assistant path.
+The user requires unsolicited useful proposals and phone contact. The [v5 slice](proactive-and-mobile.md) connects standing daily suggestions and browser-based Telegram setup. The same contact path now supports a [bounded Google read-only connection](google-connection.md) for Gmail and the primary calendar, including daily proactive observation after the separate proactive setting is enabled. Live usefulness, real Google/phone account behavior and an always-on operating host remain acceptance gates; local tests do not close them. Broader source discovery and execution remain on the same assistant path.
 
 ## Current execution slice — 2026-10-08
 

@@ -11,6 +11,8 @@ import { ContactService } from './contact-service.mjs';
 import { serveContact, validateContactAddress } from './contact-http.mjs';
 import { followupTimezone } from './followup-contract.mjs';
 import { contactStorageKey } from './contact-key.mjs';
+import { GoogleConnection } from './google-connection.mjs';
+import { openSystemBrowser } from './system-browser.mjs';
 
 export const HELP = `Tada contact host — one continuing conversation across browsers and optional private messaging
 
@@ -52,7 +54,8 @@ A paired browser can converse, see accepted requests/results and cancel a reques
 Browser disconnect does not cancel accepted work. Host interruption is recorded;
 an in-flight model call is not automatically replayed after restart.
 
-Current work: conversation and approved local text research. Optional Telegram
+Current work: conversation, approved local text research, and read-only Google
+Gmail/calendar when the host OAuth setup is configured. Optional Telegram
 private chat uses this same history and delivers results with the browser closed.
 The bot token is entered here, hidden; a linking attempt requires local owner
 approval. Telegram processes these chat messages and answers; this is not a
@@ -69,8 +72,9 @@ review, not a new allowance). /review-cancel COMMITMENT_ID VERSION cancels it.
 No implicit action is authorized by a reminder. Tasks changed/cancelled or more
 than 24 hours past their appointment before execution do not run. Unknown or
 interrupted work is not retried. Waiting records do not monitor third-party replies.
-Voice, mail/calendar, arbitrary actions, recurring jobs and automatic reply watching
-remain unimplemented. Closed-tab results remain in the shared conversation. The host must
+Voice, mail/calendar writes, arbitrary actions, recurring jobs and automatic reply watching
+remain unimplemented. Read-only Google access is available when the host's OAuth setup is configured
+and the owner connects an account in Settings. Closed-tab results remain in the shared conversation. The host must
 be running and reachable; sleep/power loss is not always-on service availability.
 The inherited preview limits remain 64 model requests per journal and 14 KiB model
 context. No automatic history deletion, reset, hidden compaction or budget refill.
@@ -203,6 +207,9 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone });
+    const google = new GoogleConnection({ store, clientId: process.env.TADA_GOOGLE_OAUTH_CLIENT_ID ?? '',
+      clientSecret: process.env.TADA_GOOGLE_OAUTH_CLIENT_SECRET ?? '', openBrowser: openSystemBrowser });
+    service.attachGoogle(google);
     if (options.upgrade || ui?.upgrade === true) {
       const messagingBackup = await store.upgradeMessaging();
       const followupBackup = await store.upgradeFollowups();

@@ -19,6 +19,9 @@ export class DocumentSources {
   }
   get definitions() { return [...this.#base.definitions, ...structuredClone(DOCUMENT_TOOLS)]; }
   get hostContext() { return this.#base.hostContext ?? ''; }
+  get verificationKind() { return this.#base.verificationKind; }
+  isEvidenceRead(name) { return this.#base.isEvidenceRead?.(name) === true; }
+  assertCurrent(signal) { signal?.throwIfAborted(); this.#base.assertCurrent?.(signal); signal?.throwIfAborted(); }
   validate(name, args) {
     if (!DOCUMENT_TOOLS.some(t => t.function.name === name)) return this.#base.validate(name, args);
     if (!args || typeof args !== 'object' || Array.isArray(args)) return false;
@@ -29,7 +32,7 @@ export class DocumentSources {
       && typeof args.title === 'string' && args.title.trim().length > 0 && args.title.length <= 120
       && !/[\u0000-\u001f\u007f]/u.test(args.title) && ['markdown', 'text'].includes(args.format);
   }
-  async execute(name, args, signal) {
+  async execute(name, args, signal, budget) {
     signal.throwIfAborted(); this.#store.assertTurnAuthority(this.#job.seq);
     if (!this.validate(name, args)) throw Error('CONTACT_DOCUMENT_INVALID');
     if (name === 'list_documents') return this.#store.documentPage(args.before);
@@ -37,11 +40,13 @@ export class DocumentSources {
       const doc = this.#store.document(args.id); if (!doc) throw Error('CONTACT_DOCUMENT_NOT_FOUND');
       const { id, root, based_on, title, format, revision, content, sources } = doc; return { id, root, based_on, title, format, revision, content, sources };
     }
-    if (name !== 'prepare_document') return this.#base.execute(name, args, signal);
+    if (name !== 'prepare_document') return this.#base.execute(name, args, signal, budget);
     const document = this.#store.prepareDocument(this.#job.seq, args);
     if (this.#prepared && Object.keys(document).some(k => document[k] !== this.#prepared[k])) throw Error('CONTACT_DOCUMENT_ALREADY_PREPARED');
+    const result = { id: document.id, root: document.root, based_on: document.based_on, revision: document.revision, status: 'prepared_for_final_answer', saved: false };
+    if (budget && !budget.fits(result)) throw Error('ASSISTANT_SOURCE_LIMIT');
     this.#prepared = document;
-    return { id: document.id, root: document.root, based_on: document.based_on, revision: document.revision, status: 'prepared_for_final_answer', saved: false };
+    return result;
   }
   verify(evidence, signal) { return this.#base.verify(evidence, signal); }
   prepared() { return this.#prepared ? structuredClone(this.#prepared) : null; }

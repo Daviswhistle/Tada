@@ -6,6 +6,7 @@ import { validateFollowupProposal, followupTimezone, followupInstant, isFollowup
 import { randomBytes, randomUUID, createHash, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
 import { mkdirSync, lstatSync, existsSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
+import { GOOGLE_SCOPES, validGoogleCredential, validGoogleDisconnect } from './google-contract.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const counter = value => Number.isSafeInteger(value) && value >= 0;
@@ -229,6 +230,8 @@ export class ContactStore {
   revoke(id) {
     this.#tx(() => {
       this.#db.prepare('UPDATE devices SET revoked=1 WHERE id=?').run(id);
+      const google = this.#setting('google');
+      if (google?.device === id) this.#saveSetting('google', null);
       this.#db.prepare("UPDATE turns SET state='cancelled',error='DEVICE_REVOKED' WHERE device=? AND state IN('queued','running')").run(id);
       if (this.#version >= 3) {
         this.#db.prepare("UPDATE followup_proposals SET state='rejected' WHERE device=? AND state='pending'").run(id);
@@ -535,7 +538,17 @@ export class ContactStore {
           text = `Tada · 요청 ${row.seq}\n${turn.answer.text}`;
           if (turn.answer.notice) text += '\n\n' + turn.answer.notice;
           if (turn.answer.sources.length) text += '\n\n자료 식별자·관측 시각은 같은 연락 화면의 참고 자료에서 확인할 수 있어요.';
-        } else text = `Tada · 요청 ${row.seq}\n${row.state === 'cancelled' ? '요청을 취소했어요.' : '이번 답변을 완료하지 못했어요. 앞선 대화는 보존했어요. 새 메시지로 이어서 이야기할 수 있어요.'}`;
+        } else {
+          let failure = '이번 답변을 완료하지 못했어요. 앞선 대화는 보존했어요. 새 메시지로 이어서 이야기할 수 있어요.';
+          if (['CONTACT_GOOGLE_RECONNECT_REQUIRED', 'CONTACT_GOOGLE_SCOPE_DENIED', 'CONTACT_GOOGLE_PERMISSION_DENIED'].includes(row.error)) {
+            failure = 'Google 연결이나 읽기 권한을 다시 확인해야 해요. 컴퓨터의 Tada 설정에서 Gmail과 일정 연결을 확인하고 Google을 다시 연결한 뒤 말씀해 주세요. 앞선 대화는 보존했고 자동으로 다시 실행하지 않았어요.';
+          } else if (row.error === 'CONTACT_GOOGLE_RESPONSE_LIMIT') {
+            failure = 'Google에서 받은 자료가 너무 커 확인을 마치지 못했어요. 요청 내용을 좁히거나 다른 자료로 새 메시지를 보내 주세요. 앞선 대화는 보존했고 자동으로 다시 실행하지 않았어요.';
+          } else if (['CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE', 'CONTACT_GOOGLE_RESPONSE_INVALID'].includes(row.error)) {
+            failure = 'Google 정보를 지금 확인하지 못해 답변을 멈췄어요. 잠시 후 새 메시지로 말씀해 주세요. 앞선 대화는 보존했고 자동으로 다시 실행하지 않았어요.';
+          }
+          text = `Tada · 요청 ${row.seq}\n${row.state === 'cancelled' ? '요청을 취소했어요.' : failure}`;
+        }
         this.#telegramNote(key, binding.device, row.seq, text);
         if (fromTelegram && this.#version >= 3) {
           for (const proposal of this.#db.prepare("SELECT * FROM followup_proposals WHERE turn=? AND state='pending'").all(row.seq)) {
@@ -908,6 +921,8 @@ export class ContactStore {
     const value = row ? this.#open(`setting:${name}`, row.payload) : null;
     if (value !== null) {
       const valid = name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
+        : name === 'google' ? validGoogleCredential(value)
+        : name === 'google_disconnect' ? validGoogleDisconnect(value)
         : name === 'proactive' && Object.keys(value).sort().join(',') === 'device,enabled,epoch,last_fingerprint,next_at,timezone,version'
           && value.version === 1 && typeof value.enabled === 'boolean' && isFollowupId(value.epoch) && isFollowupId(value.device)
           && counter(value.next_at) && typeof value.timezone === 'string'
@@ -923,6 +938,84 @@ export class ContactStore {
       .run(name, this.#seal(`setting:${name}`, value));
   }
   assertDevice(device) { this.#check(); this.#device(device); }
+  googleCredential() { const value = this.#setting('google'); return value ? structuredClone(value) : null; }
+  googleDisconnectStatus() {
+    const value = this.#setting('google_disconnect');
+    return value ? { local_removed: true, remote_revoked: value.remote_revoked } : null;
+  }
+  noteGoogleDisconnect(epoch, remoteRevoked) {
+    if (!validGoogleDisconnect({ version: 1, epoch, remote_revoked: remoteRevoked })) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
+    return this.#tx(() => {
+      const value = this.#setting('google_disconnect');
+      if (!value || value.epoch !== epoch || this.#setting('google')) return false;
+      this.#saveSetting('google_disconnect', { ...value, remote_revoked: remoteRevoked });
+      return true;
+    });
+  }
+  googleEpoch() { return this.#setting('google')?.epoch ?? null; }
+  googleConnected() {
+    const value = this.#setting('google');
+    if (!value || value.reconnect_required || value.scopes.length !== GOOGLE_SCOPES.length) return false;
+    try { this.#device(value.device); return true; } catch { return false; }
+  }
+  assertGoogleAuthority(device, epoch) {
+    this.#check(); this.#device(device);
+    const value = this.#setting('google');
+    if (!value || value.epoch !== epoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+    this.#device(value.device);
+    if (value.reconnect_required) throw Error('CONTACT_GOOGLE_RECONNECT_REQUIRED');
+    if (value.scopes.length !== GOOGLE_SCOPES.length || [...value.scopes].sort().join('\n') !== [...GOOGLE_SCOPES].sort().join('\n')) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
+    return structuredClone(value);
+  }
+  saveGoogleCredential(device, value, expectedEpoch) {
+    if (!validGoogleCredential(value) || value.device !== device || (expectedEpoch !== null && typeof expectedEpoch !== 'string')) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
+    return this.#tx(() => {
+      this.#device(device);
+      const old = this.#setting('google');
+      if ((old?.epoch ?? null) !== expectedEpoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+      this.#saveSetting('google', structuredClone(value));
+      this.#saveSetting('google_disconnect', null);
+      return { connected: true, account: value.email };
+    });
+  }
+  clearGoogleCredential(device) {
+    return this.#tx(() => {
+      this.#device(device);
+      const old = this.#setting('google');
+      this.#saveSetting('google', null);
+      if (old) this.#saveSetting('google_disconnect', { version: 1, epoch: old.epoch, remote_revoked: false });
+      return old ? structuredClone(old) : null;
+    });
+  }
+  rotateGoogleRefresh(epoch, expected, refreshToken) {
+    return this.#tx(() => {
+      const value = this.#setting('google');
+      if (!value || value.epoch !== epoch || value.refresh_token !== expected) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+      const next = { ...value, refresh_token: refreshToken };
+      if (!validGoogleCredential(next)) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
+      this.#saveSetting('google', next);
+    });
+  }
+  noteGoogleCheck(epoch, checkedAt) {
+    return this.#tx(() => {
+      const value = this.#setting('google');
+      if (!value || value.epoch !== epoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+      const next = { ...value, last_checked: checkedAt, last_error: null, reconnect_required: false };
+      if (!validGoogleCredential(next)) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
+      this.#saveSetting('google', next);
+    });
+  }
+  noteGoogleError(epoch, error, checkedAt, reconnectRequired = false) {
+    if (typeof reconnectRequired !== 'boolean' || !['authorization_denied', 'temporarily_unavailable', 'permission_denied', 'reconnect_required'].includes(error)) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
+    return this.#tx(() => {
+      const value = this.#setting('google');
+      if (!value || value.epoch !== epoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+      const next = { ...value, last_checked: checkedAt, last_error: error,
+        reconnect_required: reconnectRequired || error === 'reconnect_required' || value.reconnect_required };
+      if (!validGoogleCredential(next)) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
+      this.#saveSetting('google', next);
+    });
+  }
   mobileCredential() { return this.#setting('mobile'); }
   saveMobileCredential(device, token) {
     this.#tx(() => {
@@ -978,9 +1071,10 @@ export class ContactStore {
   #proactiveFingerprint() {
     const recent = this.#db.prepare('SELECT max(seq) seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs)').get().seq;
     const work = this.#db.prepare("SELECT f.id,f.version,f.state,d.revoked,d.expires FROM followups f JOIN devices d ON d.id=f.device ORDER BY f.id").all();
-    return hash(JSON.stringify([recent, work]));
+    const google = this.#setting('google');
+    return hash(JSON.stringify([recent, work, google ? { epoch: google.epoch, reconnect_required: google.reconnect_required } : null]));
   }
-  proactiveTick(now = Date.now()) {
+  proactiveTick(now = Date.now(), googleAvailable = false) {
     if (this.#version < 5) return 0;
     return this.#tx(() => {
       this.#sweepProactive(now);
@@ -990,11 +1084,12 @@ export class ContactStore {
       if (hour < 9 || hour >= 21) return 0;
       if (this.#db.prepare("SELECT seq FROM turns WHERE state IN('queued','running')").get()) return 0;
       const recent = this.#db.prepare('SELECT max(seq) seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs)').get().seq;
-      if (!recent || this.usage().requests >= 60 || this.#db.prepare('SELECT count(*) n FROM turns').get().n >= 1000) return 0;
+      const external = googleAvailable && this.googleConnected();
+      if ((!recent && !external) || this.usage().requests >= 60 || this.#db.prepare('SELECT count(*) n FROM turns').get().n >= 1000) return 0;
       const fingerprint = this.#proactiveFingerprint();
-      if (fingerprint === grant.last_fingerprint) return 0;
+      if (!external && fingerprint === grant.last_fingerprint) return 0;
       const requestId = `proactive_${randomUUID()}`;
-      const text = '예약된 먼저 챙겨보기입니다(사람이 보낸 새 메시지가 아님). 최근 대화와 저장된 일을 살펴 새로 도움이 될 일을 제안하세요.';
+      const text = '예약된 먼저 챙겨보기입니다(사람이 보낸 새 메시지가 아님). 최근 대화와 저장된 일을 살펴 새로 도움이 될 일을 제안하세요. Google 계정이 연결되어 있고 Tada 설정에서 먼저 챙겨보기를 켠 경우에만 최근 받은편지함과 앞으로 7일의 기본 캘린더를 함께 확인할 수 있습니다.';
       const result = this.#db.prepare("INSERT INTO turns(request_id,device,state,payload,created) VALUES(?,?,'queued',?,?)")
         .run(requestId, grant.device, this.#seal(`turn:${requestId}`, { text }), now);
       const seq = Number(result.lastInsertRowid);

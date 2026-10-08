@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs';
-import { homedir, platform, release } from 'node:os';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFile } from 'node:child_process';
 import { main, contactOptions } from './contact-cli.mjs';
 import { acquireAppInstance } from './app-instance.mjs';
 import { serveSetup } from './app-setup.mjs';
+import { openSystemBrowser } from './system-browser.mjs';
 
 export function appArguments(args) {
   if (args.includes('--help') || args.includes('-h')) return args;
@@ -18,13 +18,7 @@ export function appArguments(args) {
 }
 export async function openAppBrowser(url) {
   if (!/^http:\/\/127\.0\.0\.1:[0-9]+\/#setup=[A-Za-z0-9_-]{43}$/u.test(url)) throw Error('INVALID_APP_URL');
-  let executable, args;
-  if (platform() === 'win32' || (platform() === 'linux' && /microsoft/iu.test(release()))) {
-    executable = platform() === 'win32' ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
-    // The URL is generated locally and validated above; no shell/user text runs.
-    args = ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(`Start-Process '${url}'`, 'utf16le').toString('base64')];
-  } else { executable = platform() === 'darwin' ? 'open' : 'xdg-open'; args = [url]; }
-  return new Promise(resolve => execFile(executable, args, { timeout: 10000, windowsHide: true }, error => resolve(!error)));
+  return openSystemBrowser(url);
 }
 export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance } = {}) {
   if (args.includes('--help') || args.includes('-h')) return main(['--help']);

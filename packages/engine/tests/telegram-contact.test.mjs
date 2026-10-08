@@ -91,6 +91,55 @@ function deliverAll(store) {
   }
   return out;
 }
+
+test('persisted Google connection failures guide Telegram back to computer settings instead of suggesting a blind retry', () => {
+  const env = setup();
+  try {
+    const device = directBind(env.store); deliverAll(env.store);
+    for (const error of ['CONTACT_GOOGLE_RECONNECT_REQUIRED', 'CONTACT_GOOGLE_SCOPE_DENIED', 'CONTACT_GOOGLE_PERMISSION_DENIED']) {
+      const { seq } = env.store.submit(device, randomUUID(), '최근 메일을 확인해줘.');
+      assert.equal(env.store.claim().seq, seq); env.store.fail(seq, error);
+    }
+    env.reopen(); const deliveries = deliverAll(env.store); assert.equal(deliveries.length, 3);
+    for (const delivery of deliveries) {
+      assert.match(delivery.text, /컴퓨터의 Tada 설정/u); assert.match(delivery.text, /Google을 다시 연결한 뒤/u);
+      assert.match(delivery.text, /앞선 대화는 보존/u); assert.match(delivery.text, /자동으로 다시 실행하지 않았어요/u);
+      assert.doesNotMatch(delivery.text, /CONTACT_|새 메시지로 이어서/u);
+    }
+    assert.ok(env.store.page().turns.every(turn => turn.state === 'failed'));
+    assert.equal(deliverAll(env.store).length, 0);
+  } finally { env.close(); }
+});
+
+test('temporary Google failures offer a later new Telegram message while unknown and other-provider errors stay generic', () => {
+  const env = setup();
+  try {
+    const device = directBind(env.store); deliverAll(env.store);
+    const errors = ['CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE', 'CONTACT_GOOGLE_RESPONSE_INVALID', 'CONTACT_GOOGLE_RESPONSE_LIMIT',
+      'CONTACT_GOOGLE_UNKNOWN_FAILURE', 'CHATGPT_SIGN_IN_REQUIRED'];
+    const cases = [];
+    for (const error of errors) {
+      const { seq } = env.store.submit(device, randomUUID(), '메일을 확인해줘.');
+      assert.equal(env.store.claim().seq, seq); env.store.fail(seq, error); cases.push({ seq, error });
+    }
+    const deliveries = deliverAll(env.store); assert.equal(deliveries.length, errors.length);
+    for (const { seq, error } of cases) {
+      const delivery = deliveries.find(item => item.text.startsWith(`Tada · 요청 ${seq}\n`)); assert.ok(delivery);
+      if (error === 'CONTACT_GOOGLE_RESPONSE_LIMIT') {
+        assert.match(delivery.text, /Google.*너무 커/u); assert.match(delivery.text, /내용을 좁히거나 다른 자료/u);
+        assert.match(delivery.text, /자동으로 다시 실행하지 않았어요/u); assert.doesNotMatch(delivery.text, /CONTACT_|잠시 후|다시 연결/u);
+      } else if (error === 'CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE' || error === 'CONTACT_GOOGLE_RESPONSE_INVALID') {
+        assert.match(delivery.text, /Google 정보를 지금 확인하지 못해/u); assert.match(delivery.text, /잠시 후 새 메시지/u);
+        assert.match(delivery.text, /자동으로 다시 실행하지 않았어요/u); assert.doesNotMatch(delivery.text, /CONTACT_|다시 연결/u);
+      } else {
+        assert.match(delivery.text, /이번 답변을 완료하지 못했어요/u); assert.match(delivery.text, /새 메시지로 이어서/u);
+        assert.doesNotMatch(delivery.text, /CONTACT_|CHATGPT_|Google/u);
+      }
+    }
+    assert.equal(deliverAll(env.store).length, 0);
+  } finally { env.close(); }
+});
+
 async function browser(store, service) {
   const origin = 'http://127.0.0.1:9322';
   const host = await serveContact({ store, service, origin, port: 0 });

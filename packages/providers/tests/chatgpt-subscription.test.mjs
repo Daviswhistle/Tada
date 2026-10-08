@@ -199,8 +199,10 @@ for (const body of ['x'.repeat(4096), '"x"'.repeat(1300)]) test(`subscription do
     [call('prepare_document', { title: 'Short note', format: 'text', based_on: 1 })], [message('Shortened note')],
   ];
   const f = await serverFixture((_body, res) => { const output = steps.shift(); assert.ok(output); stream(res, [completed(output)]); });
-  const measured = [], originalSize = f.provider.contextBytes.bind(f.provider);
-  f.provider.contextBytes = (messages, tools) => { const size = originalSize(messages, tools); measured.push(size); return size; };
+  const measured = [], originalSize = f.provider.contextBytes.bind(f.provider), originalChat = f.provider.chat.bind(f.provider);
+  // Source admission also measures prospective messages without inference.
+  // Compare only actual chat requests with the bytes sent to the HTTP fixture.
+  f.provider.chat = (messages, tools, signal) => { measured.push(originalSize(messages, tools)); return originalChat(messages, tools, signal); };
   try {
     store = new ContactStore({ directory: join(root, 'journal'), passphrase: 'synthetic document subscription passphrase', route: contactRoute({ fixture: 'subscription-documents' }), initialize: true, reviews: true });
     const sources = { definitions: discoveryTools, validate: validCall, execute: async () => { throw Error('NO_SOURCE_READ_EXPECTED'); }, verify: async () => true };
