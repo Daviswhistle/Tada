@@ -125,6 +125,7 @@ test('running service polls without an open browser and handles local-only compl
     e.store.configureProactive(e.device, false, null, zone); e.store.configureProactive(e.device, true, ATTENTION_CONSENT, zone, Date.now());
     service = new ContactService(e.store, { chat: () => { throw Error('MUST_NOT_CALL_MODEL'); } }, sources, { timezone: zone });
     await service.checkAttention(); assert.ok(e.store.proactiveStatus().attention.observed_at);
+    assert.equal(e.store.attentionStatus().google_observed, false);
     await service.checkAttention(Date.now() + ATTENTION_INTERVAL + 1);
     assert.equal(e.store.usage().requests, 0);
   } finally { await service?.close(); e.close(); }
@@ -390,5 +391,17 @@ test('a delivered calendar occurrence is not sent again after a title edit and r
     e.store.finishAttention(e.store.claimAttention(later), view(later, [{ ...event, title: 'Renamed' }]), later);
     e.store.telegramQueueResults(); assert.equal(e.store.telegramClaimDelivery(), null);
     assert.equal(e.store.page().turns.filter(t => t.answer?.calendar_reminder).length, 1);
+  } finally { e.close(); }
+});
+
+test('Google observation status belongs to the currently connected account epoch', () => {
+  const e = env();
+  try {
+    enable(e); e.store.finishAttention(e.store.claimAttention(now), view(now), now); settle(e.store);
+    assert.equal(e.store.attentionStatus().google_observed, true);
+    const previous = e.store.googleCredential(); e.store.clearGoogleCredential(e.device);
+    assert.equal(e.store.attentionStatus().google_observed, false);
+    e.store.saveGoogleCredential(e.device, { ...previous, epoch: randomUUID() }, null);
+    assert.equal(e.store.attentionStatus().google_observed, false);
   } finally { e.close(); }
 });

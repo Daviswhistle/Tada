@@ -374,3 +374,18 @@ test('successful reconnect clears only a transport notice and keeps unrelated re
   c.get('notice').textContent = 'Delivery outcome remains unknown'; await c.refresh();
   assert.equal(c.get('notice').textContent, 'Delivery outcome remains unknown');
 });
+
+test('successful account observation cannot overwrite a failed proactive proposal status', async () => {
+  const c = client(); c.state.proactive = { available: true, enabled: true, mode: 'continuous', timezone: 'Asia/Seoul',
+    last: { state: 'failed', created: Date.parse('2026-10-09T00:05:00Z') },
+    attention: { observed_at: Date.parse('2026-10-09T00:20:00Z'), google_observed: true, error: null } };
+  await c.refresh();
+  assert.match(c.get('proactive-last').textContent, /확인 실패/);
+  assert.match(c.get('attention-last').textContent, /자료 확인 완료/);
+  assert.equal(c.get('attention-last-row').hidden, false);
+  assert.match(c.get('proactive-status').textContent, /제안·알림 처리를 끝내지 못/);
+  c.state.proactive.attention.google_observed = false; await c.refresh();
+  assert.equal(c.get('attention-last-row').hidden, true, 'a local-only observation is not presented as a mailbox/calendar read');
+  c.state.proactive.attention.google_observed = true;
+  c.state.proactive.mode = 'daily'; await c.refresh(); assert.equal(c.get('attention-last-row').hidden, true);
+});

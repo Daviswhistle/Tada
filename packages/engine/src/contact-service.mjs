@@ -9,6 +9,20 @@ import { FollowupSources } from './followup-sources.mjs';
 import { GoogleSources } from './google-sources.mjs';
 import { followupTimezone } from './followup-contract.mjs';
 
+function failureDetails(error) {
+  const code = /^(?:ASSISTANT|CHATGPT|CONTACT|OLLAMA)_[A-Z_]{1,54}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
+  const details = { code };
+  if (code.startsWith('CHATGPT_')) {
+    if (typeof error.code === 'string' && /^[a-z][a-z0-9_]{0,95}$/u.test(error.code)) details.provider_code = error.code;
+    if (Number.isSafeInteger(error.status) && error.status >= 100 && error.status <= 599) details.status = error.status;
+    if (typeof error.param === 'string' && error.param.length <= 100 && /^(?:input|tools|model|reasoning|service_tier|stream|store|scope)(?:\.[a-z_]+|\[[0-9]+\])*$/u.test(error.param)) details.param = error.param;
+    if (['oauth_error', 'error_object', 'detail', 'unrecognized'].includes(error.body_shape)) details.body_shape = error.body_shape;
+    if (['response.failed', 'error'].includes(error.event_type)) details.event_type = error.event_type;
+    if (['server_error', 'invalid_request_error', 'rate_limit_error', 'authentication_error', 'permission_error'].includes(error.error_type)) details.error_type = error.error_type;
+    if (['object', 'absent', 'other'].includes(error.error_shape)) details.error_shape = error.error_shape;
+  }
+  return details;
+}
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
   #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #attention = null; #attentionAbort = null; #wakeRequested = false;
@@ -70,6 +84,7 @@ export class ContactService extends EventEmitter {
       const abort = new AbortController();
       this.#active = { seq: job.seq, device: job.device, abort, google: null };
       this.emit('change');
+      const attemptedTools = []; let providerFailure;
       try {
         const proactive = this.#store.proactiveForTurn(job.seq);
         const review = this.#store.reviewForTurn(job.seq);
@@ -88,7 +103,7 @@ export class ContactService extends EventEmitter {
           const id = this.#store.reserve(job.seq);
           let response;
           try { response = await this.#model.chat(messages, tools, signal); }
-          catch (error) { this.#store.observe(id, null); throw error; }
+          catch (error) { this.#store.observe(id, null); providerFailure = failureDetails(error); throw error; }
           this.#store.observe(id, response); // before discarding any late result
           signal.throwIfAborted(); sources.assertCurrent?.(signal);
           return response;
@@ -98,7 +113,9 @@ export class ContactService extends EventEmitter {
         // Rolling allowance may recover while a provider response is pending.
         // The durable reserve above owns admission at every request, including
         // legacy review/proactive limits; do not freeze that allowance here.
-        const assistant = new ConversationAssistant(metered, sources, undefined, { continuing, requestLimit: continuing ? Number.MAX_SAFE_INTEGER : 64 });
+        const assistant = new ConversationAssistant(metered, sources, event => {
+          if (event.kind === 'tool_call' && typeof event.name === 'string' && /^[a-z_]{1,64}$/u.test(event.name) && attemptedTools.length < 24) attemptedTools.push(event.name);
+        }, { continuing, requestLimit: continuing ? Number.MAX_SAFE_INTEGER : 64 });
         const prior = this.#store.checkpoint();
         assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
         for (const stopped of this.#store.stoppedSince(prior.through, job.seq)) {
@@ -144,6 +161,9 @@ export class ContactService extends EventEmitter {
         this.#store.finish(job.seq, answer, checkpoint, proposals, document);
       } catch (error) {
         this.#store.fail(job.seq, safeCode(error), this.#stopped ? 'interrupted' : 'failed');
+        const details = failureDetails(error);
+        if (providerFailure?.code === details.code) Object.assign(details, providerFailure);
+        this.emit('turn-failed', { turn: job.seq, ...details, attempted_tools: attemptedTools });
       } finally {
         this.#active = null;
         this.emit('change');

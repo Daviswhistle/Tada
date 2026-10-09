@@ -442,8 +442,11 @@ export class ContactStore {
   }
   requestAllowance(seq, now = Date.now()) {
     this.assertTurnAuthority(seq);
-    const run = this.proactiveForTurn(seq);
-    return this.requestRoom(this.reviewForTurn(seq) || run && this.#setting('proactive')?.version !== 2 ? 'legacy' : run ? 'continuous' : 'foreground', now);
+    const run = this.proactiveForTurn(seq), review = this.reviewForTurn(seq);
+    const room = this.requestRoom(review || run && this.#setting('proactive')?.version !== 2 ? 'legacy' : run ? 'continuous' : 'foreground', now);
+    if (!run && !review) return room;
+    const used = this.#db.prepare('SELECT count(*) n FROM requests WHERE turn=?').get(seq).n;
+    return Math.min(room, Math.max(0, (run ? 4 : 8) - used));
   }
 
   finish(seq, answer, checkpoint, proposals = [], document = null) {
@@ -1257,7 +1260,7 @@ export class ContactStore {
   }
   attentionStatus() {
     const value = this.#setting('attention');
-    return value ? { observed_at: value.observed_at || null, error: value.error, checks_today: value.model_day === localDay(Date.now(), this.#setting('proactive').timezone) ? value.model_runs : 0 } : null;
+    return value ? { observed_at: value.observed_at || null, google_observed: !!value.google_epoch && value.google_epoch === this.googleEpoch() && value.observed_at > 0, error: value.error, checks_today: value.model_day === localDay(Date.now(), this.#setting('proactive').timezone) ? value.model_runs : 0 } : null;
   }
   #attentionState(grant) {
     const old = this.#setting('attention');

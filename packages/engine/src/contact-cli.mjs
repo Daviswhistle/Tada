@@ -213,6 +213,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     const portableGoogle = !background || googleClient.clientId === savedGoogleClient.clientId && googleClient.clientSecret === savedGoogleClient.clientSecret;
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone });
+    service.on('turn-failed', details => process.stderr.write(`Tada request failed: ${JSON.stringify(details)}\n`));
     const google = new GoogleConnection({ store, ...googleClient, openBrowser: openSystemBrowser });
     service.attachGoogle(google);
     if (options.upgrade || ui?.upgrade === true) {

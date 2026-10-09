@@ -143,8 +143,13 @@ async function collect(res, signal) {
     if (++events > 4096) throw Error('CHATGPT_RESPONSE_LIMIT');
     let item; try { item = parseUniqueJson(data, 262144); } catch { throw Error('CHATGPT_STREAM_INVALID'); }
     if (item.type === 'response.failed' || item.type === 'error') {
-      const code = item.response?.error?.code ?? item.code;
-      throw providerError(code, 200, item.response?.error?.param ?? item.param);
+      const detail = item.type === 'response.failed' ? item.response?.error : item.error ?? item;
+      const error = providerError(detail?.code, 200, detail?.param);
+      error.event_type = item.type;
+      // Only fixed structural diagnostics survive; server messages can echo input.
+      if (['server_error', 'invalid_request_error', 'rate_limit_error', 'authentication_error', 'permission_error'].includes(detail?.type)) error.error_type = detail.type;
+      error.error_shape = detail && typeof detail === 'object' ? 'object' : detail == null ? 'absent' : 'other';
+      throw error;
     }
     if (item.type === 'response.incomplete') throw Error('CHATGPT_INCOMPLETE_TURN');
     if (item.type === 'response.output_item.added' || item.type === 'response.output_item.done') outputItem(item);

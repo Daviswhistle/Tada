@@ -155,7 +155,7 @@ for (const contentType of ['text/event-stream', null]) test(`same contact conver
   let phase = 0;
   const env = await serverFixture((body, res) => {
     assert.equal(body.store, false);
-    assert.ok(body.input[0].content.includes('No automatic source reviews with this provider'));
+    assert.ok(body.input[0].content.includes('Per-task LOCAL FILE reviews are unavailable'));
     assert.equal(body.input[0].content.includes('separately authorize one read-only local review'), false);
     const outputs = body.input.filter(item => item.type === 'function_call_output');
     let output;
@@ -227,6 +227,28 @@ test('temporary usage checks are distinct from quota exhaustion and never auto-r
   const env = await serverFixture((_body, res) => stream(res, [{ type: 'response.failed', response: { error: { code: 'subscription_sharing_usage_unavailable' } } }]));
   try { await assert.rejects(env.provider.chat([{ role: 'user', content: 'fixture' }], [], new AbortController().signal), /CHATGPT_USAGE_UNAVAILABLE/); assert.equal(env.requests.length, 1); }
   finally { await env.close(); }
+});
+
+for (const event of [
+  { type: 'response.failed', response: { error: { code: 'server_error', type: 'server_error', message: 'PRIVATE_FIXTURE_INPUT' } } },
+  { type: 'error', error: { code: 'subscription_sharing_usage_limit_exceeded', type: 'rate_limit_error', param: 'model', message: 'PRIVATE_FIXTURE_INPUT' } },
+  { type: 'error', code: null, type_ignored: 'PRIVATE_FIXTURE_INPUT', message: 'PRIVATE_FIXTURE_INPUT' },
+  { type: 'response.failed' },
+]) test(`stream failure retains bounded structure: ${JSON.stringify(event).slice(0, 90)}`, async () => {
+  const env = await serverFixture((_body, res) => stream(res, [event]));
+  try {
+    await assert.rejects(env.provider.chat([{ role: 'user', content: 'fixture' }], [], new AbortController().signal), error => {
+      const detail = event.response?.error ?? event.error ?? (event.type === 'error' ? event : undefined);
+      assert.equal(error.code, detail?.code ?? undefined);
+      assert.equal(error.param, detail?.param);
+      assert.equal(error.event_type, event.type);
+      assert.equal(error.error_shape, detail ? 'object' : 'absent');
+      assert.equal(error.error_type, ['server_error', 'rate_limit_error'].includes(detail?.type) ? detail.type : undefined);
+      assert.equal(JSON.stringify(error).includes('PRIVATE_FIXTURE_INPUT'), false);
+      return true;
+    });
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
 });
 
 

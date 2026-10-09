@@ -1707,3 +1707,37 @@ for (const cause of ['cancel', 'revoke']) test(`the first refresh caller's ${cau
     assert.equal(fake.counts().refreshCount, 1); assert.equal(connection.status().connected, true);
   } finally { connection.close(); e.close(); await fake.close(); }
 });
+
+for (const mode of ['citation_correction', 'argument_correction', 'missing_calendar']) test(`bounded proactive responses preserve a final conclusion without hiding missing reads: ${mode}`, async () => {
+  const complete = mode !== 'missing_calendar';
+  const e = environment(), fake = await googleServer(), device = e.store.addDevice('Owner');
+  e.store.saveGoogleCredential(device.id, makeCredential(device.id), null);
+  let calls = 0;
+  const model = { async chat(messages, tools) {
+    calls++;
+    assert.match(messages[0].content, new RegExp(`${5 - calls} model responses remaining`));
+    if (calls === 1) return reply('', [callTool('list_followups', { status: 'active', offset: 0 }), callTool('list_recent_emails'), ...(complete ? [callTool('list_upcoming_events')] : [])]);
+    if (calls === 2) return reply('', [callTool('read_email', { id: 'm1' })]);
+    if (calls === 3) return mode === 'argument_correction'
+      ? reply('', [callTool('list_followups', { status: 'active', offset: '0' })])
+      : reply(complete ? '갱신 날짜를 준비 미팅에서 확인하면 좋겠어요.' : 'NO_NEW_SUGGESTION');
+    assert.equal(calls, 4); assert.deepEqual(tools, []);
+    if (mode === 'argument_correction') {
+      const correction = JSON.parse(messages.at(-1).content);
+      assert.equal(correction.error, 'CALL_ARGUMENTS_OR_SOURCE_INVALID');
+      assert.equal(correction.performed, false);
+    }
+    return reply(complete ? '최근 메일의 갱신 날짜를 준비 미팅에서 확인하면 좋겠어요 [S3] [S2].' : 'NO_NEW_SUGGESTION');
+  } };
+  const service = new ContactService(e.store, model, noSources), connection = makeConnection(e.store, service, fake);
+  try {
+    const noon = Date.parse('2026-10-08T03:00:00Z');
+    e.store.configureProactive(device.id, true, 'daily_conversation_suggestions_v1', 'Asia/Seoul', noon);
+    assert.equal(e.store.proactiveTick(noon, true), 1); service.start(); await service.idle();
+    const turn = e.store.page().turns.at(-1);
+    assert.equal(calls, 4); assert.equal(e.store.usage().requests, 4);
+    assert.equal(turn.state, complete ? 'answered' : 'failed');
+    if (complete) { assert.equal(turn.answer.verification, 'cited_sources_rechecked'); assert.equal(turn.answer.sources.length, 2); }
+    else { assert.equal(turn.error, 'ASSISTANT_INCOMPLETE_CHECK'); assert.equal(turn.answer, null); }
+  } finally { await service.close(); connection.close(); e.close(); await fake.close(); }
+});

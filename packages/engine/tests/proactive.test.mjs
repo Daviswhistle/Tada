@@ -8,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { ContactStore, contactRoute } from '../src/contact-store.mjs';
 import { ContactService } from '../src/contact-service.mjs';
 import { ConversationAssistant } from '../src/conversation.ts';
+import { FollowupSources } from '../src/followup-sources.mjs';
 import { ProactiveSources } from '../src/proactive-sources.mjs';
 const noSources = { definitions: [], validate: () => false, execute: async () => { throw Error('NOT_CONNECTED'); }, verify: async () => false };
 const passphrase = 'fixture-only-proactive-password', route = contactRoute({ fixture: 'proactive' });
@@ -228,4 +229,62 @@ test('the quiet marker does not exempt ordinary foreground answers from citation
   const model = { chat: async () => ++calls === 1 ? { ...reply(''), message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'read_file', arguments: {} } }] } } : reply('NO_NEW_SUGGESTION') };
   await assert.rejects(new ConversationAssistant(model, sources).ask('Read the note.'), /UNGROUNDED_ANSWER/);
   assert.equal(calls, 3);
+});
+
+test('proactive remaining responses count uncertain reservations and never create another allowance', () => {
+  const e = env();
+  try {
+    const device = e.store.addDevice('owner'); seed(e.store, device.id);
+    e.store.configureProactive(device.id, true, consent, 'Asia/Seoul', noon); e.store.proactiveTick(noon);
+    const job = e.store.claim();
+    assert.equal(e.store.requestAllowance(job.seq), 4);
+    for (let used = 1; used <= 4; used++) {
+      const reservation = e.store.reserve(job.seq); e.store.observe(reservation, used === 1 ? null : reply('fixture'));
+      assert.equal(e.store.requestAllowance(job.seq), 4 - used);
+    }
+    assert.throws(() => e.store.reserve(job.seq), /PROACTIVE_REQUEST_LIMIT/);
+    assert.equal(e.store.usage().unknown_requests, 1);
+  } finally { e.close(); }
+});
+
+test('foreground answers receive current connected care settings instead of obsolete provider limitations', () => {
+  const e = env();
+  try {
+    const device = e.store.addDevice('owner');
+    e.store.configureProactive(device.id, true, 'connected_attention_v2', 'Asia/Seoul');
+    e.store.submit(device.id, randomUUID(), '자동 확인이 켜져 있는 게 맞아?'); const job = e.store.claim();
+    const base = { ...noSources, definitions: ['list_recent_emails', 'list_upcoming_events'].map(name => ({ function: { name } })) };
+    const sources = new FollowupSources(base, e.store, job, 'Asia/Seoul', Date.now, false);
+    assert.match(sources.hostContext, /Proactive care is ENABLED; mode continuous/);
+    assert.match(sources.hostContext, /permitted mail\/calendar changes.*every 15 minutes/);
+    assert.match(sources.hostContext, /LOCAL FILE reviews are unavailable/);
+    assert.doesNotMatch(sources.hostContext, /No automatic source reviews with this provider/);
+    base.definitions = [];
+    assert.match(sources.hostContext, /Google mail\/calendar unavailable/);
+    assert.doesNotMatch(sources.hostContext, /already checks permitted mail\/calendar|It also checks calendar reminders/);
+    e.store.configureProactive(device.id, false, null, 'Asia/Seoul');
+    assert.match(sources.hostContext, /Proactive care is DISABLED/);
+    assert.doesNotMatch(sources.hostContext, /active standing schedule|no automatic checks are active/);
+    assert.match(sources.hostContext, /armed reminders\/reviews are unchanged/);
+  } finally { e.close(); }
+});
+
+for (const valid of [true, false]) test(`failure diagnostics contain only bounded machine metadata and tool names: ${valid}`, async () => {
+  const e = env(); let service; const captured = []; let calls = 0;
+  try {
+    const device = e.store.addDevice('owner');
+    service = new ContactService(e.store, { chat: async () => {
+      if (++calls === 1) return { ...reply(''), message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'list_followups', arguments: { status: 'active', offset: 0 } } }] } };
+      throw Object.assign(Error('CHATGPT_RESPONSE_FAILED'), { code: valid ? 'server_error' : 'SYNTHETIC_PRIVATE_PAYLOAD', status: valid ? 200 : 'SYNTHETIC_PRIVATE_PAYLOAD',
+        param: valid ? 'model' : 'input.SYNTHETIC_PRIVATE_PAYLOAD', body_shape: valid ? 'error_object' : 'SYNTHETIC_PRIVATE_PAYLOAD',
+        event_type: valid ? 'response.failed' : 'SYNTHETIC_PRIVATE_PAYLOAD', error_type: valid ? 'server_error' : 'SYNTHETIC_PRIVATE_PAYLOAD', error_shape: valid ? 'object' : 'SYNTHETIC_PRIVATE_PAYLOAD',
+        body: 'SYNTHETIC_PRIVATE_PAYLOAD', authorization: 'SYNTHETIC_PRIVATE_PAYLOAD', cause: Error('SYNTHETIC_PRIVATE_PAYLOAD') });
+    } }, noSources);
+    service.on('turn-failed', value => captured.push(value));
+    const { seq } = service.submit(device.id, randomUUID(), 'SYNTHETIC_PRIVATE_PAYLOAD'); await service.idle();
+    assert.equal(e.store.turn(seq).state, 'failed'); assert.equal(captured.length, 1);
+    assert.deepEqual(captured[0], { turn: seq, code: 'CHATGPT_RESPONSE_FAILED', ...(valid ? { provider_code: 'server_error', status: 200, param: 'model', body_shape: 'error_object', event_type: 'response.failed', error_type: 'server_error', error_shape: 'object' } : {}), attempted_tools: ['list_followups'] });
+    assert.equal(JSON.stringify(captured).includes('SYNTHETIC_PRIVATE_PAYLOAD'), false);
+    assert.equal(e.store.usage().requests, 2); assert.equal(e.store.usage().unknown_requests, 1);
+  } finally { await service?.close(); e.close(); }
 });
