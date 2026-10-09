@@ -1,6 +1,6 @@
 # Tada
 
-현재 실행 경로의 [자동 실행과 복구](docs/background-running.md)는 설정에서 같은 비서를 Linux 사용자 서비스로 이어 실행합니다. WSL에서는 Linux 환경이 실행 중이어야 하며 Windows 부팅·절전 중 동작과 실제 휴대폰 수신은 별도 검증 대상입니다.
+현재 실행 경로의 [자동 실행과 복구](docs/background-running.md)는 설정에서 같은 비서를 Linux 사용자 서비스로 이어 실행합니다. [Windows 설치본](docs/windows-portable.md)은 시작 메뉴에서 열고, 설정에서 로그인 시 시작을 등록합니다. WSL에서는 Linux 환경이 실행 중이어야 하며 Windows 부팅·절전 중 동작과 실제 휴대폰 수신은 별도 검증 대상입니다.
 
 **Ask. Go live your life. Tada.**
 
@@ -10,7 +10,7 @@ Tada is being built as a personal AI assistant you can delegate to in ordinary l
 
 ## Open Tada
 
-The [Windows portable build](docs/windows-portable.md) bundles Node and the native read broker. Its `Tada.exe` entry opens the same setup without requiring the user to install developer tools. This path is being qualified separately from a signed installer, automatic startup and live account acceptance.
+The [Windows build](docs/windows-portable.md) bundles Node and the native read broker. `Tada.exe` offers per-user installation or a portable start without developer tools. The installed app adds a Start menu entry and optional login startup, with bounded recovery of its own host. Publisher signing, actual login execution and live account acceptance remain separate checks.
 
 On the currently supported Windows/WSL development host, run `npm start`. Tada opens a browser window, connects an existing ChatGPT subscription through its official login, and continues into the same saved conversation. No extra Tada password, terminal consent input, model number or device name is required. Connection failures can be retried in the window. Model choice is available on screen and saved for later starts.
 

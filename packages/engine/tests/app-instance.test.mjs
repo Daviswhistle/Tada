@@ -181,3 +181,75 @@ test('an unavailable browser also closes the failure screen', async () => {
   await assert.rejects(startApp([], { instance: async () => { throw Error('CONTACT_OS_PROTECTION_FAILED'); }, open: async url => { failedURL = url; return false; } }), /CONTACT_APP_BROWSER_UNAVAILABLE/);
   await assert.rejects(fetch(new URL(failedURL).origin));
 });
+
+test('launcher loss aborts a waiting instance and closes an owned setup without touching another owner', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-parent-loss-')), data = join(root, 'conversation'), os = protector();
+  let app;
+  const controller = new AbortController();
+  const instance = (options, config) => acquireAppInstance(options, { ...config, protector: os });
+  try {
+    app = await startApp(['--data', data], { instance, signal: controller.signal, open: async () => {},
+      run: async (_args, { ui }) => { mkdirSync(data); ui.ready('http://127.0.0.1:8787/#entry=fixture'); await ui.wait(); } });
+    const waiting = new AbortController();
+    const pending = acquireAppInstance(contactOptions(['--data', data]), { protector: os, reopen: false, timeoutMs: Infinity, signal: waiting.signal });
+    waiting.abort(); await assert.rejects(pending, /aborted/u);
+    assert.equal((await instance(contactOptions(['--data', data]))).existing, true);
+    controller.abort(); await app.close();
+    const released = await instance(contactOptions(['--data', data])); assert.equal(released.existing, false); released.close();
+  } finally { await app?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('launcher loss also closes a startup failure screen without leaving a host', async () => {
+  const parent = new AbortController(); let app;
+  try {
+    app = await startApp(['--data', '/unused-parent-failure'], { signal: parent.signal, instance: async () => { throw Error('CONTACT_APP_PRIVATE_PATH_REQUIRED'); }, open: async () => {} });
+    assert.equal((await fetch(new URL(app.url).origin)).status, 200);
+    parent.abort(); await app.close();
+    await assert.rejects(fetch(new URL(app.url).origin));
+  } finally { await app?.close(); }
+});
+
+test('foreground recovery before model selection preserves visible setup and initializes the journal once', async () => {
+  const { existsSync } = await import('node:fs');
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const { ChatGPTStore } = await import('../../providers/src/chatgpt-store.mjs');
+  const { main } = await import('../src/contact-cli.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'tada-onboarding-recovery-')), data = join(root, 'conversation');
+  const passphrase = 'synthetic onboarding recovery passphrase';
+  const account = new ChatGPTStore({ directory: data + '.chatgpt-private', passphrase });
+  account.save({ ...account.read(), client: 'oaiapp_fixture', subject: 'fixture-subject', email: 'fixture@example.invalid',
+    tokens: { access_token: 'fake-access', refresh_token: 'fake-refresh', expires_at: Date.now() + 3600000, scopes: ['chatgpt.tokens.use.direct'] } });
+  account.close();
+  const reservation = createServer(); reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening');
+  const port = reservation.address().port; await new Promise(resolve => reservation.close(resolve));
+  const nativeFetch = globalThis.fetch, opened = []; let first, recovered, ready = 0, initialized = 0;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).startsWith('http://127.0.0.1:')) return nativeFetch(url, options);
+    assert.equal(String(url), 'https://api.openai.com/v1/models');
+    return new Response(JSON.stringify({ models: [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }] }), { headers: { 'content-type': 'application/json' } });
+  };
+  const os = protector(), fixture = {
+    instance: (options, config) => acquireAppInstance(options, { ...config, protector: os }),
+    open: async url => { opened.push(url); }, onReady: () => { ready++; }, backgroundFactory: () => ({}),
+    run: (args, { ui }) => main(args, { keyProvider: async () => passphrase, ui: { ...ui, initialized() { initialized++; ui.initialized(); } } }),
+  };
+  const endpoint = app => { const url = new URL(app.url); return { origin: url.origin, headers: { Authorization: 'Bearer ' + new URLSearchParams(url.hash.slice(1)).get('setup') } }; };
+  const until = async (app, stage) => {
+    const { origin, headers } = endpoint(app);
+    for (let i = 0; i < 200; i++) { const state = await nativeFetch(origin + '/state', { headers }).then(r => r.json()); if (state.stage === stage) return state; await new Promise(resolve => setTimeout(resolve, 10)); }
+    throw Error('SETUP_STAGE_TIMEOUT:' + stage);
+  };
+  try {
+    first = await startApp(['--data', data, '--port', String(port)], fixture);
+    await until(first, 'model'); assert.equal(ready, 0); assert.equal(existsSync(data), false); await first.close();
+    recovered = await startApp(['--data', data, '--port', String(port)], fixture);
+    const model = await until(recovered, 'model'); assert.equal(ready, 0);
+    assert.equal(opened.length, 2); assert.notEqual(opened[0], opened[1]);
+    const { origin, headers } = endpoint(recovered);
+    const action = await nativeFetch(origin + '/action', { method: 'POST', headers: { ...headers, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revision: model.revision, action: 'answer', value: '1' }) });
+    assert.equal(action.status, 200); await until(recovered, 'ready');
+    assert.equal(ready, 1); assert.equal(initialized, 1); assert.equal(existsSync(join(data, 'contact.sqlite')), true);
+  } finally { await recovered?.close(); await first?.close(); globalThis.fetch = nativeFetch; rmSync(root, { recursive: true, force: true }); }
+});

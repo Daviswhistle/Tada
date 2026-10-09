@@ -12,7 +12,8 @@ function check(path, directory = false) {
   if (s.isSymbolicLink() || (directory ? !s.isDirectory() : !s.isFile() || s.nlink !== 1)
     || (process.platform !== 'win32' && (s.uid !== process.getuid() || (s.mode & 0o077)))) throw Error('CONTACT_APP_PRIVATE_PATH_REQUIRED');
 }
-export async function acquireAppInstance(options, { protector = windowsProtector(), timeoutMs = 20000, reopen = true } = {}) {
+export async function acquireAppInstance(options, { protector = windowsProtector(), timeoutMs = 20000, reopen = true, signal } = {}) {
+  signal?.throwIfAborted();
   const root = `${resolve(options.data)}.app-private`, lease = join(root, 'owner.sqlite'), descriptor = join(root, 'window.json');
   const normalized = { ...options, data: resolve(options.data) }; delete normalized.initialize;
   const actions = { login: !!options.login, upgrade: !!options.upgrade };
@@ -26,6 +27,7 @@ export async function acquireAppInstance(options, { protector = windowsProtector
   for (const suffix of ['-journal', '-wal', '-shm']) if (existsSync(lease + suffix)) check(lease + suffix);
   const deadline = Date.now() + timeoutMs;
   for (;;) {
+    signal?.throwIfAborted();
     const db = new DatabaseSync(lease, { timeout: 0 });
     try {
       db.exec('BEGIN EXCLUSIVE');

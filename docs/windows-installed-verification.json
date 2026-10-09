@@ -1,0 +1,139 @@
+{
+  "date": "2026-10-10",
+  "scope": "Windows per-user installation, explicit login startup registration and owned-host recovery; not release acceptance",
+  "baseline_commit": "af790684648934ec11bc9b62a1a2b95aa6cb7842",
+  "artifact": {
+    "files": 1008,
+    "zip_bytes": 37311742,
+    "zip_sha256": "aea75b4f4f3b2406e6bc0ca78218b3b8c7c5b181dd02d896908c39f07bb64d63",
+    "manifest_sha256": "f09749aee6981e1f79442a951717d4b7118c97c5255dad68f9ab2ebe92aa1888",
+    "launcher_sha256": "269e95a23d480e30d09c657e2544d6c08067ec494768c40452eeecc51de02e12",
+    "all_archive_entries_exact": true
+  },
+  "native_windows": {
+    "environment": "Windows 11 x64, current user, bundled Node 24.21.0; isolated records and temporary installation",
+    "installed_acceptance": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "HTML, native runtime, payload launcher and reserved bootstrap corruption repaired; old copies preserved and healthy repaired copy reused",
+        "the same shortcut creator targets the stable bootstrap in an isolated shortcut location",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "actual foreground setup recovered its crash into a visible replacement onboarding screen",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "portable_regression": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "embedded manifest and bundled runtime verified",
+        "changed, missing, additional files, manifest and junction rejected",
+        "bundled native read broker reads scoped fixture and rejects traversal without developer runtimes",
+        "fresh Windows DPAPI storage reaches subscription consent without developer tools or inherited Node options",
+        "native Chrome shared textbox verified",
+        "native Edge shared textbox verified",
+        "same and relocated bundles reopen one host and preserve protected storage key",
+        "restart from relocated bundle preserves protected key and reacquires ownership"
+      ],
+      "passed": true
+    },
+    "shortcut_validation": "Final artifact exercised the Windows shortcut creator in its isolated installation root; target matched the fixed bootstrap. Owner Start Menu was not modified. A separate MTA-thread probe also passed, matching the installation dialog background worker.",
+    "installer_preview": "Actual native installation dialog captured and inspected; closed without installing the owner application.",
+    "registry_cleanup": "Each test used a unique installation-derived Run value, asserted prior absence and removed only that value. No production startup entry or StartupApproved value changed.",
+    "account_or_model_requests": 0,
+    "installed_upgrade": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "installing a new payload retains the running previous version and changes only the next-launch pointer",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "synthetic_launcher_recovery": {
+      "checks": [
+        "first exit=1 attempts=1",
+        "started exit=0 attempts=2",
+        "onboarding exit=0 attempts=2",
+        "normal exit=0 attempts=1",
+        "background exit=1 attempts=4"
+      ],
+      "passed": true
+    }
+  },
+  "validation": {
+    "npm_ci_ignore_scripts": "passed",
+    "npm_run_check": {
+      "passed": 1087,
+      "failed": 0,
+      "skipped": 0,
+      "log": "tada-installed-amend2-check.log",
+      "scope": "Whole amended runtime, UI, lifecycle, repair generation and interrupted-onboarding tests."
+    },
+    "rust_fmt": "passed",
+    "rust_clippy_workspace_all_targets_locked_warnings_denied": "passed",
+    "rust_workspace_tests_locked": "passed",
+    "rust_process_fixtures": "passed",
+    "native_windows_rust": "Reused preceding portable-unit Windows workspace and process-fixture results: Cargo, crates and broker source unchanged; the exact same statically linked native broker is bundled. New native portable regression rechecks broker reads and traversal refusal.",
+    "actual_chrome_ui": {
+      "viewports": [
+        1280,
+        390
+      ],
+      "startup_enable_disable": true,
+      "draft_preserved": true,
+      "notice_does_not_cover_card_heading": true,
+      "horizontal_overflow": false,
+      "model_requests": 0
+    },
+    "onboarding_recovery": "Actual main with synthetic saved account/model catalogue: stop before model selection, reopen visible setup, select model and reach ready; journal initializes once and readiness is acknowledged only after actual ready. No live account or inference requests."
+  },
+  "retained_failures": [
+    {
+      "stage": "first full Node check",
+      "result": "1081 passed, one pre-existing document-edits EADDRINUSE temporary-port collision",
+      "followup": "focused 18 passed; subsequent full checks passed"
+    },
+    {
+      "stage": "native acceptance harness 2",
+      "result": "PowerShell missing registry property query exited with an error before registration",
+      "followup": "use RegistryKey.GetValue for absence check"
+    },
+    {
+      "stage": "native acceptance harness 3",
+      "result": "PowerShell output used Windows legacy encoding for the Korean path",
+      "followup": "explicit UTF-8 output; final native register/read/conflict/disable checks passed"
+    },
+    {
+      "stage": "first independent commit review and separate native probes",
+      "result": "Initial foreground failure silently retried as background; corrupted owned payload could not be repaired from intact original package.",
+      "followup": "Fixed startup acknowledgement separates initial window failure from later crash. Explicit reinstall creates a verified immutable repair copy, preserves old copies and repairs its reserved bootstrap. Final native negative and positive cases passed."
+    },
+    {
+      "stage": "first synthetic launcher recovery harness",
+      "result": "PowerShell wrote a BOM into the synthetic manifest, so fixture verification failed before launching its child.",
+      "followup": "Fixture writes UTF-8 without BOM and explicitly verifies its synthetic bundle before testing recovery; all four native scenarios passed."
+    },
+    {
+      "stage": "second independent commit review",
+      "result": "Crash during initial consent/model setup switched to hidden background and lost initialization; native recovery probe could leak a newly acquired instance lock.",
+      "followup": "Separate assistant-ready acknowledgement keeps incomplete onboarding visible and initializable; only a ready conversation switches to hidden recovery. Ownership probes close every newly acquired slot. Final native artifact passed all five synthetic lifecycle cases, installation, upgrade and portable regression."
+    }
+  ],
+  "remaining_limits": [
+    "Unsigned publisher and no fresh second-device installation proof.",
+    "Run registration is not proof of execution after an actual Windows login; OS Startup Apps can disable it.",
+    "Launcher itself is not supervised; its loss closes its host until manual start or next login.",
+    "No automatic download, automatic live process replacement, backup/restore UI or WSL-record migration.",
+    "No real account login, mail send, physical phone delivery or general product acceptance established by these native tests."
+  ]
+}

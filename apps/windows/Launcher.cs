@@ -28,7 +28,7 @@ static class Launcher {
     static void NoLink(string path) {
         if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked bundle entry");
     }
-    static void Verify(string root) {
+    internal static void Verify(string root) {
         NoLink(root);
         byte[] bytes;
         using (var input = Assembly.GetExecutingAssembly().GetManifestResourceStream("Tada.Bundle")) {
@@ -68,44 +68,56 @@ static class Launcher {
             using (var input = File.OpenRead(path)) if (Hash(input) != file.sha256) throw new IOException("File changed");
         }
     }
-    // Windows command-line quoting, including trailing backslashes and spaces.
-    static string Quote(string value) {
-        var output = new StringBuilder("\""); int slashes = 0;
-        foreach (var c in value) {
-            if (c == '\\') { slashes++; continue; }
-            if (c == '"') { output.Append('\\', slashes * 2 + 1); output.Append(c); }
-            else { output.Append('\\', slashes); output.Append(c); }
-            slashes = 0;
-        }
-        output.Append('\\', slashes * 2); return output.Append('"').ToString();
-    }
     [STAThread] static int Main(string[] args) {
         bool verify = args.Length == 1 && args[0] == "--verify";
+        bool background = args.Length > 0 && args[0] == "--background";
+        bool installOnly = args.Length == 2 && args[0] == "--install-root";
         try {
+            Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
             if (!Environment.Is64BitOperatingSystem) throw new IOException("64-bit Windows required");
             var root = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Verify(root);
             if (verify) return 0;
+            if (installOnly || args.Length == 1 && args[0] == "--install") {
+                InstalledApp.Install(root, installOnly ? args[1] : InstalledApp.DefaultRoot, !installOnly);
+                if (!installOnly) Process.Start(new ProcessStartInfo(Path.Combine(InstalledApp.DefaultRoot, "Tada.exe")) { UseShellExecute = true });
+                return 0;
+            }
+            if (args.Length == 0) {
+                var versions = Path.GetDirectoryName(root);
+                bool installed = Path.GetFileName(versions) == "versions" && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(root), "\\A[0-9a-f]{64}(?:-[0-9a-f]{32})?\\z");
+                if (installed) InstalledApp.CheckRoot(Path.GetDirectoryName(versions));
+                else if (InstallPrompt.Show(root)) return 0;
+            }
             var data = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Tada", "conversation");
-            if (args.Length != 0) {
-                if (args.Length != 2 || args[0] != "--data" || !Path.IsPathRooted(args[1])) throw new IOException("Invalid launch arguments");
-                data = Path.GetFullPath(args[1]);
+            var routeArgs = background ? args.Skip(1).ToArray() : args;
+            if (routeArgs.Length != 0) {
+                if (routeArgs.Length != 2 || routeArgs[0] != "--data" || !Path.IsPathRooted(routeArgs[1])) throw new IOException("Invalid launch arguments");
+                data = Path.GetFullPath(routeArgs[1]);
             }
             var start = new ProcessStartInfo(Path.Combine(root, "node", "node.exe"),
-                "--experimental-strip-types " + Quote(Path.Combine(root, "packages", "engine", "src", "start-app.mjs")) + " --data " + Quote(data));
+                "--experimental-strip-types " + InstalledApp.Quote(Path.Combine(root, "packages", "engine", "src", "start-app.mjs")) + " --data " + InstalledApp.Quote(data) + (background ? " --background" : ""));
             start.WorkingDirectory = root; start.UseShellExecute = false; start.CreateNoWindow = true;
-            start.RedirectStandardOutput = true; start.RedirectStandardError = true;
+            start.RedirectStandardOutput = true; start.RedirectStandardError = true; start.RedirectStandardInput = true;
+            start.EnvironmentVariables["TADA_WINDOWS_SUPERVISED"] = "1";
             foreach (var key in new[] { "NODE_OPTIONS", "NODE_PATH", "TADA_GOOGLE_OAUTH_CLIENT_ID", "TADA_GOOGLE_OAUTH_CLIENT_SECRET" }) start.EnvironmentVariables.Remove(key);
-            using (var process = new Process()) {
+            int opened = 0, ready = 0;
+            for (int attempt = 0; ; attempt++) {
+              using (var process = new Process()) {
                 process.StartInfo = start;
                 // Capability URLs and account details must not be persisted in launcher logs.
-                process.OutputDataReceived += (sender, e) => {}; process.ErrorDataReceived += (sender, e) => {};
+                process.OutputDataReceived += (sender, e) => { if (e.Data == "\u001eTADA_HOST_OPEN_V1") System.Threading.Interlocked.Exchange(ref opened, 1); if (e.Data == "\u001eTADA_ASSISTANT_READY_V1") System.Threading.Interlocked.Exchange(ref ready, 1); }; process.ErrorDataReceived += (sender, e) => {};
                 process.Start(); process.BeginOutputReadLine(); process.BeginErrorReadLine(); process.WaitForExit();
-                if (process.ExitCode != 0) throw new IOException("Application failed");
+                if (process.ExitCode == 0) return 0;
+                if (!background && System.Threading.Interlocked.CompareExchange(ref opened, 0, 0) == 0) throw new IOException("Initial application window failed");
+                if (attempt >= 3) throw new IOException("Application failed");
+              }
+              if (!background && System.Threading.Interlocked.CompareExchange(ref ready, 0, 0) != 0 && !start.Arguments.EndsWith(" --background", StringComparison.Ordinal)) start.Arguments += " --background";
+              System.Threading.Thread.Sleep(new[] { 1000, 5000, 15000 }[attempt]);
+              Verify(root);
             }
-            return 0;
         } catch {
-            if (!verify) MessageBox.Show("Tada를 열지 못했어요.\n\n압축 파일을 새 폴더에 모두 풀고 Tada.exe를 다시 열어 주세요. 브라우저가 열리지 않으면 Windows의 기본 브라우저 설정도 확인해 주세요.\n\n저장된 대화와 계정 연결은 지우지 않습니다.", "Tada", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!verify && !installOnly && !background) MessageBox.Show("Tada를 열지 못했어요.\n\n압축 파일을 새 폴더에 모두 풀고 Tada.exe를 다시 열어 주세요. 브라우저가 열리지 않으면 Windows의 기본 브라우저 설정도 확인해 주세요.\n\n저장된 대화와 계정 연결은 지우지 않습니다.", "Tada", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

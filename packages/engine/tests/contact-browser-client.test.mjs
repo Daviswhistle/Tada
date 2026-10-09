@@ -919,3 +919,14 @@ test('discarding an edited draft uses an inline confirmation and cancel retains 
   c.get('document-editor-discard').onclick(); c.get('document-discard-confirmed').onclick(); assert.equal(c.get('document-editor').open, false);
   let warned = false; c.browserEvent('beforeunload', { preventDefault() { warned = true; } }); assert.equal(warned, false);
 });
+
+test('Windows startup reports registration separately from login execution and leaves the current draft intact', async () => {
+  const c = client(); c.state.background = { available: true, enabled: false, running: true, managed: true, platform: 'win32', startup: 'registered_only' };
+  await c.refresh(); c.get('message').value = '작성 중';
+  c.handle('/api/background', () => { c.state.background.enabled = true; return { ...c.state.background, transferring: false }; });
+  await c.get('background-toggle').onclick();
+  assert.match(c.get('background-status').textContent, /등록돼/);
+  assert.match(c.get('background-environment').textContent, /시작 앱/);
+  assert.doesNotMatch(c.get('background-status').textContent, /종료 후 복구도 준비/);
+  assert.equal(c.get('message').value, '작성 중');
+});

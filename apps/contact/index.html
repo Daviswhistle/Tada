@@ -10,8 +10,9 @@
       <button id="settings-nav-accounts" type="button" aria-pressed="false" aria-controls="settings-accounts">연결된 계정</button>
       <button id="settings-nav-mobile" type="button" aria-pressed="false" aria-controls="settings-mobile">연락과 알림</button>
     </nav>
-    <div id="settings-content" class="settings-content">
+    <div class="settings-main">
       <p id="settings-notice" role="alert" hidden></p>
+      <div id="settings-content" class="settings-content">
       <div id="settings-care">
         <section id="proactive-settings" class="setting-card featured">
           <p class="eyebrow">말을 걸기 전에도</p><h2>먼저 챙겨보기</h2>
@@ -21,7 +22,7 @@
           <details class="setting-details"><summary>무엇을 살펴보나요?</summary><p id="proactive-scope" class="muted">최근 대화·맡긴 일·저장된 문서를 확인합니다. 연결된 Google 계정이 있으면 최근 메일과 다가오는 일정도 함께 살펴봅니다.</p><p class="muted">기한이 가까워졌거나 새로 달라진 내용이 있을 때 알려드려요. 새로 챙길 일이 없으면 불필요한 연락을 하지 않습니다. 수시 확인을 켜면 일정 시각도 자동으로 챙깁니다. 대화에서 확정한 알림도 함께 유지됩니다.</p></details>
         </section>
         <section id="delegation-settings" class="setting-card" hidden><h2>대화로 맡기기</h2><p class="muted">“내일 알려줘”, “이 일은 끝났어”라고 말씀하시면 개인 할 일과 알림을 바로 저장·변경해요. 내용을 다시 확인하는 버튼을 누를 필요가 없습니다.</p><p id="delegation-status" role="status"></p><button id="delegation-toggle" type="button">개인 할 일과 알림 맡기기</button><details class="setting-details"><summary>맡기는 범위</summary><p class="muted">현재 대화에서 직접 부탁한 개인 기록과 일회성 알림에 적용됩니다. 메일에서 발견한 일은 먼저 제안하고, 다른 사람에게 연락하거나 메일·일정을 변경하는 권한은 포함하지 않아요. 끄면 이후 변경은 다시 확인하며, 이미 저장한 일과 예약한 알림은 유지됩니다.</p></details></section>
-        <section id="background-settings" class="setting-card" hidden><h2>자동 실행과 복구</h2><p id="background-status" role="status"></p><p class="muted">브라우저를 닫아도 계속 챙기고, Tada가 예기치 않게 종료되면 다시 연결해요. 처리 여부를 확인하지 못한 일은 중복 실행하지 않습니다.</p><button id="background-toggle" type="button">자동 실행 켜기</button><details class="setting-details"><summary>실행되는 환경</summary><p class="muted">현재는 Linux 사용자 서비스로 실행합니다. WSL에서는 Windows의 Linux 환경이 시작될 때 함께 켜집니다. 컴퓨터가 꺼져 있거나 잠들면 멈춰요. 자동 시작을 꺼도 지금 실행 중인 비서와 기록은 유지됩니다.</p></details></section>
+        <section id="background-settings" class="setting-card" hidden><h2>자동 실행과 복구</h2><p id="background-status" role="status"></p><p class="muted">브라우저를 닫아도 계속 챙기고, Tada가 예기치 않게 종료되면 다시 연결해요. 처리 여부를 확인하지 못한 일은 중복 실행하지 않습니다.</p><button id="background-toggle" type="button">자동 실행 켜기</button><details class="setting-details"><summary>실행되는 환경</summary><p id="background-environment" class="muted">현재는 Linux 사용자 서비스로 실행합니다. WSL에서는 Windows의 Linux 환경이 시작될 때 함께 켜집니다. 컴퓨터가 꺼져 있거나 잠들면 멈춰요. 자동 시작을 꺼도 지금 실행 중인 비서와 기록은 유지됩니다.</p></details></section>
         <aside class="settings-note"><strong>자리를 비워도 이어서</strong><p>창을 닫아도 확인은 계속돼요. 이 컴퓨터가 켜져 있고 Tada가 실행 중이어야 합니다.</p><button id="settings-contact-link" class="text-button" type="button">휴대폰으로 알림 받기 →</button></aside>
       </div>
       <div id="settings-accounts" hidden>
@@ -38,6 +39,7 @@
         </section>
         <section class="setting-card"><h2>이 브라우저 알림</h2><p class="muted">이 페이지가 열려 있을 때 새 답변을 알려드려요.</p><button id="notifications" type="button">답변 알림 켜기</button></section>
         <p class="settings-footnote">컴퓨터가 꺼져 있거나 잠들면 확인과 연락도 잠시 멈춥니다.</p>
+      </div>
       </div>
     </div>
   </div>

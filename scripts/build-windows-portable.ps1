@@ -25,7 +25,8 @@ $temporary = Join-Path ([IO.Path]::GetTempPath()) ('tada-package-' + [Guid]::New
 New-Item -ItemType Directory -Path $temporary | Out-Null
 $env:NODE_OPTIONS = ''; $env:NODE_PATH = ''
 try {
-  Expand-Archive -LiteralPath $NodeArchive -DestinationPath $temporary
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory([IO.Path]::GetFullPath($NodeArchive), $temporary)
   $runtime = Join-Path $temporary 'node-v24.21.0-win-x64'
   $node = Join-Path $runtime 'node.exe'
   & $node (Join-Path $root 'scripts/windows-bundle.mjs') stage $Output
@@ -39,10 +40,13 @@ try {
   Copy-Item -LiteralPath (Join-Path $runtime 'node.exe'),(Join-Path $runtime 'LICENSE') -Destination (Join-Path $Output 'node')
   Copy-Item -LiteralPath $Broker -Destination (Join-Path $Output 'bin/tada-read-broker.exe')
   Copy-Item -LiteralPath $NativeNotices -Destination (Join-Path $Output 'native-notices') -Recurse
+  $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+  & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /platform:x64 /optimize+ /reference:System.Windows.Forms.dll /reference:Microsoft.CSharp.dll "/out:$Output\bin\Tada-bootstrap.exe" (Join-Path $root 'apps/windows/Bootstrap.cs') (Join-Path $root 'apps/windows/InstalledApp.cs')
+  if ($LASTEXITCODE -ne 0) { throw 'Installed launcher compilation failed' }
   & $node (Join-Path $root 'scripts/windows-bundle.mjs') manifest $Output
   if ($LASTEXITCODE -ne 0) { throw 'Manifest generation failed' }
   $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-  & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /platform:x64 /optimize+ /reference:System.Runtime.Serialization.dll /reference:System.Windows.Forms.dll "/resource:$Output\bundle.json,Tada.Bundle" "/out:$Output\Tada.exe" (Join-Path $root 'apps/windows/Launcher.cs')
+  & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /platform:x64 /optimize+ /reference:System.Runtime.Serialization.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:Microsoft.CSharp.dll "/resource:$Output\bundle.json,Tada.Bundle" "/out:$Output\Tada.exe" (Join-Path $root 'apps/windows/Launcher.cs') (Join-Path $root 'apps/windows/InstalledApp.cs') (Join-Path $root 'apps/windows/InstallPrompt.cs')
   if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
   $verification = Start-Process -FilePath (Join-Path $Output 'Tada.exe') -ArgumentList '--verify' -PassThru -Wait
   if ($verification.ExitCode -ne 0) { throw 'Bundle verification failed' }
