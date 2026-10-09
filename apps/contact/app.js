@@ -51,7 +51,7 @@ const notice = text => {
 };
 let continuingEnabled = false, delegationEnabled = false, delegationBusy = false;
 let backgroundEnabled = false, backgroundBusy = false;
-const settingsPages = ['care', 'accounts', 'mobile'];
+const settingsPages = ['care', 'accounts', 'mobile', 'records'];
 function showSettingsPage(page) {
   $('settings-content').scrollTop = 0;
   for (const name of settingsPages) {
@@ -65,11 +65,17 @@ function openSettings(page = 'care') {
   notice($('notice').textContent);
 }
 $('settings-open').onclick = () => openSettings();
-$('settings-close').onclick = () => $('settings').close();
-$('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open').focus(); notice($('settings-notice').textContent); };
+$('settings-close').onclick = () => { if (canCloseBackup()) $('settings').close(); };
+$('settings').oncancel = event => { if (!canCloseBackup()) event.preventDefault(); };
+$('settings').onclose = () => { clearBackup(); $('mobile-token').value = ''; $('settings-open').focus(); notice($('settings-notice').textContent); };
 for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
 $('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
+  CONTACT_BACKUP_BUSY: '다른 백업을 만들고 있어요. 잠시 후 다시 시도해 주세요.',
+  CONTACT_BACKUP_TOO_LARGE: '기록이 현재 백업 용량 한도를 넘었어요. 원래 기록은 그대로 보관되어 있습니다.',
+  CONTACT_OS_PROTECTION_UNAVAILABLE: '이 환경에서 Windows 계정 보호를 사용할 수 없어 백업을 만들지 않았어요.',
+  CONTACT_OS_PROTECTION_FAILED: 'Windows 계정으로 백업을 보호하지 못했어요. 기록은 유지되며 다시 시도할 수 있습니다.',
+  CONTACT_BACKUP_INVALID: '기록의 형식을 확인하지 못해 백업을 만들지 않았어요. 원래 기록은 그대로 있습니다.',
   CONTACT_BROWSER_DISPLAY_UNAVAILABLE: '현재 실행 환경에서 화면을 열 수 없어요. 데스크톱에 로그인한 뒤 Tada를 다시 열어 주세요.',
   CONTACT_BROWSER_COMMAND_FAILED: '브라우저 화면이 바뀌어 작업을 마치지 못했어요. 현재 페이지를 확인해 주세요.',
   CONTACT_BROWSER_OBSERVATION_FAILED: '이 화면은 읽거나 입력할 수 없어요. 일반 웹 페이지의 입력란을 공유해 주세요.',
@@ -163,9 +169,61 @@ async function api(path, data, options = {}) {
 }
 function paired(yes, stopConnection = true) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings-open').hidden = !yes; if (!yes && $('settings').open) $('settings').close(); if (!yes) $('followups').hidden = true;
-  if (!yes) { mailGeneration++; if ($('mail-editor').open) $('mail-editor').close(); mailRecord = null; mailDirty = false; for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).value = ''; editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
+  if (!yes) { clearBackup(); mailGeneration++; if ($('mail-editor').open) $('mail-editor').close(); mailRecord = null; mailDirty = false; for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).value = ''; editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
+let backupRequest = null, backupUrl = null, backupCodePending = false;
+function canCloseBackup() {
+  return !backupCodePending || window.confirm('복구 코드를 따로 보관했나요? 닫으면 이 코드를 다시 표시할 수 없습니다.');
+}
+function clearBackup() {
+  backupRequest?.abort(); backupRequest = null;
+  if (backupUrl) URL.revokeObjectURL(backupUrl);
+  backupUrl = null; backupCodePending = false; $('backup-code').value = '';
+  $('backup-download').removeAttribute('href'); $('backup-result').hidden = true;
+  $('backup-create').disabled = false; $('backup-portable').disabled = false;
+  $('backup-status').textContent = '';
+}
+$('backup-code-saved').onclick = () => { backupCodePending = false; $('backup-code-saved').hidden = true; $('backup-create').disabled = false; };
+$('backup-create').onclick = async () => {
+  if (backupRequest || backupCodePending) return;
+  clearBackup(); const portable = $('backup-portable').checked === true;
+  const abort = new AbortController(); backupRequest = abort;
+  $('backup-create').disabled = true; $('backup-portable').disabled = true;
+  $('backup-status').textContent = '기록을 암호화하고 있어요…';
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => { abort.abort(); reject(Error('백업을 준비하는 데 시간이 걸리고 있어요. 잠시 후 다시 시도해 주세요.')); }, 30000); });
+  try {
+    const result = await Promise.race([timeout, (async () => {
+      const response = await fetch('/api/records/backup', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin', signal: abort.signal, body: JSON.stringify({ portable, consent: 'encrypted_record_backup_v1' }) });
+      if (!response.ok) {
+        const body = await response.json();
+        const error = Error(errors[body.error] ?? '백업 파일을 만들지 못했어요. 원래 기록은 그대로 있습니다.');
+        error.authenticationRequired = response.status === 401; throw error;
+      }
+      const code = response.headers.get('X-Tada-Recovery-Code');
+      if (portable && !/^TADA1-[A-Za-z0-9_-]{32}$/u.test(code ?? '') || !portable && code !== null) throw Error('복구 정보를 확인하지 못해 파일을 저장하지 않았어요. 다시 시도해 주세요.');
+      const blob = await response.blob();
+      if (!blob.size || blob.size > 33570900) throw Error('백업 파일을 확인하지 못했어요. 다시 시도해 주세요.');
+      return { blob, code };
+    })()]);
+    if (backupRequest !== abort || abort.signal.aborted) return;
+    backupUrl = URL.createObjectURL(result.blob); $('backup-download').href = backupUrl;
+    $('backup-download').download = `tada-records-${new Date().toISOString().slice(0,10)}.tadabackup`;
+    $('backup-result').hidden = false; $('backup-recovery').hidden = !portable;
+    $('backup-code').value = result.code ?? ''; backupCodePending = portable; $('backup-code-saved').hidden = false;
+    $('backup-status').textContent = '백업 파일이 준비됐어요. 아래 다운로드를 눌러 저장해 주세요.';
+    $('backup-download').focus();
+  } catch (error) {
+    if (backupRequest !== abort) return;
+    if (error.authenticationRequired) { paired(false); notice('기기 연결이 해제되어 백업을 받지 않았어요. 다시 연결해 주세요.'); }
+    else $('backup-status').textContent = abort.signal.aborted ? '백업 연결이 끝났어요. 원래 기록은 유지됩니다. 다시 시도해 주세요.' : error.message;
+  } finally {
+    clearTimeout(timer);
+    if (backupRequest === abort) { backupRequest = null; $('backup-create').disabled = backupCodePending; $('backup-portable').disabled = false; }
+  }
+};
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
   cancelled: '이 요청은 취소했어요.', interrupted: 'Tada가 멈춰 답변을 끝내지 못했어요. 요청은 남아 있어요.',
   failed: '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.' };
@@ -890,7 +948,7 @@ $('document-editor-form').onsubmit = async event => {
     editorLock(!!editorState?.pending);
   }
 };
-window.addEventListener('beforeunload', event => { if (editorUnsaved() || mailDirty) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (editorUnsaved() || mailDirty || backupCodePending) { event.preventDefault(); event.returnValue = ''; } });
 
 function renderBrowser(state) {
   browserView = state;

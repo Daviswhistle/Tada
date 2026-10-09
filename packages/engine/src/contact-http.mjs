@@ -72,7 +72,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
   const assertAccepting = () => { if (service.stopped) throw Error('CONTACT_HOST_STOPPING'); };
   const readBody = async (req, limit) => { const data = await jsonBody(req, limit); assertAccepting(); return data; };
   const listener = async (req, res) => {
-    const timer = setTimeout(() => { req.destroy(); }, 10000);
+    const timer = setTimeout(() => { req.destroy(); }, req.url === '/api/records/backup' ? 30000 : 10000);
     try {
       // Do not infer an origin or principal from attacker-controlled Forwarded,
       // X-Forwarded-Host/User or proxy identity headers.
@@ -108,6 +108,16 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       // Preserve an existing connection only after this journal authenticates
       // its legacy token. Other still-running versions may need that cookie.
       if (cookie.legacy) res.setHeader('Set-Cookie', setCookie(cookie.token));
+      if (req.method === 'POST' && target.pathname === '/api/records/backup' && !target.search) {
+        const data = await readBody(req); object(data, ['portable', 'consent']);
+        const backup = await service.backupRecords(device, data.portable, data.consent);
+        assertAccepting(); store.assertDevice(device);
+        if (res.destroyed) return;
+        res.writeHead(200, { ...headers, 'Content-Type': 'application/octet-stream', 'Content-Length': backup.bytes.length,
+          'Content-Disposition': `attachment; filename="tada-records-${new Date(backup.created_at).toISOString().slice(0,10)}.tadabackup"`,
+          ...(backup.recoveryCode ? { 'X-Tada-Recovery-Code': backup.recoveryCode } : {}) });
+        res.end(backup.bytes); return;
+      }
       if (req.method === 'GET' && /^\/api\/mail\/mail-[a-f0-9-]{36}$/u.test(target.pathname) && !target.search) {
         return send(res, 200, { mail: store.mailAction(target.pathname.split('/').at(-1)) });
       }

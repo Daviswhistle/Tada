@@ -9,6 +9,7 @@
       <button id="settings-nav-care" type="button" aria-pressed="true" aria-controls="settings-care">먼저 챙기기</button>
       <button id="settings-nav-accounts" type="button" aria-pressed="false" aria-controls="settings-accounts">연결된 계정</button>
       <button id="settings-nav-mobile" type="button" aria-pressed="false" aria-controls="settings-mobile">연락과 알림</button>
+      <button id="settings-nav-records" type="button" aria-pressed="false" aria-controls="settings-records">내 기록</button>
     </nav>
     <div class="settings-main">
       <p id="settings-notice" role="alert" hidden></p>
@@ -31,6 +32,20 @@
         <section id="browser-settings" class="setting-card"><h2>브라우저 작업</h2><p id="browser-status" role="status">공유한 탭이 없어요.</p><p class="muted">사이트를 열고 탭을 공유하면, 읽고 입력하는 일을 맡길 수 있어요.</p><div class="browser-buttons"><button id="browser-open" type="button">전용 브라우저 열기</button><button id="browser-refresh" type="button">공유할 탭 찾기</button><button id="browser-stop" type="button" hidden>공유 중지</button></div><div id="browser-tabs"></div><p class="muted">이 기기의 요청에 적용돼요. 공유한 내용은 현재 AI에 전달되며, 입력 즉시 저장되는 사이트도 있어요.</p><details class="setting-details"><summary>공유 범위와 로그인 정보</summary><p class="muted">일반 입력란을 다룹니다. 비밀번호 입력이나 전송·결제 버튼 클릭은 포함하지 않아요. 다른 페이지로 이동하면 다시 공유해 주세요. 전용 창을 모두 닫으면 로그인 정보도 남기지 않습니다.</p></details><div id="browser-actions"></div></section>
         <section id="continuing-settings" class="setting-card" hidden><h2>계속 사용하는 비서</h2><p id="continuing-status" role="status"></p><p>대화와 기록을 유지하면서 사용 여유가 매일 돌아옵니다. 현재 연결한 AI로 최근 24시간 최대 64회 요청하며, 한 번 맡긴 일에 여러 요청을 쓸 수 있어요. 수시 확인도 이 한도를 함께 씁니다. 계정이나 결제 방식은 바뀌지 않아요.</p><button id="continuing-toggle" type="button">지속 사용 켜기</button></section>
         <details class="setting-details device-settings"><summary>이 기기 관리</summary><p class="muted">이 브라우저의 접근만 해제합니다. 대화와 연결된 계정은 보존됩니다.</p><button id="logout" type="button" hidden>이 기기 연결 해제</button></details>
+      </div>
+      <div id="settings-records" hidden>
+        <section class="setting-card"><p class="eyebrow">소중한 대화와 결과물</p><h2>기록 백업</h2>
+          <p>대화, 문서, 맡긴 일과 처리 결과를 암호화한 파일로 내려받습니다. 연결된 계정의 로그인 토큰과 자동 실행 권한은 넣지 않아요.</p>
+          <label class="backup-option"><input id="backup-portable" type="checkbox"> 다른 컴퓨터에서도 열 수 있는 복구 코드 만들기</label>
+          <p class="muted">기본 백업은 지금 Windows 계정으로만 열 수 있어요. 컴퓨터 교체나 Windows 재설치에 대비하려면 복구 코드를 함께 보관해 주세요.</p>
+          <button id="backup-create" type="button">백업 파일 만들기</button><p id="backup-status" role="status"></p>
+          <div id="backup-result" hidden><a id="backup-download">암호화한 백업 파일 다운로드</a>
+            <div id="backup-recovery" hidden><label for="backup-code">이 백업의 복구 코드</label><input id="backup-code" type="text" readonly autocomplete="off" spellcheck="false">
+              <p class="muted">백업 파일과 코드를 가진 사람은 기록을 열 수 있어요. 코드는 파일과 다른 안전한 곳에 보관해 주세요. 이 창을 닫으면 다시 표시하지 않습니다.</p>
+              <button id="backup-code-saved" type="button">코드를 따로 보관했어요</button></div>
+          </div>
+          <p class="settings-footnote">이 버전에서는 파일 보관까지 지원합니다. 앱에서 기록을 복원하는 화면은 아직 제공하지 않습니다. 백업 뒤에도 원래 기록을 유지해 주세요.</p>
+        </section>
       </div>
       <div id="settings-mobile" hidden>
         <section id="mobile-settings" class="setting-card"><p class="eyebrow">같은 비서와 어디서든</p><h2>휴대폰에서 연락하기</h2><p class="muted">Telegram으로 이야기하고, 새 제안과 예약 알림을 받아보세요.</p><p id="mobile-status" role="status"></p><button id="mobile-reconnect" type="button" hidden>저장된 연결로 다시 시도</button>

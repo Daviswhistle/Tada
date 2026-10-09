@@ -1,7 +1,10 @@
 // Validate raw JSON before JSON.parse can discard duplicate keys. No repairs.
-export function parseUniqueJson(text, maxBytes = 16384) {
+export function parseUniqueJson(text, maxBytes = 16384) { return parseBoundedJson(text, maxBytes, 262144); }
+// Explicitly separate local archive parsing from existing bounded wire readers.
+export function parseUniqueArchiveJson(text, maxBytes = 33554432) { return parseBoundedJson(text, maxBytes, 33554432); }
+function parseBoundedJson(text, maxBytes, ceiling) {
   const fail = () => { throw new Error('ENGINE_INVALID_JSON'); };
-  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 262144
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > ceiling
       || typeof text !== 'string' || new TextEncoder().encode(text).length > maxBytes) fail();
   let at = 0;
   const ws = () => { while (at < text.length && /[\x20\t\r\n]/.test(text[at])) at++; };

@@ -39,3 +39,9 @@ body:has(#settings[open]){overflow:hidden}
 #mail-editor::backdrop{background:#17251f70}#mail-editor h1{font-size:2rem}#mail-editor input,#mail-editor textarea{display:block;width:100%;box-sizing:border-box;margin:8px 0 18px}#mail-editor textarea{min-height:240px;resize:vertical;line-height:1.65}#mail-editor label{font-weight:600}.mail-recipients{display:grid;grid-template-columns:1fr 1fr;gap:18px}#mail-permission{padding:20px;background:#eaf0e7;border-radius:14px;margin:20px 0}#mail-error,#mail-discard-confirm{padding:14px;background:#fff0df;border-radius:12px}#mail-editor [readonly]{background:#f1f1ed}#mail-status{line-height:1.6} @media(max-width:520px){.mail-recipients{grid-template-columns:1fr;gap:0}#mail-editor .document-editor-actions{flex-wrap:wrap}}
 
 #mail-send{background:#315745;color:#fff;border-color:#315745}#mail-send:disabled{opacity:.45}
+
+.backup-option { display: flex; align-items: flex-start; gap: .6rem; line-height: 1.6; }
+.backup-option input { width: auto; margin-top: .35rem; flex: none; }
+#backup-download { display: inline-block; margin: .75rem 0; }
+#backup-code { font-family: monospace; font-size: .9rem; }
+@media(max-width:360px){.settings-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.settings-nav button{min-width:0;white-space:normal}}

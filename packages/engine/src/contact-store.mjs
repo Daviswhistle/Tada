@@ -2,6 +2,7 @@
 // Separate from the existing action ledger: documents are conversation results,
 // never an authority to overwrite arbitrary files or publish externally.
 import { DatabaseSync, backup } from 'node:sqlite';
+import { BACKUP_COLUMNS, MAX_BACKUP_BYTES, validateBackupSnapshot } from './contact-backup.mjs';
 import { validBrowserActions, beginBrowserAction, browserUncertain, finishBrowserAction } from './browser-actions.mjs';
 import { validateFollowupProposal, followupTimezone, followupInstant, isFollowupId, followupReviewText, FOLLOWUP_DELEGATION_CONSENT, validFollowupDelegation } from './followup-contract.mjs';
 import { randomBytes, randomUUID, createHash, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
@@ -199,6 +200,38 @@ export class ContactStore {
       if (/^CONTACT_[A-Z_]+$/u.test(error.message)) throw error;
       throw new Error('CONTACT_STORE_UNAVAILABLE');
     }
+  }
+  exportRecords(device, connection = { provider: null, google_client: null }) {
+    return this.#tx(() => {
+      this.#device(device);
+      const records = Object.fromEntries(Object.keys(BACKUP_COLUMNS).map(name => [name, []]));
+      const result = { version: 1, created_at: Date.now(), source: { journal_id: this.#id, schema_version: this.#version,
+        route: this.#db.prepare('SELECT route FROM identity WHERE singleton=1').get().route }, connection: structuredClone(connection), records };
+      let bytes = Buffer.byteLength(JSON.stringify(result)), count = 0;
+      const add = (name, row) => {
+        bytes += Buffer.byteLength(JSON.stringify(row)) + 1;
+        if (bytes > MAX_BACKUP_BYTES || ++count > 200000 || records[name].length >= 100000) throw Error('CONTACT_BACKUP_TOO_LARGE');
+        records[name].push(row);
+      };
+      for (const row of this.#db.prepare('SELECT id,name,expires,revoked FROM devices ORDER BY rowid').iterate()) add('devices', { ...row, name: this.#open(`device:${row.id}`, row.name) });
+      for (const row of this.#db.prepare('SELECT * FROM turns ORDER BY seq').iterate()) add('turns', { ...row,
+        payload: this.#open(`turn:${row.request_id}`, row.payload), answer: row.answer ? this.#open(`answer:${row.request_id}`, row.answer) : null });
+      for (const row of this.#db.prepare('SELECT * FROM requests ORDER BY seq').iterate()) add('requests', { ...row });
+      if (this.#version >= 2) for (const row of this.#db.prepare('SELECT * FROM telegram_outbox ORDER BY created,id').iterate()) add('telegram_outbox', { ...row,
+        payload: this.#open(`telegram-out:${row.id}`, row.payload), receipt: row.receipt ? this.#open(`telegram-receipt:${row.id}`, row.receipt) : null });
+      if (this.#version >= 3) {
+        for (const row of this.#db.prepare('SELECT * FROM followups ORDER BY created,id').iterate()) add('followups', { ...row, payload: this.#open(`followup:${row.id}:${row.version}`, row.payload) });
+        for (const row of this.#db.prepare('SELECT * FROM followup_proposals ORDER BY created,id').iterate()) add('followup_proposals', { ...row, payload: this.#open(`followup-proposal:${row.id}`, row.payload) });
+        for (const row of this.#db.prepare('SELECT * FROM followup_notices ORDER BY created,id').iterate()) add('followup_notices', { ...row, payload: this.#open(`followup-notice:${row.id}`, row.payload) });
+      }
+      if (this.#version >= 4) for (const row of this.#db.prepare('SELECT * FROM followup_reviews ORDER BY created,id').iterate()) add('followup_reviews', { ...row, payload: this.#open(`review:${row.id}`, row.payload) });
+      if (this.#version >= 5) {
+        for (const row of this.#db.prepare('SELECT * FROM proactive_runs ORDER BY turn').iterate()) add('proactive_runs', { ...row, payload: this.#open(`proactive:${row.turn}`, row.payload) });
+        for (const row of this.#db.prepare("SELECT name,payload FROM assistance_settings WHERE name GLOB 'browser_action:*' ORDER BY name").iterate()) add('browser_actions', { name: row.name, payload: this.#setting(row.name) });
+      }
+      if (this.#version >= 6) for (const row of this.#db.prepare('SELECT * FROM mail_actions ORDER BY turn').iterate()) add('mail_actions', { ...row, payload: this.#mailRow(row) });
+      return validateBackupSnapshot(result);
+    });
   }
   #seal(aad, value) {
     const plain = Buffer.from(JSON.stringify(value));

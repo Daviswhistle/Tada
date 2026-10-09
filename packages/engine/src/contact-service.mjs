@@ -1,3 +1,4 @@
+import { BACKUP_CONSENT, createRecordBackup } from './contact-backup.mjs';
 import { MailSources } from './mail-sources.mjs';
 import { BrowserSources } from './browser-sources.mjs';
 import { observeAttention, eventKey, reminderDue, reminderText } from './attention.mjs';
@@ -29,10 +30,26 @@ function failureDetails(error) {
 }
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
-  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false; #mailOperations = new Map();
-  constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone } = {}) {
+  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false; #mailOperations = new Map(); #backupConfig; #backupOperation = null;
+  constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone, backup = {} } = {}) {
     super();
     this.#store = store; this.#model = model; this.#sources = sources; this.#timezone = followupTimezone(timezone);
+    this.#backupConfig = { connection: structuredClone(backup.connection ?? { provider: null, google_client: null }), protector: backup.protector };
+  }
+  async backupRecords(device, portable, consent) {
+    this.#store.assertDevice(device);
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    if (consent !== BACKUP_CONSENT || typeof portable !== 'boolean') throw Error('CONTACT_BACKUP_CONSENT_REQUIRED');
+    if (this.#backupOperation) throw Error('CONTACT_BACKUP_BUSY');
+    const snapshot = this.#store.exportRecords(device, this.#backupConfig.connection);
+    const operation = createRecordBackup(snapshot, { portable, protector: this.#backupConfig.protector });
+    this.#backupOperation = operation;
+    try {
+      const result = await operation;
+      if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+      this.#store.assertDevice(device);
+      return result;
+    } finally { if (this.#backupOperation === operation) this.#backupOperation = null; }
   }
   attachBrowser(browser) { if (this.#browser) throw Error('CONTACT_BROWSER_ALREADY_ATTACHED'); this.#browser = browser; browser.on?.('change', () => this.emit('change')); }
   browserStatus(device) {
@@ -363,8 +380,8 @@ export class ContactService extends EventEmitter {
   get stopped() { return this.#stopped; }
   async idle() { while (this.#drain) await this.#drain; }
   async stopWhenIdle() {
-    while (this.#drain || this.#mailOperations.size) {
-      await Promise.allSettled([...(this.#drain ? [this.#drain] : []), ...this.#mailOperations.values()]);
+    while (this.#drain || this.#mailOperations.size || this.#backupOperation) {
+      await Promise.allSettled([...(this.#drain ? [this.#drain] : []), ...(this.#backupOperation ? [this.#backupOperation] : []), ...this.#mailOperations.values()]);
     }
     // No asynchronous gap between draining admitted work and closing admission.
     this.#stopped = true; clearInterval(this.#timer); this.#attentionAbort?.abort();
@@ -383,7 +400,7 @@ export class ContactService extends EventEmitter {
     await this.#attention;
     this.#active?.abort.abort();
     await this.#drain;
-    await Promise.allSettled([...this.#mailOperations.values()]);
+    await Promise.allSettled([...this.#mailOperations.values(), ...(this.#backupOperation ? [this.#backupOperation] : [])]);
     await this.#browser?.close();
   }
 }

@@ -224,7 +224,10 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     const savedGoogleClient = background ? loadGoogleClientConfig({ data: options.data, passphrase, store, env: {} }) : null;
     const portableGoogle = !background || googleClient.clientId === savedGoogleClient.clientId && googleClient.clientSecret === savedGoogleClient.clientSecret;
     passphrase = '';
-    service = new ContactService(store, provider, sources, { timezone: options.timezone });
+    service = new ContactService(store, provider, sources, { timezone: options.timezone, backup: { connection: {
+      provider: { kind: identity.provider, subject: account?.profile.subject ?? null, label: identity.account_label ?? null, model: identity.model },
+      google_client: googleClient.clientId ? { client_id: googleClient.clientId, client_secret: googleClient.clientSecret ?? '' } : null,
+    } } });
     stopAdmission = () => service.beginStop();
     ui?.signal.addEventListener('abort', stopAdmission, { once: true });
     ui?.signal.throwIfAborted();

@@ -31,6 +31,7 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
       this.attributes.set('id', String(value)); elements.set(String(value), this);
     }
     setAttribute(name, value) { if (name === 'id') this.id = value; else this.attributes.set(name, String(value)); }
+    removeAttribute(name) { this.attributes.delete(name); }
     getAttribute(name) { return this.attributes.get(name) ?? null; }
     focus() { focused = this; }
     showModal() { this.open = true; }
@@ -63,7 +64,7 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
-    URL, URLSearchParams, atob, AbortController, TextEncoder, performance: { now: () => clock }, crypto: { randomUUID },
+    URL: class extends URL { static createObjectURL() { return 'blob:synthetic-backup'; } static revokeObjectURL() {} }, URLSearchParams, atob, AbortController, TextEncoder, performance: { now: () => clock }, crypto: { randomUUID },
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { at: clock + delay, callback }); return id; },
     clearTimeout(id) { timers.delete(id); },
     location: { hash, pathname: '/' }, history: { replaceState() {} },
@@ -1079,4 +1080,53 @@ test('read-only reconnection is not mislabeled as a cancelable send permission u
   await c.refresh(); assert.equal(c.get('mail-connect').disabled, true);
   const disable = c.get('google-settings-slot').querySelectorAll('button').find(b => b.textContent === 'Tada에서 메일 발송 끄기');
   assert.equal(disable.hidden, true); assert.equal(c.calls.filter(call => call.path === '/api/google/disable-mail').length, 0);
+});
+
+function backupResponse(portable = false) {
+  return { ok: true, status: 200, headers: { get: () => portable ? 'TADA1-' + 'a'.repeat(32) : null }, blob: async () => ({ size: 1024 }) };
+}
+test('record settings prepare an explicit encrypted download and optional code without claiming it was saved', async () => {
+  const c = client(); c.get('settings-open').onclick(); c.get('settings-nav-records').onclick();
+  assert.equal(c.get('settings-records').hidden, false); assert.equal(c.get('settings-mobile').hidden, true);
+  c.respond('/api/records/backup', () => backupResponse(true)); c.get('backup-portable').checked = true;
+  await c.get('backup-create').onclick();
+  assert.equal(c.calls.at(-1).body.consent, 'encrypted_record_backup_v1'); assert.equal(c.calls.at(-1).body.portable, true);
+  assert.equal(c.get('backup-result').hidden, false); assert.match(c.get('backup-code').value, /^TADA1-/u);
+  assert.match(c.get('backup-status').textContent, /다운로드를 눌러/u); assert.match(c.get('backup-download').download, /\.tadabackup$/u);
+  assert.equal(c.get('backup-create').disabled, true); let prevented = false;
+  c.browserEvent('beforeunload', { preventDefault() { prevented = true; } }); assert.equal(prevented, true);
+  c.get('backup-code-saved').onclick(); assert.equal(c.get('backup-create').disabled, false);
+  c.get('settings-close').onclick(); assert.equal(c.get('backup-code').value, ''); assert.equal(c.get('backup-result').hidden, true);
+});
+for (const phase of ['headers','body']) test(`backup ${phase} stall is bounded and a late result cannot revive a closed settings page`, async () => {
+  const c = client(); c.get('settings-open').onclick(); let release;
+  const stalled = new Promise(resolve => { release = resolve; });
+  c.respond('/api/records/backup', () => phase === 'headers' ? stalled : { ...backupResponse(), blob: () => stalled });
+  const pending = c.get('backup-create').onclick(); await c.flush(); await c.advance(30001); await pending;
+  assert.equal(c.get('backup-create').disabled, false); assert.equal(c.get('backup-result').hidden, true);
+  assert.match(c.get('backup-status').textContent, /다시 시도/u);
+  c.get('settings-close').onclick(); release(phase === 'headers' ? backupResponse() : { size: 1024 }); await c.flush();
+  assert.equal(c.get('backup-result').hidden, true); assert.equal(c.get('backup-code').value, '');
+});
+test('closing backup aborts immediately and a reopened download owns only its new response', async () => {
+  const c = client(); c.get('settings-open').onclick(); let release;
+  c.respond('/api/records/backup', () => new Promise(resolve => { release = resolve; }));
+  const old = c.get('backup-create').onclick(); await c.flush();
+  const oldRequest = c.calls.at(-1); c.get('settings-close').onclick(); assert.equal(oldRequest.signal.aborted, true);
+  c.get('settings-open').onclick(); c.respond('/api/records/backup', () => backupResponse()); await c.get('backup-create').onclick();
+  release(backupResponse(true)); await old;
+  assert.equal(c.get('backup-recovery').hidden, true); assert.equal(c.get('backup-code').value, ''); assert.equal(c.get('backup-result').hidden, false);
+});
+test('backup authentication loss clears the code and blocks a late response after device revocation', async () => {
+  const c = client(); c.get('settings-open').onclick(); let release;
+  c.respond('/api/records/backup', () => new Promise(resolve => { release = resolve; }));
+  const pending = c.get('backup-create').onclick(); await c.flush();
+  c.queueState(() => ({ ok: false, status: 401, json: async () => ({ error: 'CONTACT_PAIR_REQUIRED' }) })); await c.refresh();
+  release(backupResponse(true)); await pending;
+  assert.equal(c.get('settings').open, false); assert.equal(c.get('backup-code').value, ''); assert.equal(c.get('backup-result').hidden, true);
+});
+test('unexpected or missing recovery metadata is rejected before offering the backup download', async () => {
+  const c = client(); c.get('backup-portable').checked = true;
+  c.respond('/api/records/backup', () => backupResponse()); await c.get('backup-create').onclick();
+  assert.equal(c.get('backup-result').hidden, true); assert.match(c.get('backup-status').textContent, /復|복구/u);
 });

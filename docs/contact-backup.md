@@ -1,0 +1,29 @@
+# Encrypted record backup
+
+The settings page **내 기록 → 백업 파일 만들기** creates an encrypted `.tadabackup` download from the continuing conversation. This slice preserves records; application-level restoration is not implemented yet. Keep the original journal. Backup creation alone is not a release qualification or a successful restore.
+
+The browser offers an explicit download link after creation; it does not claim the browser has saved the file. Ordinary backup requires no new password. A fresh random archive key is protected with the current Windows user's DPAPI, including the supported WSL route. An optional generated recovery code can open that one archive independently of Windows. Store it separately from the archive; both together expose its records. The code is displayed only during that settings session, is not stored on the host and is cleared on close or device disconnection. Closing before acknowledging code storage prompts once. Losing both the original OS protection and the code makes the archive unreadable.
+
+## Data and authority
+
+One SQLite read transaction exports all rows, not the paginated UI view. The explicit table/column allowlist includes device labels, turns and document revisions, request usage, follow-up proposals/work/notices/reviews, proactive-origin markers, browser action records, mail drafts/action outcomes, and Telegram delivery records. Their saved states and relationships are preserved, including queued work and uncertain outcomes. Creating a backup does not modify them or suspend an already running task.
+
+The archive excludes reusable connection credentials, device authentication hashes, setup/pairing tokens, Telegram bindings and controls, provider checkpoints, and executable settings/grants. Provider account identity/model and Tada's dedicated Google OAuth client configuration can be included inside the ciphertext to support a future reconnect flow. User-written record content is not a secret scrubber: anything the user typed into a conversation remains conversation data.
+
+**An archive is data, never permission to resume work.** It cannot establish whether an action was sent, canceled, changed or deleted after the backup. A future restore must validate every domain and relationship, create a new journal/key and fresh account connections, retain source lineage, and quarantine historical work against execution before enabling any runtime. `openRecordBackup` authenticates/decrypts the data format and checks structural references; it does not import a database or authorize dispatch. Do not feed its output to a live store without that separate restore boundary.
+
+## Format and bounds
+
+`TADA-BACKUP-1\n`, a four-byte big-endian header length, a strict JSON header, and an AES-256-GCM envelope. The header contains version, DPAPI-wrapped archive key, optional recovery-code wrapper and plaintext length. All header bytes are authenticated as additional data. The archive key is independent of the original database key. Recovery codes contain 192 random bits; HKDF-SHA-256 derives a wrapper key with a per-archive salt and domain separation. No plaintext archive is written by the host.
+
+Plaintext is bounded to 32 MiB; the header to 16 KiB, each table to 100,000 rows and total rows to 200,000. Exceeding a bound fails explicitly without producing a partial file. The archive parser rejects duplicate keys, malformed Unicode, non-finite numbers and nesting deeper than 64. Its larger bound does not widen the existing JSON wire readers. Unknown fields/versions and altered ciphertext are rejected. Selecting a wrong recovery code never silently falls back to Windows protection.
+
+The authenticated same-origin POST requires explicit backup consent, returns `no-store` binary content and rechecks the device and host after the asynchronous DPAPI operation. Only one archive is created at a time. Device revocation or shutdown prevents a late private response; graceful shutdown drains admitted backup creation. The browser bounds both headers and body waiting, aborts on close, revokes temporary object URLs and ignores stale responses. No model tool can create or receive backups.
+
+## Evidence
+
+Focused tests cover complete-history export, credential/checkpoint exclusion, pending work preservation, record relationships, document versions, delivery uncertainty, encrypted round trips, altered files, wrong OS keys/codes, parser bounds, authenticated HTTP and UI timeout/revocation/close races. Synthetic source records are used throughout. Native Windows DPAPI and actual browser-download evidence are recorded separately from these deterministic tests. Cross-computer physical restoration, application restore, power-loss recovery and release acceptance remain separate work.
+
+2026-10-10 validation: full Node/contracts/type checks passed 1,200 tests with no skips. The first full run had a setup-ready timeout; the unchanged account file passed all 30 tests separately, then the complete rerun passed. Native Windows ran 105 applicable backup/browser-client checks and actual DPAPI plus portable-code round trips. An isolated in-app browser downloaded both archive forms through the real settings UI; the resulting files decrypted to the exact synthetic conversation, including portable decryption with OS unprotection deliberately unavailable. Existing real account records were not exported or migrated. Rust schemas/native executables and dependencies are unchanged by this slice; their earlier required checks are reused.
+
+Responsive inspection additionally covered 390px and 320px browser viewports. At 320px, the original four-item navigation overflowed; the amended CSS lays out two columns and the rechecked navigation/dialog scroll widths equal their client widths (280px), with the backup action reachable. This is browser layout evidence, not a physical-phone qualification.
