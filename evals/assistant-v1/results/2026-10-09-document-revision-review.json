@@ -1,0 +1,58 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-document-revision.json",
+  "report_sha256": "b2a37816f0210c2083f6df6fe9d38f4ac735f6cc35ea12b0341aa69271008903",
+  "execution_implementation": "b95ae0286e4b5de213cf3e3bb6cb1632b10b2bfa",
+  "execution_harness_sha256": "21492c4e3e0a308327d20533ea7793c4ab8a4414d6e4ad7ff138d8adef335120",
+  "observed_requests": 6,
+  "unknown_requests": 0,
+  "public_web_requests": 0,
+  "cases": [
+    {
+      "case": "A04",
+      "variant": 1,
+      "verdict": "passed",
+      "reason": "Read actual owner version 2 and preserved 15:00/first floor/eight confirmed/accessibility/captions. Canceled catering stayed removed. Reduced 401 to 290 characters and grouped actions by time/stage without inventing minute schedules."
+    },
+    {
+      "case": "A04",
+      "variant": 2,
+      "verdict": "passed",
+      "reason": "Preserved Jiyoun/Thursday 16:00/photo before opening/serial before acceptance/stop on mismatch; omitted removed phone collection. Four-stage checklist and exception table improve execution. Increased 395 to 863 characters; not a volume reduction. New damage and missing-identifier handling explicitly recommendations, not source rules."
+    }
+  ],
+  "shared_checks": [
+    "Actual read_document(4) returned owner revision 2 body.",
+    "Final id 5/root 2/revision 3/based_on 4; answer, saved document and authenticated download body exactly match, hashes recomputed.",
+    "Original and owner-edited versions plus unrelated same-title document unchanged by actual store checks.",
+    "No unissued S references in either final body; actual source named by title and version.",
+    "No unnecessary questions, uploads, unrelated body reads or public research."
+  ],
+  "first_report_preserved": true,
+  "correction_note": "The final live run did not produce malformed citations. Actual live citation repair was not triggered; separate regression tests verify annotated-ID repair admission.",
+  "full_suite_denominator": 16,
+  "currently_passed_cases": [
+    "A01",
+    "A04",
+    "A05",
+    "A09",
+    "A10",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "not_run_cases": [
+    "A02",
+    "A03",
+    "A06",
+    "A07",
+    "A08",
+    "A11",
+    "A12"
+  ],
+  "primary_concurred": true,
+  "product_acceptance": "not_passed",
+  "scope": "Two fixed synthetic environments with one recent owner edit, current feedback and a closed same-title alternative. Not multiple active edited targets, old-feedback recall, physical-device delivery or full release qualification. Concurrent edits are separate synthetic/browser checks."
+}

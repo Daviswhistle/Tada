@@ -59,11 +59,11 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
   }
   const body = new Element('body'); body.scrollHeight = 100;
   const get = id => { if (!elements.has(id)) { const item = new Element(); item.id = id; body.append(item); } return elements.get(id); };
-  const calls = [], pending = [], handlers = new Map();
+  const calls = [], pending = [], handlers = new Map(), replies = new Map();
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
-    URL, URLSearchParams, atob, AbortController, performance: { now: () => clock }, crypto: { randomUUID },
+    URL, URLSearchParams, atob, AbortController, TextEncoder, performance: { now: () => clock }, crypto: { randomUUID },
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { at: clock + delay, callback }); return id; },
     clearTimeout(id) { timers.delete(id); },
     location: { hash, pathname: '/' }, history: { replaceState() {} },
@@ -80,6 +80,7 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
     fetch: (path, options) => {
       calls.push({ path, body: options.body ? JSON.parse(options.body) : null, signal: options.signal });
       if (offline) return Promise.reject(Error('fixture network loss'));
+      if (replies.has(path)) return Promise.resolve().then(() => replies.get(path)(options));
       if (path === '/api/turns') return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
       if (handlers.has(path)) return Promise.resolve({ ok: true, status: 200, json: async () => handlers.get(path)() });
       assert.equal(path, '/api/state');
@@ -91,7 +92,7 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
   if (parser) vm.runInContext(parserSource, context, { filename: 'actual-markdown.js' });
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
   return { get, calls, pending, state, streams, timers, advance, flush,
-    browserEvent: name => browserEvents.get(name)?.(),
+    browserEvent: (name, event) => browserEvents.get(name)?.(event), respond: (path, callback) => replies.set(path, callback),
     queueState: fn => stateResponses.push(fn),
     setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
     accept: () => pending.shift().resolve({ ok: true, status: 202, json: async () => ({ seq: 1 }) }),
@@ -823,4 +824,98 @@ test('a stale page failure after logout does not replace current connection guid
   c.handle('/api/logout', () => ({})); await c.get('logout').onclick(); const notice = c.get('notice').textContent;
   fail(Error('Late page failure')); await page;
   assert.equal(c.get('notice').textContent, notice); assert.equal(c.timers.size, 0);
+});
+
+const editorFixture = async () => {
+  const c = client(), doc = { version: 1, id: 1, root: 1, revision: 1, based_on: null, title: '회의 안내', format: 'markdown', content: '14시 · 2층', sources: [] };
+  c.state.document_editing = true; c.state.turns = [{ seq: 1, text: '문서 작성', state: 'answered', answer: { text: doc.content, sources: [], document: doc } }];
+  c.handle('/api/documents/1/edit', () => ({ document: doc })); await c.refresh();
+  const button = c.get('messages').querySelectorAll('button').find(b => b.textContent === '직접 수정'); assert.ok(button); await button.onclick();
+  return { c, doc };
+};
+test('document drafts survive conversation updates, close/reopen and temporary disconnection without HTML execution', async () => {
+  const { c, doc } = await editorFixture();
+  const draft = '<script>keep as text</script>15시 · 1층'; c.get('document-editor-content').value = draft;
+  c.state.turns.push({ seq: 2, text: '다른 대화', state: 'answered', answer: { text: '새 답변', sources: [] } }); await c.refresh();
+  assert.equal(c.get('document-editor-content').value, draft); assert.equal(c.get('document-editor').open, true);
+  c.get('document-editor-close').onclick(); assert.equal(c.get('document-editor').open, false);
+  await c.get('messages').querySelectorAll('button').find(b => b.textContent === '직접 수정').onclick();
+  assert.equal(c.get('document-editor-content').value, draft); assert.equal(c.get('document-editor').open, true);
+  let prevented = false; c.browserEvent('beforeunload', { preventDefault() { prevented = true; } }); assert.equal(prevented, true);
+  c.setOffline(true); await c.refresh(); assert.equal(c.get('document-editor-content').value, draft);
+  assert.equal(doc.content, '14시 · 2층'); assert.equal(c.get('document-editor-content').children.length, 0);
+});
+test('lost document-save response freezes the exact draft and explicitly retries its original request ID', async () => {
+  const { c, doc } = await editorFixture(); c.get('document-editor-content').value = '15시 · 1층'; let attempts = 0;
+  c.respond('/api/documents/edit', options => {
+    const body = JSON.parse(options.body); if (++attempts === 1) throw Error('lost after commit');
+    return { ok: true, status: 200, json: async () => ({ document: { ...doc, id: 2, version: 2, revision: 2, based_on: 1, author: 'owner', content: body.content } }) };
+  });
+  const submit = () => c.get('document-editor-form').onsubmit({ preventDefault() {} });
+  await submit(); assert.equal(c.get('document-editor-save').textContent, '저장 확인'); assert.equal(c.get('document-editor-content').readOnly, true);
+  assert.equal(c.get('document-editor-discard').disabled, true); await c.refresh();
+  assert.equal(c.calls.filter(x => x.path === '/api/documents/edit').length, 1, 'background reads never replay a write');
+  await submit(); const writes = c.calls.filter(x => x.path === '/api/documents/edit'); assert.equal(writes.length, 2); assert.deepEqual(writes[0].body, writes[1].body);
+  assert.equal(c.get('document-editor-content').readOnly, false); assert.match(c.get('document-editor-version').textContent, /버전 2/);
+  assert.equal(c.calls.filter(x => x.path === '/api/turns').length, 0);
+});
+test('conflicting document edits expose the latest version separately and retain the owner draft when switching bases', async () => {
+  const { c, doc } = await editorFixture(), draft = '내가 쓴 내용 15시'; c.get('document-editor-content').value = draft;
+  const newer = { ...doc, id: 3, revision: 2, content: '다른 기기에서 새로 고친 내용', title: '새 제목' };
+  c.handle('/api/documents/1/edit', () => ({ document: newer }));
+  c.respond('/api/documents/edit', () => ({ ok: false, status: 400, json: async () => ({ error: 'CONTACT_DOCUMENT_STALE' }) }));
+  await c.get('document-editor-form').onsubmit({ preventDefault() {} });
+  assert.equal(c.get('document-editor-content').value, draft); assert.equal(c.get('document-conflict').hidden, false);
+  assert.match(c.get('document-conflict-content').textContent, /다른 기기/);
+  c.get('document-use-latest').onclick(); assert.equal(c.get('document-editor-content').value, newer.content);
+  assert.ok(c.get('document-draft-backup-content').textContent.includes(draft)); assert.equal(c.get('document-draft-backup').hidden, false);
+  assert.match(c.get('document-editor-version').textContent, /버전 2/);
+});
+test('an edit read arriving after authentication expires cannot reopen private document UI', async () => {
+  const { c } = await editorFixture(); c.get('document-editor-close').onclick(); let release;
+  c.respond('/api/documents/1/edit', () => new Promise(resolve => { release = resolve; }));
+  const opening = c.get('messages').querySelectorAll('button').find(b => b.textContent === '직접 수정').onclick(); await c.flush();
+  c.queueState(async () => ({ ok: false, status: 401, json: async () => ({ error: 'CONTACT_PAIR_REQUIRED' }) })); await c.refresh();
+  release({ ok: true, status: 200, json: async () => ({ document: { id: 1, title: 'Late secret', content: 'late' } }) }); await opening;
+  assert.equal(c.get('document-editor').open, false); assert.notEqual(c.get('document-editor-name').value, 'Late secret');
+});
+
+test('oversized document drafts stay editable without submitting an ambiguous save', async () => {
+  const { c } = await editorFixture(); const draft = '한'.repeat(3000); c.get('document-editor-content').value = draft;
+  await c.get('document-editor-form').onsubmit({ preventDefault() {} });
+  assert.equal(c.calls.filter(x => x.path === '/api/documents/edit').length, 0);
+  assert.equal(c.get('document-editor-content').value, draft); assert.notEqual(c.get('document-editor-content').readOnly, true);
+  assert.match(c.get('document-editor-notice').textContent, /내용이 너무 길어요/);
+});
+
+test('conflict backups survive reopens, subsequent conflicts and saves until explicitly discarded', async () => {
+  const { c, doc } = await editorFixture(); const submit = () => c.get('document-editor-form').onsubmit({ preventDefault() {} });
+  c.get('document-editor-content').value = 'First unsaved owner draft';
+  let latest = { ...doc, id: 2, revision: 2, content: 'Latest content' };
+  c.handle('/api/documents/1/edit', () => ({ document: latest }));
+  c.respond('/api/documents/edit', () => ({ ok: false, status: 400, json: async () => ({ error: 'CONTACT_DOCUMENT_STALE' }) }));
+  await submit(); c.get('document-use-latest').onclick();
+  c.get('document-editor-close').onclick();
+  await c.get('messages').querySelectorAll('button').find(b => b.textContent === '직접 수정').onclick();
+  assert.equal(c.get('document-draft-backup').hidden, false); assert.match(c.get('document-draft-backup-content').textContent, /First unsaved/);
+  let warned = 0; c.browserEvent('beforeunload', { preventDefault() { warned++; } }); assert.equal(warned, 1);
+  c.get('document-editor-content').value = 'Second unsaved owner draft';
+  latest = { ...latest, id: 3, revision: 3, content: 'Third version' }; c.handle('/api/documents/2/edit', () => ({ document: latest }));
+  await submit(); c.get('document-use-latest').onclick();
+  assert.match(c.get('document-draft-backup-content').textContent, /First unsaved/); assert.match(c.get('document-draft-backup-content').textContent, /Second unsaved/);
+  c.respond('/api/documents/edit', () => ({ ok: true, status: 200, json: async () => ({ document: { ...latest, id: 4, revision: 4 } }) }));
+  await submit(); assert.equal(c.get('document-draft-backup').hidden, false);
+  c.browserEvent('beforeunload', { preventDefault() { warned++; } }); assert.equal(warned, 2);
+  c.get('document-backup-discard').onclick(); assert.equal(c.get('document-discard-confirm').hidden, false);
+  c.get('document-discard-keep').onclick(); assert.equal(c.get('document-draft-backup').hidden, false);
+  c.get('document-backup-discard').onclick(); c.get('document-discard-confirmed').onclick(); assert.equal(c.get('document-draft-backup').hidden, true);
+  c.browserEvent('beforeunload', { preventDefault() { warned++; } }); assert.equal(warned, 2);
+});
+
+test('discarding an edited draft uses an inline confirmation and cancel retains the draft', async () => {
+  const { c } = await editorFixture(); c.get('document-editor-content').value = 'Keep this draft';
+  c.get('document-editor-discard').onclick(); assert.equal(c.get('document-discard-confirm').hidden, false); assert.equal(c.get('document-editor').open, true);
+  c.get('document-discard-keep').onclick(); assert.equal(c.get('document-discard-confirm').hidden, true); assert.equal(c.get('document-editor-content').value, 'Keep this draft');
+  c.get('document-editor-discard').onclick(); c.get('document-discard-confirmed').onclick(); assert.equal(c.get('document-editor').open, false);
+  let warned = false; c.browserEvent('beforeunload', { preventDefault() { warned = true; } }); assert.equal(warned, false);
 });

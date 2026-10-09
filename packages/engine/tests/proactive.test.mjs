@@ -377,3 +377,45 @@ for (const valid of [true, false]) test(`failure diagnostics contain only bounde
     assert.equal(e.store.usage().requests, 2); assert.equal(e.store.usage().unknown_requests, 1);
   } finally { await service?.close(); e.close(); }
 });
+
+for (const mode of ['daily', 'continuous']) test(`automatic care can use owner-edited personal content without forcing inherited citations: ${mode}`, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: noon });
+  const e = env();
+  try {
+    const device = e.store.addDevice('owner').id;
+    const receipt = { id: 'S1', source: 'ChatGPT public web research', path: 'report-1', sha256: 'a'.repeat(64), observed_at: new Date(noon).toISOString() };
+    const first = e.store.submit(device, randomUUID(), 'Create researched report').seq; e.store.claim();
+    const spec = e.store.prepareDocument(first, { title: 'Research report', format: 'markdown', based_on: null });
+    const checkpoint = new ConversationAssistant({}, noSources).checkpoint(); checkpoint.nextEvidence = 2;
+    e.store.finish(first, { text: 'Old finding [S1]', sources: [receipt], verification: 'provider_web_report_checked' }, checkpoint, [], spec);
+    const edited = e.store.editDocument(device, { request_id: randomUUID(), based_on: first, title: '내일 준비', content: '내일은 노트를 준비하고 책상을 정리한다.' }).document;
+    let job;
+    if (mode === 'continuous') { e.store.configureContinuingUse(device, true, CONTINUING_CONSENT); job = continuousJob(e.store, device); }
+    else { e.store.configureProactive(device, true, consent, 'Asia/Seoul', noon); e.store.proactiveTick(noon); job = e.store.claim(); }
+    const sources = new ProactiveSources(e.store, job), signal = new AbortController().signal;
+    const older = await new ProactiveSources(e.store, job).execute('read_document', { id: first }, signal);
+    assert.equal(older.latest_id, edited.id); assert.equal(older.author, 'assistant');
+    await assert.rejects(sources.execute('read_document', { id: edited.id }, signal, { fits: () => false }), /SOURCE_LIMIT/);
+    assert.equal(sources.recallEvidence(receipt, signal), false, 'a rejected read never restores evidence');
+    const seen = []; let step = 0;
+    const assistant = new ConversationAssistant({ chat: async messages => {
+      seen.push(structuredClone(messages)); const request = e.store.reserve(job.seq);
+      const response = ++step === 1 ? { ...reply(''), message: { role: 'assistant', content: '', tool_calls: [
+        { function: { name: 'list_followups', arguments: { status: 'active', offset: 0 } } },
+        { function: { name: 'read_document', arguments: { id: edited.id } } },
+      ] } } : reply('저장한 내일 준비 목록에 노트와 책상 정리가 남아 있어요. 지금 챙기면 아침 준비가 줄어요.');
+      e.store.observe(request, response); return response;
+    } }, sources);
+    assistant.restore(checkpoint, e.store.usage());
+    const answer = await assistant.ask(job.text);
+    assert.equal(step, 2); assert.deepEqual(answer.sources, []);
+    assert.match(seen[1].at(-1).content, /inherited_references_not_verification_of_owner_edits/);
+    assert.equal(JSON.parse(seen[1].at(-1).content.split('\n')[0]).latest_id, edited.id);
+    assert.equal(sources.recallEvidence(receipt, signal), true);
+    assert.equal(await sources.verify(receipt, signal), true, 'explicitly cited inherited references remain verifiable');
+    assert.equal(await sources.verify({ ...receipt, sha256: 'b'.repeat(64) }, signal), false);
+    e.store.finish(job.seq, answer, assistant.checkpoint());
+    assert.equal(e.store.turn(job.seq).state, 'answered'); assert.equal(e.store.usage().requests, 2);
+    assert.deepEqual(e.store.document(edited.id).sources, [receipt]);
+  } finally { e.close(); }
+});

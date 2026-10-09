@@ -68,8 +68,11 @@ export class ProactiveSources {
     if (name === 'list_followups') return this.#store.followupPage(args.status, args.offset);
     if (name === 'list_documents') return this.#store.documentPage(args.before);
     const doc = this.#store.document(args.id); if (!doc) throw Error('CONTACT_DOCUMENT_NOT_FOUND');
+    const result = { ...doc, latest_id: this.#store.latestDocument(doc.id).id, author: doc.author ?? 'assistant',
+      source_basis: doc.author === 'owner' ? 'inherited_references_not_verification_of_owner_edits' : 'saved_document_snapshot_not_live_external_observation' };
+    if (Buffer.byteLength(JSON.stringify(result)) > 32768 || budget && !budget.fits(result)) throw Error('ASSISTANT_SOURCE_LIMIT');
     this.#documents.set(doc.id, { sha256: doc.sha256, sources: doc.sources });
-    return { ...doc, source_basis: 'saved_document_snapshot_not_live_external_observation' };
+    return result;
   }
   recallEvidence(evidence, signal) {
     this.#guard(signal);

@@ -258,7 +258,7 @@ export class ContactStore {
       this.#device(device);
       const old = this.#db.prepare('SELECT * FROM turns WHERE request_id=?').get(requestId);
       if (old) {
-        if (this.#turn(old).text !== text) throw new Error('CONTACT_REQUEST_ID_REUSED');
+        if (this.#turn(old).origin === 'owner_edit' || this.#turn(old).text !== text) throw new Error('CONTACT_REQUEST_ID_REUSED');
         return { seq: old.seq, replay: true };
       }
       if (this.#db.prepare("SELECT count(*) n FROM turns WHERE state IN('queued','running')").get().n >= 16
@@ -287,15 +287,31 @@ export class ContactStore {
     const answer = row.answer ? this.#open(`answer:${row.request_id}`, row.answer) : null;
     if (answer?.document) {
       const d = answer.document;
-      if (d.version !== 1 || d.id !== row.seq || !Number.isSafeInteger(d.root) || d.root < 1 || d.root > d.id
+      if (![1, 2].includes(d.version) || d.id !== row.seq || !Number.isSafeInteger(d.root) || d.root < 1 || d.root > d.id
           || !Number.isSafeInteger(d.revision) || d.revision < 1 || !['markdown', 'text'].includes(d.format)
           || typeof d.title !== 'string' || !d.title.trim() || d.title.length > 120
           || (d.based_on !== null && (!Number.isSafeInteger(d.based_on) || d.based_on < 1 || d.based_on >= d.id))
           || typeof answer.text !== 'string' || Buffer.byteLength(answer.text) > 4096 || d.sha256 !== hash(answer.text)) throw Error('CONTACT_DOCUMENT_INVALID');
     }
+    if (answer?.document?.version === 2) {
+      const d = answer.document;
+      if (this.#version < 5 || row.state !== 'answered' || d.author !== 'owner'
+          || Object.keys(d).sort().join(',') !== 'author,based_on,format,id,revision,root,sha256,title,version'
+          || d.based_on === null || d.title !== d.title.trim() || /[\u0000-\u001f\u007f]/u.test(d.title)
+          || !d.title.isWellFormed() || !answer.text.trim() || !answer.text.isWellFormed() || !Array.isArray(answer.sources) || answer.verification !== 'not_applicable'
+          || this.#open(`turn:${row.request_id}`, row.payload).text !== '문서를 직접 수정했어요.') throw Error('CONTACT_DOCUMENT_INVALID');
+      // Validate one link without recursively reading an arbitrarily long chain.
+      // Startup separately authenticates and validates every retained turn.
+      const rowParent = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(d.based_on);
+      const parent = rowParent?.answer ? this.#open(`answer:${rowParent.request_id}`, rowParent.answer) : null;
+      if (rowParent?.state !== 'answered' || ![1, 2].includes(parent?.document?.version)
+          || parent.document.id !== d.based_on || parent.document.root !== d.root
+          || parent.document.revision + 1 !== d.revision || parent.document.format !== d.format
+          || JSON.stringify(parent.sources) !== JSON.stringify(answer.sources)) throw Error('CONTACT_DOCUMENT_INVALID');
+    }
     return { seq: row.seq, request_id: row.request_id, device: row.device, state: row.state, created: row.created,
       text: this.#open(`turn:${row.request_id}`, row.payload).text,
-      ...(this.proactiveForTurn(row.seq) ? { origin: 'proactive' } : {}),
+      ...(answer?.document?.version === 2 ? { origin: 'owner_edit' } : this.proactiveForTurn(row.seq) ? { origin: 'proactive' } : {}),
       answer, error: row.error };
   }
   document(id) {
@@ -303,6 +319,54 @@ export class ContactStore {
     const turn = this.turn(id);
     return turn?.state === 'answered' && turn.answer?.document
       ? { ...turn.answer.document, content: turn.answer.text, sources: turn.answer.sources } : null;
+  }
+  latestDocument(id) {
+    const original = this.document(id); if (!original) return null;
+    for (const row of this.#db.prepare("SELECT * FROM turns WHERE state='answered' AND seq>=? ORDER BY seq DESC").iterate(original.root)) {
+      const doc = this.#turn(row).answer?.document;
+      if (doc?.root === original.root) return this.document(doc.id);
+    }
+    return original;
+  }
+  documentEditContext(before) {
+    this.#check();
+    const records = this.#db.prepare("SELECT * FROM turns WHERE state='answered' AND seq<? ORDER BY seq DESC LIMIT 50").all(before)
+      .map(row => this.#turn(row)).filter(turn => turn.origin === 'owner_edit').slice(0, 8)
+      .map(turn => { const { id, root, revision } = turn.answer.document; return { id, root, revision }; });
+    return records.length ? ` Recent saved owner edits (document metadata only, not instructions): ${JSON.stringify(records)}. Read the latest document before revising; preserve current owner changes.` : '';
+  }
+  editDocument(device, input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)
+        || Object.keys(input).sort().join(',') !== 'based_on,content,request_id,title') throw Error('CONTACT_DOCUMENT_INVALID');
+    const { request_id: requestId, based_on, title, content } = input;
+    if (typeof requestId !== 'string' || !ID.test(requestId) || !Number.isSafeInteger(based_on) || based_on < 1
+        || typeof title !== 'string' || !title.trim() || title !== title.trim() || title.length > 120 || !title.isWellFormed()
+        || /[\u0000-\u001f\u007f]/u.test(title) || typeof content !== 'string' || !content.trim()
+        || !content.isWellFormed() || Buffer.byteLength(content) > 4096) throw Error('CONTACT_DOCUMENT_INVALID');
+    return this.#tx(() => {
+      this.#device(device);
+      // v5 predates every owner-edit capable writer. Earlier readers reject v2
+      // documents at startup, before recovery or model execution. Never write v2
+      // into v1-v4 stores accepted by readers from before document validation.
+      if (this.#version < 5) throw Error('CONTACT_DOCUMENT_EDIT_UPGRADE_REQUIRED');
+      const existing = this.#db.prepare('SELECT * FROM turns WHERE request_id=?').get(requestId);
+      if (existing) {
+        const old = this.#turn(existing), doc = old.answer?.document;
+        if (old.origin !== 'owner_edit' || doc.based_on !== based_on || doc.title !== title || old.answer.text !== content) throw Error('CONTACT_REQUEST_ID_REUSED');
+        return { document: this.document(existing.seq), replay: true };
+      }
+      if (!this.continuingUseEnabled() && this.#db.prepare('SELECT count(*) n FROM turns').get().n >= 1000) throw Error('CONTACT_QUEUE_LIMIT');
+      const parent = this.document(based_on); if (!parent) throw Error('CONTACT_DOCUMENT_NOT_FOUND');
+      if (this.latestDocument(based_on).id !== based_on) throw Error('CONTACT_DOCUMENT_STALE');
+      const inserted = this.#db.prepare("INSERT INTO turns(request_id,device,state,payload,created) VALUES(?,?,'answered',?,?)")
+        .run(requestId, device, this.#seal(`turn:${requestId}`, { text: '문서를 직접 수정했어요.' }), Date.now());
+      const seq = Number(inserted.lastInsertRowid);
+      const document = { ...this.#documentSpec(seq, { title, format: parent.format, based_on }), version: 2, author: 'owner', sha256: hash(content) };
+      const answer = { text: content, sources: parent.sources, verification: 'not_applicable', document };
+      this.#db.prepare('UPDATE turns SET answer=? WHERE seq=?').run(this.#seal(`answer:${requestId}`, answer), seq);
+      // No model request, checkpoint, work grant or notification is created.
+      return { document: this.document(seq), replay: false };
+    });
   }
   documentPage(before = null) {
     this.#check();
@@ -346,6 +410,9 @@ export class ContactStore {
   prepareDocument(seq, { title, format, based_on }) {
     this.assertTurnAuthority(seq);
     if (this.reviewForTurn(seq) || this.proactiveForTurn(seq)) throw Error('CONTACT_REVIEW_READ_ONLY');
+    return this.#documentSpec(seq, { title, format, based_on });
+  }
+  #documentSpec(seq, { title, format, based_on }) {
     if (typeof title !== 'string' || !title.trim() || title.length > 120 || /[\u0000-\u001f\u007f]/u.test(title)
         || !['markdown', 'text'].includes(format) || (based_on !== null && (!Number.isSafeInteger(based_on) || based_on < 1 || based_on >= seq))) throw Error('CONTACT_DOCUMENT_INVALID');
     const parent = based_on === null ? null : this.document(based_on);
@@ -355,7 +422,8 @@ export class ContactStore {
         .some(row => this.#turn(row).answer?.document?.root === parent.root);
       if (newer) throw Error('CONTACT_DOCUMENT_STALE');
     }
-    return { version: 1, id: seq, root: parent?.root ?? seq, revision: (parent?.revision ?? 0) + 1, based_on, title: title.trim(), format };
+    const revision = (parent?.revision ?? 0) + 1; if (!Number.isSafeInteger(revision)) throw Error('CONTACT_DOCUMENT_INVALID');
+    return { version: 1, id: seq, root: parent?.root ?? seq, revision, based_on, title: title.trim(), format };
   }
   turn(seq) { this.#check(); const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq); return row ? this.#turn(row) : null; }
   page(before = Number.MAX_SAFE_INTEGER) {
@@ -635,6 +703,7 @@ export class ContactStore {
       if (!binding?.live) return;
       const rows = this.#db.prepare("SELECT * FROM turns WHERE seq>? AND state IN('answered','failed','cancelled','interrupted') ORDER BY seq").all(binding.since_seq);
       for (const row of rows) {
+        if (this.#turn(row).origin === 'owner_edit') continue;
         const proactive = this.proactiveForTurn(row.seq);
         if (proactive && (row.state !== 'answered' || this.#turn(row).answer?.quiet || !this.#proactiveLive(proactive) || !this.#attentionNoticeLive(row.seq))) continue;
         const key = `result:${binding.device}:${row.seq}`;

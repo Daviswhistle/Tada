@@ -404,7 +404,10 @@ export class ConversationAssistant {
                     || Number(source.id.slice(1)) >= this.nextEvidence || !this.sources.recallEvidence?.(copy(source), abort.signal)) throw new Error('ASSISTANT_SOURCE_INVALID');
                 this.evidence.set(source.id, copy(source));
               }
-              if (result.sources.length) freshReads++;
+              // Owner edits retain historical references even when their new
+              // body needs none. Keep those receipts available for validation,
+              // without requiring an unrelated citation in an ordinary edit.
+              if (result.sources.length && result.source_basis !== 'inherited_references_not_verification_of_owner_edits') freshReads++;
               // Avoid JSON inside a JSON string: metadata is one line and the
               // remaining tool data is the verbatim document, never instructions.
               this.history.push({ role: 'tool', tool_name: name, content: toolContent(name, result) });
@@ -422,7 +425,7 @@ export class ConversationAssistant {
           continue;
         }
         const quiet = !response.refused && this.sources.quietAnswer === 'NO_NEW_SUGGESTION' && message.content.trim() === this.sources.quietAnswer;
-        const ids = [...new Set([...message.content.matchAll(/\[(S[0-9]+)\]/gu)].map(m => m[1] as string))];
+        const ids = [...new Set([...message.content.matchAll(/\[(S[0-9]+)(?=\]|[\s:：])/gu)].map(m => m[1] as string))];
         if (ids.some(id => !this.evidence.has(id)) || (!response.refused && !quiet && freshReads > 0 && ids.length === 0)) {
           if (citationCorrection) throw new Error('ASSISTANT_UNGROUNDED_ANSWER');
           citationCorrection = true;

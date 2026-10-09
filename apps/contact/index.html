@@ -41,6 +41,19 @@
     </div>
   </div>
 </dialog>
+<dialog id="document-editor" aria-labelledby="document-editor-title">
+  <div class="document-editor-heading"><div><p class="eyebrow">이전 버전은 그대로 보관돼요</p><h1 id="document-editor-title">문서 수정</h1><p id="document-editor-version" class="muted"></p></div><button id="document-editor-close" type="button" aria-label="문서 수정 닫기">닫기 ×</button></div>
+  <form id="document-editor-form">
+    <p id="document-editor-notice" role="status" hidden></p>
+    <label for="document-editor-name">제목</label><input id="document-editor-name" maxlength="120" required autocomplete="off">
+    <label for="document-editor-content">내용</label><textarea id="document-editor-content" rows="14" required spellcheck="false"></textarea>
+    <p class="muted">직접 수정한 내용은 이 대화에 저장됩니다. 비서에게 이어서 수정을 맡기면 최신 버전을 확인해요. 참고 자료는 이전 버전의 기록입니다.</p>
+    <details id="document-conflict" hidden><summary>다른 곳에서 저장한 최신 버전</summary><pre id="document-conflict-content"></pre><button id="document-use-latest" type="button">최신 버전에서 이어 쓰기</button></details>
+    <details id="document-draft-backup" hidden><summary>전환하기 전에 작성한 내용</summary><pre id="document-draft-backup-content"></pre><button id="document-backup-discard" type="button">보관 초안 지우기</button></details>
+    <div id="document-discard-confirm" role="group" aria-label="초안 정리 확인" hidden><p id="document-discard-message"></p><button id="document-discard-keep" type="button">계속 편집하기</button><button id="document-discard-confirmed" type="button">초안 버리기</button></div>
+    <div class="document-editor-actions"><button id="document-editor-discard" type="button">수정 취소</button><button id="document-editor-save" type="submit">새 버전 저장</button></div>
+  </form>
+</dialog>
 <main><section id="pairing" hidden><p class="eyebrow">어디서든 같은 대화</p><h1>여기서도<br>이야기를 이어가세요.</h1><p class="lead">연결하면 지금까지 나눈 대화와 맡긴 일을 볼 수 있어요.</p><form id="pair-form"><details class="quiet-details"><summary>기기 이름 바꾸기</summary><label class="sr-only" for="device-name">이 기기의 이름</label><input id="device-name" maxlength="64" value="내 기기" autocomplete="off" required></details><button type="submit">이 기기에서 계속하기 →</button></form><p id="pair-help" class="muted"></p></section>
 <section id="conversation" hidden aria-label="비서와의 대화"><button id="older" class="text-button" type="button" hidden>이전 대화 보기</button><div id="empty"><div class="welcome-mark" aria-hidden="true">t.</div><p class="eyebrow">Tada에게 맡기기</p><h1>무엇을 맡길까요?</h1><p class="lead">문서를 만들고 수정하고, 허용한 자료를 확인하고,<br>챙겨야 할 일을 기록할 수 있어요.</p><div class="suggestions"><button id="suggest-plan" type="button">체크리스트 문서 만들기</button><button id="suggest-remember" type="button">잊지 않게 챙겨줘</button></div></div><div id="messages" aria-live="polite" aria-relevant="additions text"></div></section>
 <section id="followups" hidden aria-label="맡긴 일과 후속 연락"><div id="followup-notices" aria-live="polite"></div><div id="followup-proposals"></div><details id="work-drawer"><summary>맡긴 일 <span id="work-count"></span></summary><p id="work-empty" class="muted">챙길 일이 생기면 여기에 모아둘게요.</p><div id="followup-items"></div><button id="followup-more" class="text-button" type="button" hidden>이전 업무 기록 보기</button></details></section></main>

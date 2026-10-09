@@ -7,6 +7,7 @@ const autoPair = link.get('auto') === '1';
 if (location.hash) history.replaceState(null, '', location.pathname);
 let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = null, known = false;
 let turns = new Map();
+let documentEditing = false, editorState = null, editorGeneration = 0, editorBusy = false, editorBackups = [], editorDiscard = null;
 let connectionStopped = false, recoveryEnabled = false, recoveryTimer = null, recoveryAt = 0, recoveryDelay = 2000, stateRequest = null;
 function clearRecoveryTimer() { clearTimeout(recoveryTimer); recoveryTimer = null; recoveryAt = 0; }
 function scheduleRecovery(delay) {
@@ -67,6 +68,11 @@ $('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open')
 for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
 $('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
+  CONTACT_DOCUMENT_INVALID: '문서 제목과 내용을 확인해 주세요. 비어 있거나 너무 긴 문서는 저장할 수 없어요.',
+  CONTACT_DOCUMENT_NOT_FOUND: '이 문서를 찾지 못했어요. 대화에서 문서를 다시 열어 주세요.',
+  CONTACT_DOCUMENT_READ_REQUIRED: '최신 문서를 읽지 않아 수정본을 저장하지 않았어요. 다시 수정해 달라고 말씀해 주세요.',
+  CONTACT_DOCUMENT_STALE: '그사이 새 버전이 저장됐어요. 작성한 내용은 그대로 두었어요. 최신 버전을 확인해 주세요.',
+  CONTACT_DOCUMENT_EDIT_UPGRADE_REQUIRED: 'Tada를 다시 열어 기록 업데이트를 마치면 직접 수정할 수 있어요. 기존 문서는 그대로 보관돼요.',
   CONTACT_HISTORY_DISABLED: '이전 대화 사용 설정이 바뀌어 이번 작업을 중지했어요. 현재 설정을 확인한 뒤 다시 말씀해 주세요.',
   CONTACT_FOLLOWUP_DELEGATION_CONSENT_REQUIRED: '대화로 맡길 개인 할 일과 알림의 범위를 확인해 주세요.',
   CONTACT_FOLLOWUP_DELEGATION_CHANGED: '대화로 맡기기 설정이 바뀌어 이번 변경을 저장하지 않았어요. 현재 설정을 확인한 뒤 다시 말씀해 주세요.',
@@ -127,13 +133,13 @@ async function api(path, data, options = {}) {
   if (!response.ok) {
     if (response.status === 401 && options.handleAuthentication !== false) paired(false);
     const error = new Error(errors[body.error] ?? '요청을 처리하지 못했습니다. 기존 접수 상태를 확인한 뒤 다시 시도해 주세요.');
-    error.authenticationRequired = response.status === 401; throw error;
+    error.authenticationRequired = response.status === 401; error.code = body.error; throw error;
   }
   return body;
 }
 function paired(yes, stopConnection = true) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings-open').hidden = !yes; if (!yes && $('settings').open) $('settings').close(); if (!yes) $('followups').hidden = true;
-  if (!yes) { connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
+  if (!yes) { editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
@@ -227,7 +233,7 @@ function render() {
   const nearEnd = window.innerHeight + window.scrollY >= document.body.scrollHeight - 200;
   const old = JSON.parse(rendered || '[]');
   if (known && document.hidden && globalThis.Notification?.permission === 'granted'
-      && list.some(t => t.state === 'answered' && !old.some(o => o.seq === t.seq && o.state === 'answered'))) {
+      && list.some(t => t.origin !== 'owner_edit' && t.state === 'answered' && !old.some(o => o.seq === t.seq && o.state === 'answered'))) {
     try { new Notification('Tada', { body: '새 답변이 준비됐어요.', tag: 'tada-answer' }); }
     catch { /* Some mobile browsers require a service worker. Keep the answer visible. */ }
   }
@@ -236,14 +242,20 @@ function render() {
   const fragment = document.createDocumentFragment();
   for (const turn of list) {
     const article = document.createElement('article'); article.className = 'turn';
-    const user = document.createElement('div'); user.className = turn.origin === 'proactive' ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'proactive' ? (turn.answer?.calendar_reminder ? '일정 알림' : '먼저 챙겨봤어요') : turn.text; article.append(user);
+    const user = document.createElement('div'); user.className = ['proactive', 'owner_edit'].includes(turn.origin) ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'owner_edit' ? '직접 수정했어요' : turn.origin === 'proactive' ? (turn.answer?.calendar_reminder ? '일정 알림' : '먼저 챙겨봤어요') : turn.text; article.append(user);
     if (turn.answer) {
       if (turn.answer.document) {
         const doc = turn.answer.document, card = document.createElement('div'); card.className = 'document-card';
         const title = document.createElement('strong'); title.textContent = `${doc.title} · 버전 ${doc.revision}`;
         const download = document.createElement('a'); download.textContent = '문서 내려받기';
         download.href = `/api/documents/${doc.id}`; download.setAttribute('download', '');
-        card.append(title, download); article.append(card);
+        const actions = document.createElement('div'); actions.className = 'document-actions'; actions.append(download);
+        if (documentEditing) {
+          const edit = document.createElement('button'); edit.type = 'button'; edit.textContent = '직접 수정';
+          edit.onclick = () => openDocumentEditor(doc.id); actions.append(edit);
+        }
+        card.append(title, actions); article.append(card);
+        if (turn.origin === 'owner_edit') { const note = document.createElement('p'); note.className = 'muted'; note.textContent = '직접 수정한 버전 · 참고 자료는 이전 버전에서 이어받은 기록입니다.'; article.append(note); }
       }
       const answer = document.createElement('div'); answer.className = 'answer'; renderAnswer(answer, turn.answer.text); article.append(answer);
       if (turn.answer.notice) { const note = document.createElement('p'); note.className = 'status'; note.textContent = turn.answer.notice; article.append(note); }
@@ -320,6 +332,7 @@ async function refresh(older = false, quiet = false) {
   try {
     const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`, undefined, { signal: controller.signal, handleAuthentication: false });
     if (generation !== requestGeneration) return;
+    if (documentEditing !== (result.document_editing === true)) { documentEditing = result.document_editing === true; rendered = ''; }
     paired(true);
     if ($('notice').textContent === connectionLost) notice('');
     $('connection').textContent = result.host_stopping ? '잠시 멈추는 중' : '이야기할 준비가 됐어요';
@@ -729,3 +742,106 @@ async function openConversation() {
   } else if (code) { paired(false, false); $('connection').textContent = '새 기기 연결'; } else await refresh();
 }
 openConversation();
+
+// The editor is outside the rendered conversation: events never replace drafts.
+function editorNotice(text) { $('document-editor-notice').textContent = text; $('document-editor-notice').hidden = !text; }
+function editorDirty() { return editorState && ($('document-editor-name').value !== editorState.document.title || $('document-editor-content').value !== editorState.document.content); }
+function editorUnsaved() { return editorDirty() || editorState?.pending || editorBackups.length > 0; }
+function renderEditorBackups() {
+  $('document-draft-backup').hidden = editorBackups.length === 0;
+  $('document-draft-backup-content').textContent = editorBackups.join('\n\n────────\n\n');
+}
+function editorLock(locked) {
+  $('document-editor-name').readOnly = locked; $('document-editor-content').readOnly = locked;
+  $('document-editor-save').disabled = editorBusy; $('document-editor-discard').disabled = locked; $('document-backup-discard').disabled = locked;
+}
+function clearEditorDiscard() { editorDiscard = null; $('document-discard-confirm').hidden = true; }
+function askEditorDiscard(target) {
+  editorDiscard = target;
+  $('document-discard-message').textContent = target === 'editor' ? '저장하지 않은 수정과 보관 초안을 버릴까요? 저장된 문서는 그대로 보관됩니다.' : '필요한 내용을 옮겼나요? 보관 초안만 버리고 현재 편집 내용과 저장된 문서는 그대로 둡니다.';
+  $('document-discard-confirm').hidden = false; $('document-discard-keep').focus();
+}
+function closeDiscardedEditor() {
+  editorState = null; editorBackups = []; renderEditorBackups(); clearEditorDiscard(); editorGeneration++; $('document-editor').close();
+}
+function fillDocumentEditor(doc) {
+  clearEditorDiscard();
+  editorState = { document: doc, pending: null, latest: null };
+  $('document-editor-name').value = doc.title; $('document-editor-content').value = doc.content;
+  $('document-editor-version').textContent = `버전 ${doc.revision}에서 수정 · 저장하면 새 버전으로 남습니다`;
+  $('document-conflict').hidden = true; $('document-editor-save').textContent = '새 버전 저장'; editorLock(false); renderEditorBackups();
+}
+async function openDocumentEditor(id) {
+  if (connectionStopped || !documentEditing) return;
+  if (editorState && editorUnsaved()) {
+    if (!$('document-editor').open) $('document-editor').showModal();
+    if (!editorDirty() && !editorState.pending && editorBackups.length) {
+      $('document-draft-backup').open = true;
+      editorNotice('이전 편집 초안이 남아 있어요. 필요한 내용을 옮기거나 보관 초안 지우기를 선택해 주세요.');
+    } else editorNotice('작성 중인 수정이 있어요. 먼저 저장하거나 수정 취소를 선택해 주세요.'); return;
+  }
+  const generation = ++editorGeneration;
+  try {
+    const result = await api(`/api/documents/${id}/edit`);
+    if (generation !== editorGeneration || connectionStopped) return;
+    fillDocumentEditor(result.document);
+    editorNotice(result.document.id !== id ? '이 문서의 최신 버전을 열었어요. 이전 버전도 대화에 보관돼 있어요.' : '');
+    if (!$('document-editor').open) $('document-editor').showModal(); $('document-editor-content').focus();
+  } catch (error) { if (generation === editorGeneration) notice(error.message); }
+}
+$('document-editor-close').onclick = () => $('document-editor').close();
+$('document-editor-discard').onclick = () => {
+  if (editorBusy || editorState?.pending) return;
+  if (editorUnsaved()) { askEditorDiscard('editor'); return; }
+  closeDiscardedEditor();
+};
+$('document-use-latest').onclick = () => {
+  if (!editorState?.latest || editorBusy || editorState.pending) return;
+  if (editorDirty()) editorBackups.push($('document-editor-name').value + '\n\n' + $('document-editor-content').value);
+  const latest = editorState.latest; fillDocumentEditor(latest);
+  editorNotice('최신 버전에서 이어 쓰세요. 전환하기 전에 작성한 내용도 아래에 남겨뒀어요.');
+};
+$('document-backup-discard').onclick = () => {
+  if (editorBusy || editorState?.pending || !editorBackups.length) return;
+  askEditorDiscard('backups');
+};
+$('document-discard-keep').onclick = clearEditorDiscard;
+$('document-discard-confirmed').onclick = () => {
+  if (editorBusy || editorState?.pending || !editorDiscard) return;
+  if (editorDiscard === 'editor') closeDiscardedEditor();
+  else { editorBackups = []; renderEditorBackups(); clearEditorDiscard(); }
+};
+$('document-editor-form').onsubmit = async event => {
+  event.preventDefault(); if (!editorState || editorBusy || connectionStopped) return;
+  clearEditorDiscard();
+  if (!editorState.pending) {
+    const title = $('document-editor-name').value.trim(), content = $('document-editor-content').value;
+    if (!title || !content.trim()) { editorNotice('제목과 내용을 입력해 주세요.'); return; }
+    if (new TextEncoder().encode(content).length > 4096) { editorNotice('내용이 너무 길어요. 한 문서에는 한글 약 1,300자 분량을 저장할 수 있어요. 내용을 나누거나 줄여 주세요.'); return; }
+    editorState.pending = { request_id: crypto.randomUUID(), based_on: editorState.document.id, title, content };
+  }
+  const state = editorState, generation = editorGeneration; editorBusy = true; editorLock(true);
+  try {
+    const saved = await api('/api/documents/edit', state.pending);
+    if (generation !== editorGeneration || state !== editorState || connectionStopped) return;
+    fillDocumentEditor(saved.document); editorNotice('새 버전을 저장했어요. 비서에게 이어서 수정을 맡길 수 있어요.');
+    await refresh();
+  } catch (error) {
+    if (generation !== editorGeneration || state !== editorState || connectionStopped) return;
+    if (['CONTACT_DOCUMENT_INVALID', 'CONTACT_DOCUMENT_NOT_FOUND', 'CONTACT_DOCUMENT_STALE', 'CONTACT_DOCUMENT_EDIT_UPGRADE_REQUIRED', 'CONTACT_DEVICE_REVOKED', 'CONTACT_PAIR_REQUIRED', 'CONTACT_REQUEST_ID_REUSED', 'CONTACT_HOST_STOPPING', 'CONTACT_QUEUE_LIMIT'].includes(error.code)) { state.pending = null; editorLock(false); }
+    editorNotice(error.message + (state.pending ? ' 저장 확인을 누르면 같은 수정의 저장 여부를 확인합니다.' : ''));
+    if (error.code === 'CONTACT_DOCUMENT_STALE') {
+      try {
+        const result = await api(`/api/documents/${state.document.id}/edit`);
+        if (generation !== editorGeneration || state !== editorState || connectionStopped) return;
+        state.latest = result.document; $('document-conflict-content').textContent = result.document.title + '\n\n' + result.document.content; $('document-conflict').hidden = false;
+      } catch { /* Keep the owner's draft even when the conflict lookup is unavailable. */ }
+    }
+  } finally {
+    editorBusy = false;
+    $('document-editor-save').disabled = false;
+    $('document-editor-save').textContent = editorState?.pending ? '저장 확인' : '새 버전 저장';
+    editorLock(!!editorState?.pending);
+  }
+};
+window.addEventListener('beforeunload', event => { if (editorUnsaved()) { event.preventDefault(); event.returnValue = ''; } });

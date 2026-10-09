@@ -1,0 +1,32 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-document-revision-first.json",
+  "report_sha256": "fa524dafebcc55747c5baa3e6d1fe913f9b0dd40f9f2b366bc70f3455327dfc7",
+  "execution_implementation": "2d460d166577d105753062fabfe3fe7e18039c06",
+  "execution_harness_sha256": "21492c4e3e0a308327d20533ea7793c4ab8a4414d6e4ad7ff138d8adef335120",
+  "observed_requests": 6,
+  "unknown_requests": 0,
+  "cases": [
+    {
+      "case": "A04",
+      "variant": 1,
+      "verdict": "passed",
+      "reason": "Read actual owner-edited version 2, preserved 15:00/first floor/eight confirmed/accessibility/captions, omitted canceled catering, reduced duplicated text into four chronological actions. Same root version 3 and matching download."
+    },
+    {
+      "case": "A04",
+      "variant": 2,
+      "verdict": "passed_with_quality_findings",
+      "reason": "Preserved owner, deadline, photo-before-opening, serial-before-acceptance and stop-on-mismatch, never restored phone-number collection. Ordered checklist and exception branches improve execution, but increased length and repetitive explanations are a quality weakness, not a demonstrated reduction in volume."
+    }
+  ],
+  "quality_findings": [
+    "Both outputs used unregistered annotated S1 references despite sources being empty. Actual document 4 revision 2 exists and was read, but these are not valid source evidence citations.",
+    "Variant 2 increased from 395 to 1093 characters. Extra damage handling was explicitly a recommendation, not a fabricated source rule."
+  ],
+  "primary_concurred_on_case_behavior": true,
+  "release_acceptance": "not_passed",
+  "followup": "Preserve this original result. Correct annotated citation admission and rerun the same fixed cases before integration.",
+  "scope": "One recently edited target with feedback still in ordinary context, same-title closed alternative; does not establish multiple edited target ambiguity, old-feedback retrieval, physical-device delivery or full release quality."
+}

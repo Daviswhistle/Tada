@@ -28,7 +28,7 @@ export class OwnerContext {
   #owner(id) {
     if (!Number.isSafeInteger(id) || id < 1 || id >= this.#job.seq) return null;
     const turn = this.#store.turn(id);
-    if (!turn || turn.origin === 'proactive' || this.#store.proactiveForTurn(id) || this.#store.reviewForTurn(id)) return null;
+    if (!turn || ['proactive', 'owner_edit'].includes(turn.origin) || this.#store.proactiveForTurn(id) || this.#store.reviewForTurn(id)) return null;
     return turn;
   }
   read(id, signal) {

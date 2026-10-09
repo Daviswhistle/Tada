@@ -182,8 +182,8 @@ test('document lineage stays observable when distinct originals acquire the same
     service = new ContactService(e.store, scripted([
       call('prepare_document', { title: 'First', format: 'text', based_on: null }), result('A'),
       call('prepare_document', { title: 'Second', format: 'text', based_on: null }), result('B'),
-      call('prepare_document', { title: 'Edited', format: 'text', based_on: 2 }), result('Same'),
-      call('prepare_document', { title: 'Edited', format: 'text', based_on: 1 }), result('Same'),
+      call('read_document', { id: 2 }), call('prepare_document', { title: 'Edited', format: 'text', based_on: 2 }), result('Same'),
+      call('read_document', { id: 1 }), call('prepare_document', { title: 'Edited', format: 'text', based_on: 1 }), result('Same'),
     ]), noSources);
     for (const text of ['First', 'Second', 'Revise second', 'Revise first']) { service.submit(device.id, randomUUID(), text); await service.idle(); }
     assert.deepEqual(e.store.documentPage().documents.slice(0, 2).map(({ id, root, based_on }) => ({ id, root, based_on })), [

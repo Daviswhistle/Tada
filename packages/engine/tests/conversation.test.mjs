@@ -257,3 +257,9 @@ test('invalid declared context limits fail before inference, and a captured limi
   await assert.rejects(assistant.ask('hello'), /ASSISTANT_CONTEXT_LIMIT/u);
   assert.equal(called, false);
 });
+
+for (const reference of ['[S1: 문서 4, 수정본 2]', '[S99：저장 문서]', '[S12 saved document]']) test(`annotated source IDs cannot bypass grounded citation admission: ${reference}`, async () => {
+  const model = sequence([answer('기록 내용입니다. ' + reference), answer('저장 문서 4의 두 번째 버전을 바탕으로 정리했습니다.')]);
+  const result = await new ConversationAssistant(model, sources()).ask('문서를 정리해줘.');
+  assert.equal(model.seen.length, 2); assert.deepEqual(result.sources, []); assert.doesNotMatch(result.text, /\[S/);
+});

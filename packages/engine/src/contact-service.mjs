@@ -66,6 +66,10 @@ export class ContactService extends EventEmitter {
     this.emit('change'); this.start();
     return accepted;
   }
+  editDocument(device, input) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    const saved = this.#store.editDocument(device, input); this.emit('change'); return saved;
+  }
   cancel(seq) {
     const changed = this.#store.cancel(seq);
     if (this.#active?.seq === seq) this.#active.abort.abort();

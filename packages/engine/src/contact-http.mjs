@@ -22,15 +22,15 @@ function object(body, keys) {
   if (!body || typeof body !== 'object' || Array.isArray(body)
       || Object.keys(body).sort().join(',') !== [...keys].sort().join(',')) throw new Error('CONTACT_REQUEST_INVALID');
 }
-async function jsonBody(req) {
+async function jsonBody(req, limit = 8192) {
   if (req.headers['content-type'] !== 'application/json') throw new Error('CONTACT_CONTENT_TYPE');
   const chunks = []; let count = 0;
   for await (const chunk of req) {
     count += chunk.length;
-    if (count > 8192) throw new Error('CONTACT_BODY_LIMIT');
+    if (count > limit) throw new Error('CONTACT_BODY_LIMIT');
     chunks.push(chunk);
   }
-  return parseUniqueJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)), 8192);
+  return parseUniqueJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)), limit);
 }
 export function validateContactAddress({ origin, bind = '127.0.0.1', port, tls }) {
   const url = new URL(origin);
@@ -105,11 +105,20 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       // Preserve an existing connection only after this journal authenticates
       // its legacy token. Other still-running versions may need that cookie.
       if (cookie.legacy) res.setHeader('Set-Cookie', setCookie(cookie.token));
+      if (req.method === 'GET' && /^\/api\/documents\/[1-9][0-9]*\/edit$/u.test(target.pathname) && !target.search) {
+        const document = store.latestDocument(Number(target.pathname.split('/').at(-2)));
+        if (!document) return send(res, 404, { error: 'CONTACT_DOCUMENT_NOT_FOUND' });
+        return send(res, 200, { document });
+      }
+      if (req.method === 'POST' && target.pathname === '/api/documents/edit' && !target.search) {
+        const data = await jsonBody(req, 32768); object(data, ['request_id', 'based_on', 'title', 'content']);
+        return send(res, 200, service.editDocument(device, data));
+      }
       if (req.method === 'GET' && /^\/api\/documents\/[1-9][0-9]*$/u.test(target.pathname) && !target.search) {
         const document = store.document(Number(target.pathname.split('/').at(-1)));
         if (!document) return send(res, 404, { error: 'CONTACT_DOCUMENT_NOT_FOUND' });
         const extension = document.format === 'markdown' ? 'md' : 'txt';
-        const content = document.content + (document.sources.length ? '\n\n---\n참고 자료\n' + document.sources.map(source =>
+        const content = document.content + (document.author === 'owner' ? '\n\n---\n직접 수정한 문서입니다. 아래 참고 자료는 이전 버전에서 이어받았으며 수정한 내용의 검증을 뜻하지 않습니다.\n' : '') + (document.sources.length ? '\n\n---\n참고 자료\n' + document.sources.map(source =>
           `[${source.id}] ${source.source}/${source.path} · 확인 시각 ${source.observed_at}`
           + (source.citations?.length ? '\n' + source.citations.map(citation => {
             // Titles are untrusted provider text, even inside a downloaded Markdown file.
@@ -126,7 +135,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
         const startup = background ? await background.status() : null; store.assertDevice(device);
-        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
       }
       if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);
