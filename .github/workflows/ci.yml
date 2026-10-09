@@ -29,7 +29,11 @@ jobs:
         run: rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
       - name: Install locked Node dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Build native read broker for Node integration tests
+        run: cargo build --locked -p tada-agentd --bin tada-read-broker
       - name: Check generated source, TypeScript and shared fixtures
+        env:
+          TADA_TEST_READ_BROKER: ${{ github.workspace }}/target/debug/tada-read-broker${{ runner.os == 'Windows' && '.exe' || '' }}
         run: npm run check
       - name: Check Rust formatting
         run: cargo fmt --all -- --check

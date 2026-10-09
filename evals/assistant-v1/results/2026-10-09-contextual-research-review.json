@@ -1,0 +1,79 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-contextual-research-first.json",
+  "report_sha256": "fa8e1d79b18441f834db1d32fe7964dd120d97ed6c28b5aff03060a29006b031",
+  "execution_implementation": "820e47cea7bf50eba5199c864f79c153125fd657",
+  "execution_harness_sha256": "c11f1cac28b856968488c45b33d41cdb184514b531fde0c33ef124bada1db393",
+  "observed_requests": 15,
+  "unknown_requests": 0,
+  "public_web_requests": 2,
+  "mechanical_correction": {
+    "original_preserved": true,
+    "reason": "The original public_pages_opened predicate recognized only open_page. Completed find_in_page also observes page content. Variant 2 inspected a SEC 10-K and is not search-snippet-only. The criterion is source inspection, not an API spelling. Search-only traces remain insufficient.",
+    "official_semantics": "https://developers.openai.com/api/reference/resources/responses/methods/create",
+    "rerun_required": false,
+    "runtime_change": false
+  },
+  "cases": [
+    {
+      "case": "A01",
+      "variant": 1,
+      "verdict": "passed",
+      "public_pages_inspected": true,
+      "reason": "Retrieved older owner-selected Microsoft target and criteria, distinguished closed Costco research, read only relevant archived analysis, opened official earnings, compared current profit and cash flow burden with archived premises and gave a conditional judgment without redundant questions."
+    },
+    {
+      "case": "A01",
+      "variant": 2,
+      "verdict": "passed",
+      "public_pages_inspected": true,
+      "reason": "Retrieved older owner-selected Costco target and criteria, read only relevant archived analysis, inspected SEC 10-K using find_in_page, compared membership, cash flow, margins and valuation with archived premises and gave a conditional waiting judgment."
+    }
+  ],
+  "independent_fact_checks": {
+    "microsoft": [
+      "Operating cash flow 182.935 minus cash capex 115.948 equals FCF 66.987 billion.",
+      "Adjusted P/E about 30.2 and conditional five-year annual returns 5.9%, 10.7%, 15.5% agree with the stated inputs.",
+      "Cash capex guidance and lease classification distinction agree with official earnings and call."
+    ],
+    "costco": [
+      "FCF 9.382 billion and operating margin 3.854% agree with annual filing.",
+      "Scenario EPS 20.61, 10% annual growth and terminal multiple 35 imply 1161.74 dollars and 4.152% annual return.",
+      "Working-capital effects, tariff refund 0.15 per share and September Labor Day effect agree with original releases."
+    ],
+    "sources": [
+      "https://www.microsoft.com/en-us/investor/earnings/fy-2026-q4/press-release-webcast",
+      "https://www.microsoft.com/en-us/investor/events/fy-2026/earnings-fy-2026-q4",
+      "https://www.sec.gov/Archives/edgar/data/909832/000090983226000093/cost-20260830.htm",
+      "https://investor.costco.com/news/news-details/2026/Costco-Wholesale-Corporation-Reports-Fourth-Quarter-and-Fiscal-Year-2026-Operating-Results/default.aspx",
+      "https://investor.costco.com/news/news-details/2026/Costco-Wholesale-Corporation-Reports-September-Sales-Results/default.aspx",
+      "https://stockanalysis.com/stocks/msft/history/",
+      "https://stockanalysis.com/stocks/cost/history/"
+    ],
+    "price_note": "October 8 prices were cross-checked. The Microsoft cited page header and daily table have a small discrepancy, but 522.61 is corroborated by the independent price history; this does not change the conditional conclusion."
+  },
+  "full_suite_denominator": 16,
+  "currently_passed_cases": [
+    "A01",
+    "A05",
+    "A09",
+    "A10",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "not_run_cases": [
+    "A02",
+    "A03",
+    "A04",
+    "A06",
+    "A07",
+    "A08",
+    "A11",
+    "A12"
+  ],
+  "primary_concurred": true,
+  "scope": "Two fixed synthetic-history variants, real archived same-day model reports, native file discovery and real selected subscription research. Same-day archive is explicitly identified, not independent evidence or a long-term change test. Does not prove every cited page was opened, independent host fetching of web originals, natural long-term memory, investment outcomes or release qualification."
+}
