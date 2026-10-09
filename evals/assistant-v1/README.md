@@ -54,6 +54,12 @@ node --experimental-strip-types evals/assistant-v1/contact-review-model-smoke.mj
 
 Select and record the actual runtime/model digest. These checks retain their existing assertions and do not stand in for the 16 product scenarios.
 
+### Using the selected subscription route
+
+The same fixed A10/A15/A16 fixture runner also exports `runAcceptance({ repo, provider, reportPath, implementation, requestLimit })`. Importing it does not open an account or invoke a model. An authorized evaluation caller supplies the already selected provider and owns account acquisition/cleanup; the runner never changes models, accounts or billing. Do not copy credentials from another application or open an already-owned profile concurrently.
+
+The runner uses the actual provider's context measurement and v5 contact service, with a default total limit of 48 model requests across all six variants. A failed or uncertain call remains counted and is not automatically replayed. The report retains the model identity/digest and local runtime version when available, excluding personal account labels. The legacy explicit Ollama CLI below remains supported. A15 additionally records non-target content reads: an accurate summary without secret exposure can still fail the required relevance boundary. Mechanical checks remain necessary, not sufficient; independently review the answers, observations and questions against every scenario criterion.
+
 ## First scoped product probes
 
 `contact-acceptance-candidate.mjs` runs two fixed variants each of A10, A15 and A16 through the actual contact service with real local inference and synthetic files. It receives an absolute checkout path, selected model, explicit loopback endpoint and output report path. For example:
@@ -63,3 +69,5 @@ TADA_EVAL_SHA="$(git rev-parse HEAD)" node --experimental-strip-types evals/assi
 ```
 
 The evaluator sets up ordinary prior dialogue and fixture files; it never sends scenario IDs, grading rules or the oracle to the product. A failed setup turn is retained, and the corresponding task is not falsely marked executed. Reports are written after every variant. `needs_semantic_review` is not a pass: apply every case's completion, failure and question criteria independently. Exit status is not a semantic verdict. The [2026-10-07 record](../../docs/qualification-2026-10-07.md) retains the failed 8B result and stopped 14B comparison. These routes do not decide the product's default provider; the user selected official existing-subscription integration as the priority.
+
+The [2026-10-09 subscription record](../../docs/qualification-2026-10-09.md) evaluates these same six variants with the selected real subscription model. The first run failed A15-1 for an unnecessary unrelated file read despite all then-existing mechanical checks passing. After a general relevance instruction change and an explicit A15 observation check, the new run passed all six variants in independent semantic review. A subsequent code review found that the evaluator omitted provider identity and advertised local scheduled reviews that the actual subscription service forbids. These semantic observations are retained, but a third run with the corrected execution profile used 25 observed requests and passed all mechanical checks and independent semantic review. The final profile-qualified cases are A10/A15/A16. The other 13 cases remain not run; this does not qualify the full product or physical delivery.
