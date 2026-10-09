@@ -1,0 +1,25 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-preference-first.json",
+  "report_sha256": "14fc9384f104226918c704e1b5d07821a855aeba53eee144967fb6921ee205fd",
+  "observed_requests": 8,
+  "unknown_requests": 0,
+  "cases": [
+    {
+      "case": "A05",
+      "variant": 1,
+      "verdict": "blocked",
+      "reason": "Confirmed format applied correctly, but actual history lookup did not return the newer one-time format. No evidence of distinguishing both."
+    },
+    {
+      "case": "A05",
+      "variant": 2,
+      "verdict": "passed",
+      "reason": "Observed confirmed prose preference together with unconfirmed assistant table proposal. Applied prose to current verified facts without redundant questions or invented values."
+    }
+  ],
+  "execution_profile_gap": "Evaluator omitted supplied public research capability. Answers remain observed, but full production tool parity is not established. Rerun both fixed variants with capability preserved.",
+  "primary_concurred": true,
+  "scope": "Synthetic records and files with real selected subscription. Not release, natural long-term memory or physical-device qualification."
+}

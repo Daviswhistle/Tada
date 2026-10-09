@@ -1,0 +1,35 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-preference-context.json",
+  "report_sha256": "dcb475acadded05556a4456ca236577720dc31c2ee6da94a6dff2fc2cc8e6adf",
+  "observed_requests": 8,
+  "unknown_requests": 0,
+  "public_web_requests": 0,
+  "cases": [
+    {
+      "case": "A05",
+      "variant": 1,
+      "verdict": "passed",
+      "reason": "Observed confirmed format together with newer owner-requested one-time long-form draft; applied decision, owner/deadline, unresolved sections to current verified facts without repeated questions."
+    },
+    {
+      "case": "A05",
+      "variant": 2,
+      "verdict": "passed",
+      "reason": "Observed confirmed prose preference with newer unconfirmed assistant table proposal; applied short prose, preserved unresolved dates and unmeasured results."
+    }
+  ],
+  "full_suite_denominator": 16,
+  "currently_passed_cases": [
+    "A05",
+    "A10",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "other_cases": "not_run_on_current_subscription_route",
+  "primary_concurred": true,
+  "scope": "Real selected subscription, synthetic historical conversation and local files. No natural long-term memory, phone, external delivery or release qualification. Production service recovery independently verified by primary."
+}
