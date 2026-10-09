@@ -534,6 +534,10 @@ test('actual CLI startup and reopen accept contact v5 with Telegram instead of r
   mkdirSync(join(code, 'packages/providers/src'), { recursive: true });
   cpSync(fileURLToPath(new URL('../src', import.meta.url)), join(code, 'packages/engine/src'), { recursive: true });
   cpSync(fileURLToPath(new URL('../../../apps/contact', import.meta.url)), join(code, 'apps/contact'), { recursive: true });
+  cpSync(fileURLToPath(new URL('../../contracts', import.meta.url)), join(code, 'packages/contracts'), { recursive: true });
+  for (const dependency of ['ajv', 'ajv-formats', 'fast-deep-equal', 'fast-uri', 'json-schema-traverse', 'require-from-string']) {
+    cpSync(fileURLToPath(new URL(`../../../node_modules/${dependency}`, import.meta.url)), join(code, 'node_modules', dependency), { recursive: true });
+  }
   const parserDirectory = join(code, 'node_modules/markdown-it/dist/browser');
   mkdirSync(parserDirectory, { recursive: true });
   cpSync(fileURLToPath(new URL('../../../node_modules/markdown-it/dist/browser/markdown-it.umd.min.js', import.meta.url)), join(parserDirectory, 'markdown-it.umd.min.js'));

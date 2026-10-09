@@ -135,7 +135,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
         const startup = background ? await background.status() : null; store.assertDevice(device);
-        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), browser: service.browserStatus(device), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
       }
       if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);
@@ -161,6 +161,22 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       if (req.method === 'POST' && target.pathname === '/api/proactive' && !target.search) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);
         return send(res, 200, service.configureProactive(device, data.enabled, data.consent));
+      }
+      if (req.method === 'GET' && target.pathname === '/api/browser/tabs' && !target.search) return send(res, 200, { tabs: await service.browserTabs(device) });
+      if (req.method === 'POST' && target.pathname === '/api/browser/open' && !target.search) {
+        object(await jsonBody(req), []); return send(res, 200, await service.openBrowser(device));
+      }
+      if (req.method === 'POST' && target.pathname === '/api/browser/share' && !target.search) {
+        const data = await jsonBody(req); object(data, ['target', 'consent', 'url']);
+        if (typeof data.target !== 'string' || data.target.length > 200) throw Error('CONTACT_REQUEST_INVALID');
+        return send(res, 200, await service.shareBrowser(device, data.target, data.consent, data.url));
+      }
+      if (req.method === 'POST' && target.pathname === '/api/browser/stop' && !target.search) {
+        object(await jsonBody(req), []); return send(res, 200, service.unshareBrowser(device));
+      }
+      if (req.method === 'POST' && target.pathname === '/api/browser/resolve' && !target.search) {
+        const data = await jsonBody(req); object(data, ['id', 'consent']);
+        return send(res, 200, service.resolveBrowser(device, data.id, data.consent));
       }
       if (req.method === 'POST' && target.pathname === '/api/google/connect' && !target.search) {
         const data = await jsonBody(req); object(data, ['consent']); store.assertDevice(device);

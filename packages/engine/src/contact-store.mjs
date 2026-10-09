@@ -2,6 +2,7 @@
 // Separate from the existing action ledger: documents are conversation results,
 // never an authority to overwrite arbitrary files or publish externally.
 import { DatabaseSync, backup } from 'node:sqlite';
+import { validBrowserActions, beginBrowserAction, browserUncertain, finishBrowserAction } from './browser-actions.mjs';
 import { validateFollowupProposal, followupTimezone, followupInstant, isFollowupId, followupReviewText, FOLLOWUP_DELEGATION_CONSENT, validFollowupDelegation } from './followup-contract.mjs';
 import { randomBytes, randomUUID, createHash, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
 import { mkdirSync, lstatSync, existsSync, openSync, closeSync, fsyncSync } from 'node:fs';
@@ -174,6 +175,9 @@ export class ContactStore {
       }
       this.#tx(() => {
         this.#synchronizeUse();
+        if (this.#version >= 5) {
+          for (const record of this.browserActions(true)) if (record.action.state === 'DISPATCHING') this.#saveBrowserAction(browserUncertain(record));
+        }
         this.#db.exec("UPDATE requests SET state='unknown' WHERE state='reserved'; UPDATE turns SET state='interrupted',error='HOST_RESTARTED' WHERE state='running';");
         if (this.#version >= 2) this.#db.exec("UPDATE telegram_outbox SET state='unknown',error='HOST_RESTARTED' WHERE state='sending';");
       });
@@ -1182,7 +1186,7 @@ export class ContactStore {
     const row = this.#db.prepare('SELECT payload FROM assistance_settings WHERE name=?').get(name);
     const value = row ? this.#open(`setting:${name}`, row.payload) : null;
     if (value !== null) {
-      const valid = name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
+      const valid = /^browser_action:(?:DISPATCHING|VERIFIED|UNCERTAIN|ACKNOWLEDGED|FAILED):browser-[a-f0-9-]{36}$/u.test(name) ? validBrowserActions(value) && value.records.length === 1 && name === `browser_action:${value.records[0].action.state}:${value.records[0].action.action_id}` : name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
         : name === 'google' ? validGoogleCredential(value)
         : name === 'google_disconnect' ? validGoogleDisconnect(value)
         : name === 'related_mail' ? validRelatedMail(value)
@@ -1207,6 +1211,57 @@ export class ContactStore {
   assertStorageDirectory(directory) {
     this.#check();
     if (resolve(directory) !== this.#root) throw Error('CONTACT_STORAGE_OWNER_MISMATCH');
+  }
+  browserActions(pendingOnly = false) {
+    this.#check(); if (this.#version < 5) return [];
+    const query = pendingOnly
+      ? "SELECT name FROM assistance_settings WHERE name GLOB 'browser_action:DISPATCHING:*' OR name GLOB 'browser_action:UNCERTAIN:*' OR name GLOB 'browser_action:ACKNOWLEDGED:*' ORDER BY rowid"
+      : "SELECT name FROM assistance_settings WHERE name GLOB 'browser_action:*' ORDER BY rowid DESC LIMIT 20";
+    return this.#db.prepare(query).all().map(row => this.#setting(row.name).records[0]);
+  }
+  #browserAction(id) {
+    if (typeof id !== 'string' || !/^browser-[a-f0-9-]{36}$/u.test(id)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
+    for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) {
+      const record = this.#setting(`browser_action:${state}:${id}`)?.records[0];
+      if (record) return record;
+    }
+    throw Error('CONTACT_BROWSER_ACTION_INVALID');
+  }
+  #saveBrowserAction(record) {
+    const next = { version: 1, records: [record] };
+    if (!validBrowserActions(next)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
+    for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) this.#db.prepare('DELETE FROM assistance_settings WHERE name=?').run(`browser_action:${state}:${record.action.action_id}`);
+    this.#saveSetting(`browser_action:${record.action.state}:${record.action.action_id}`, next);
+  }
+  browserBlocked(origin, turn = Infinity) { return this.browserActions(true).some(r => r.origin === origin && (!r.resolved || turn <= r.turn)); }
+  admitBrowserAction(seq, grant, observation, ref, value) {
+    return this.#tx(() => {
+      this.assertTurnAuthority(seq); this.assertDevice(grant.device);
+      if (this.turn(seq).device !== grant.device) throw Error('CONTACT_BROWSER_NOT_SHARED');
+      if (this.reviewForTurn(seq) || this.proactiveForTurn(seq)) throw Error('CONTACT_BROWSER_FOREGROUND_REQUIRED');
+      if (this.browserBlocked(grant.origin, seq)) throw Error('CONTACT_BROWSER_EFFECT_UNRESOLVED');
+      if (this.browserActions(true).filter(r => !r.resolved).length >= 256) throw Error('CONTACT_BROWSER_ACTION_LIMIT');
+      const record = beginBrowserAction(seq, grant, observation, ref, value);
+      this.#saveBrowserAction(record); return record.action.action_id;
+    });
+  }
+  finishBrowserAction(id, requested, observation, applied = true) {
+    return this.#tx(() => {
+      const record = finishBrowserAction(this.#browserAction(id), requested, observation, applied);
+      this.#saveBrowserAction(record); return structuredClone(record);
+    });
+  }
+  resolveBrowserAction(device, id, consent) {
+    return this.#tx(() => {
+      this.assertDevice(device);
+      if (consent !== 'checked_browser_effect_allow_new_work_v1') throw Error('CONTACT_BROWSER_CONSENT_REQUIRED');
+      const record = this.#browserAction(id);
+      if (!['UNCERTAIN','ACKNOWLEDGED'].includes(record.action.state)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
+      if (!record.resolved) record.resolved = { device, at: Date.now() };
+      this.#saveBrowserAction(record);
+      // Owner acknowledgement opens new work; it is not a fabricated receipt
+      // or proof that the old uncertain action did or did not take effect.
+    });
   }
   googleCredential() { const value = this.#setting('google'); return value ? structuredClone(value) : null; }
   googleDisconnectStatus() {

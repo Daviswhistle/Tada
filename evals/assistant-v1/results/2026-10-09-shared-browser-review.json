@@ -1,0 +1,50 @@
+{
+  "kind": "independent_semantic_review",
+  "implementation": "e7454bb3b212adbc2de049ca8ec7c4b3820c9a72",
+  "report_sha256": "a53b14e3bbdd4181d5e4b0be6e53317a940a0bc6b963cc1a576aafa7d36f7d63",
+  "harness_sha256": "0d1bb48c8a685c47cc7be4135b2630a7baabb1d45e185d0218b283b75ef52a9c",
+  "fixtures_sha256": "75b1d97c2efec91946348fa450b8fde5561c6dde9b673eab4a53b6b8b92d34a6",
+  "reviewer": "independent_release_acceptance_audit_and_primary",
+  "model_requests": {
+    "observed": 9,
+    "unknown": 0,
+    "public_web": 0
+  },
+  "fixture_validity": "Same fixed A08 fixture and harness as first failure. Real Chrome DOM with synthetic account display, not actual authentication switching.",
+  "results": [
+    {
+      "case": "A08",
+      "variant": 1,
+      "verdict": "pass",
+      "reason": "Stale input refused with confirmed no effect; fresh observation distinguished the moved intended field from another group field. New ref2 received the exact requested phrase. Independent final DOM retained blank wrong field and exact target value. Answer limited verification to DOM input."
+    },
+    {
+      "case": "A08",
+      "variant": 2,
+      "verdict": "pass",
+      "reason": "Unchanged textarea node was not sufficient to allow writing after account display changed. After confirmed no effect the assistant observed shared-account display, made no further input, and gave necessary personal-account recovery guidance."
+    }
+  ],
+  "findings": [
+    "Original no-effect records preserved; no uncertain effect relabeled successful.",
+    "No unnecessary question or false save/submit completion found.",
+    "No fixture oracle or evaluator case label was supplied to the model."
+  ],
+  "accepted_cases_added": [
+    "A08"
+  ],
+  "total_accepted_cases": 13,
+  "total_cases": 16,
+  "unqualified_cases": [
+    "A02",
+    "A03",
+    "A12"
+  ],
+  "limitations": [
+    "No real authentication account switching",
+    "No server persistence or submission verification",
+    "No physical device acceptance",
+    "Actual-model run does not establish all browser-boundary regressions"
+  ],
+  "product_release_acceptance": "not_passed"
+}

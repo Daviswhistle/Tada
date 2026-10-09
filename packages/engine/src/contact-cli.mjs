@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { SharedBrowser } from './shared-browser.mjs';
 // Explicit owner-run contact host. No public deployment, account purchase or
 // automatic provider fallback; the browser never configures the model/read roots.
 import { createInterface } from 'node:readline/promises';
@@ -73,6 +74,8 @@ review, not a new allowance). /review-cancel COMMITMENT_ID VERSION cancels it.
 No implicit action is authorized by a reminder. Tasks changed/cancelled or more
 than 24 hours past their appointment before execution do not run. Unknown or
 interrupted work is not retried. Waiting records do not monitor third-party replies.
+Owner-shared dedicated Chrome supports observing and filling ordinary text fields.
+DOM verification is not server save/submit verification.
 Voice, mail/calendar writes, arbitrary actions, recurring jobs and automatic reply watching
 remain unimplemented. Read-only Google access is available when the host's OAuth setup is configured
 and the owner connects an account in Settings. Closed-tab results remain in the shared conversation. The host must
@@ -133,6 +136,14 @@ async function ownerQuestion(label) {
   const abort = new AbortController();
   prompt.on('SIGINT', () => abort.abort()); prompt.on('close', () => abort.abort());
   try { return await prompt.question(label, { signal: abort.signal }); } finally { prompt.close(); }
+}
+// Release the journal and account leases even if browser/channel cleanup fails.
+export async function closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }) {
+  let failure;
+  for (const [resource, method] of [[prompt, 'close'], [mobile, 'close'], [telegram, 'close'], [host, 'close'], [service, 'close'], [store, 'close'], [account, 'stop'], [accountStore, 'close']]) {
+    try { await resource?.[method](); } catch (error) { failure ??= error; }
+  }
+  if (failure) throw failure;
 }
 export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey, ui, background } = {}) {
   const options = contactOptions(args);
@@ -216,6 +227,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     service.on('turn-failed', details => process.stderr.write(`Tada request failed: ${JSON.stringify(details)}\n`));
     const google = new GoogleConnection({ store, ...googleClient, openBrowser: openSystemBrowser });
     service.attachGoogle(google);
+    service.attachBrowser(new SharedBrowser());
     if (options.upgrade || ui?.upgrade === true) {
       const messagingBackup = await store.upgradeMessaging();
       const followupBackup = await store.upgradeFollowups();
@@ -284,7 +296,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       } else if (/^\/revoke [a-f0-9-]{36}$/u.test(line)) service.revoke(line.slice(8));
       else process.stdout.write('대화는 연결한 브라우저에서 하세요. 호스트 명령: /pair, /devices, /revoke DEVICE_ID, /quit\n');
     }
-  } finally { passphrase = ''; prompt?.close(); await mobile?.close(); await telegram?.close(); await host?.close(); await service?.close(); store?.close(); await account?.stop(); accountStore?.close(); }
+  } finally { passphrase = ''; await closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {

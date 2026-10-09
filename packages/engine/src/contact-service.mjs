@@ -1,3 +1,4 @@
+import { BrowserSources } from './browser-sources.mjs';
 import { observeAttention, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { createHash } from 'node:crypto';
 import { ProactiveSources } from './proactive-sources.mjs';
@@ -27,11 +28,28 @@ function failureDetails(error) {
 }
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
-  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #attention = null; #attentionAbort = null; #wakeRequested = false;
+  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false;
   constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone } = {}) {
     super();
     this.#store = store; this.#model = model; this.#sources = sources; this.#timezone = followupTimezone(timezone);
   }
+  attachBrowser(browser) { if (this.#browser) throw Error('CONTACT_BROWSER_ALREADY_ATTACHED'); this.#browser = browser; browser.on?.('change', () => this.emit('change')); }
+  browserStatus(device) {
+    const grant = this.#browser?.grant;
+    return { available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device } : null,
+      actions: [...new Map([...this.#store.browserActions().slice(0,10), ...this.#store.browserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved })) };
+  }
+  async openBrowser(device) { this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE'); await this.#browser.open(); this.#store.assertDevice(device); return this.browserStatus(device); }
+  async browserTabs(device) { this.#store.assertDevice(device); if (!this.#browser) return []; const tabs = await this.#browser.tabs(); this.#store.assertDevice(device); return tabs; }
+  async shareBrowser(device, target, consent, url) {
+    this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE');
+    let shared;
+    try { shared = await this.#browser.share(device, target, consent, url); this.#store.assertDevice(device); }
+    catch (error) { if (shared && this.#browser.grant?.epoch === shared.epoch) this.#browser.unshare(); throw error; }
+    this.emit('change'); return this.browserStatus(device);
+  }
+  unshareBrowser(device) { this.#store.assertDevice(device); this.#browser?.unshare(); this.emit('change'); return this.browserStatus(device); }
+  resolveBrowser(device, id, consent) { this.#store.resolveBrowserAction(device, id, consent); this.emit('change'); return this.browserStatus(device); }
   start() {
     if (!this.#timer && !this.#stopped && this.#store.contactVersion >= 3) {
       this.#timer = setInterval(() => {
@@ -78,6 +96,7 @@ export class ContactService extends EventEmitter {
   }
   revoke(device) {
     this.#google?.deviceRevoked(device);
+    if (this.#browser?.grant?.device === device) this.#browser.unshare();
     this.#store.revoke(device);
     this.#abortStale();
     if (this.#active?.device === device) this.#active.abort.abort();
@@ -90,7 +109,7 @@ export class ContactService extends EventEmitter {
       const abort = new AbortController();
       this.#active = { seq: job.seq, device: job.device, abort, google: null };
       this.emit('change');
-      const attemptedTools = []; let providerFailure;
+      const attemptedTools = []; let providerFailure, browserSources;
       try {
         const proactive = this.#store.proactiveForTurn(job.seq);
         const review = this.#store.reviewForTurn(job.seq);
@@ -101,9 +120,10 @@ export class ContactService extends EventEmitter {
         this.#active.google = google;
         const ownerContext = !review && !proactive ? new OwnerContext(this.#store, job) : null;
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
+        const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserSources(google ?? this.#sources, this.#store, this.#browser, job)) : google ?? this.#sources;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
-          ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal, ownerContext })) : (google ?? this.#sources);
+          ? new FollowupSources(interactive, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal, ownerContext })) : interactive;
         const continuing = this.#store.continuingUseEnabled();
         const research = !proactive && !review && typeof this.#model.researchPublicWeb === 'function' ? async signal => {
           const admit = () => { signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal); };
@@ -155,6 +175,7 @@ export class ContactService extends EventEmitter {
         // receipt in model context; read_document retrieves it when needed.
         const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events', 'search_related_emails', 'read_email_thread']);
         for (const message of checkpoint.history) {
+          if (message.role === 'tool' && message.tool_name === 'observe_shared_browser') message.content = JSON.stringify({ note: 'Shared browser observations expire. Observe the currently shared page again.' });
           if (message.role === 'tool' && message.tool_name === 'read_document') {
             const newline = message.content.indexOf('\n');
             const result = JSON.parse(newline < 0 ? message.content : message.content.slice(0, newline));
@@ -185,6 +206,14 @@ export class ContactService extends EventEmitter {
             else last.content = answer.text;
           }
         }
+        const browserActions = this.#store.browserActions().filter(r => r.turn === job.seq);
+        if (browserActions.length) {
+          const verified = browserActions.filter(r => r.action.state === 'VERIFIED').length;
+          const unresolved = browserActions.filter(r => ['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(r.action.state)).length;
+          const notice = `${verified ? `브라우저 입력 ${verified}건의 현재 값을 확인했어요.` : unresolved ? '브라우저 입력 결과를 확정하지 못했어요.' : '브라우저 입력은 적용되지 않았어요.'}${unresolved ? ` ${unresolved}건은 결과 확인이 필요해 같은 사이트의 새 입력을 멈췄어요.` : ''} 사이트의 저장·전송 완료 여부는 확인하지 않았어요.`;
+          answer.notice = [answer.notice, notice].filter(Boolean).join('\n\n');
+          checkpoint.history.push({ role: 'assistant', content: notice });
+        }
         sources.assertCurrent?.(abort.signal);
         this.#store.finish(job.seq, answer, checkpoint, proposals, document, directIds.length ? { epoch: delegation, proposal_ids: directIds } : null);
       } catch (error) {
@@ -193,6 +222,7 @@ export class ContactService extends EventEmitter {
         if (providerFailure?.code === details.code) Object.assign(details, providerFailure);
         this.emit('turn-failed', { turn: job.seq, ...details, attempted_tools: attemptedTools });
       } finally {
+        await browserSources?.close();
         this.#active = null;
         this.emit('change');
       }
@@ -299,6 +329,7 @@ export class ContactService extends EventEmitter {
     this.emit('change');
   }
   async close() {
+    this.#browser?.unshare();
     this.#stopped = true;
     clearInterval(this.#timer);
     this.#attentionAbort?.abort(); this.#active?.abort.abort();
@@ -306,5 +337,6 @@ export class ContactService extends EventEmitter {
     this.#google?.close();
     this.#active?.abort.abort();
     await this.#drain;
+    await this.#browser?.close();
   }
 }

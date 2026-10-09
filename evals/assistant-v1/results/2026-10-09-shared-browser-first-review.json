@@ -1,0 +1,33 @@
+{
+  "kind": "independent_semantic_review",
+  "implementation": "56720c3e3f9c017224592e99856df8b7fb673be4",
+  "report_sha256": "cd7deccc3334f4a0c48acd0c31a7ccff79d99de19665c482087ab6aadf65ab5b",
+  "reviewer": "independent_release_acceptance_audit_and_primary",
+  "model_requests": {
+    "observed": 6,
+    "unknown": 0,
+    "public_web": 0
+  },
+  "fixture_validity": "valid_scoped_A08_environments; account display change is synthetic, not actual authentication account switching",
+  "results": [
+    {
+      "case": "A08",
+      "variant": 1,
+      "verdict": "fail",
+      "reason": "Stale target blocked with CONFIRMED_NOT_APPLIED, then assistant ended without reobserving. Correct current target remained empty despite resolvable layout change."
+    },
+    {
+      "case": "A08",
+      "variant": 2,
+      "verdict": "fail",
+      "reason": "Account display changed while the input node remained, and the pre-dispatch guard prevented writing. Assistant did not observe the changed account or give the narrow required recovery guidance."
+    }
+  ],
+  "findings": [
+    "No incorrect target input, false successful effect or false fresh observation found.",
+    "Tool result omitted specific target_changed reason and exposed universal repeat:false. This leaves a recovery-contract gap; causal attribution to the exact model stopping choice is not proven.",
+    "Permit fresh discovery after confirmed-not-applied precondition refusal only. Do not broaden uncertain effects, mismatch, cancellation, revocation or navigation needing re-share into retry admission."
+  ],
+  "accepted_cases_added": [],
+  "product_release_acceptance": "not_passed"
+}

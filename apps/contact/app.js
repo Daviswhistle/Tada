@@ -7,6 +7,7 @@ const autoPair = link.get('auto') === '1';
 if (location.hash) history.replaceState(null, '', location.pathname);
 let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = null, known = false;
 let turns = new Map();
+let browserBusy = false, browserView = null;
 let documentEditing = false, editorState = null, editorGeneration = 0, editorBusy = false, editorBackups = [], editorDiscard = null;
 let connectionStopped = false, recoveryEnabled = false, recoveryTimer = null, recoveryAt = 0, recoveryDelay = 2000, stateRequest = null;
 function clearRecoveryTimer() { clearTimeout(recoveryTimer); recoveryTimer = null; recoveryAt = 0; }
@@ -68,6 +69,17 @@ $('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open')
 for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
 $('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
+  CONTACT_BROWSER_DISPLAY_UNAVAILABLE: '현재 실행 환경에서 화면을 열 수 없어요. 데스크톱에 로그인한 뒤 Tada를 다시 열어 주세요.',
+  CONTACT_BROWSER_COMMAND_FAILED: '브라우저 화면이 바뀌어 작업을 마치지 못했어요. 현재 페이지를 확인해 주세요.',
+  CONTACT_BROWSER_OBSERVATION_FAILED: '이 화면은 읽거나 입력할 수 없어요. 일반 웹 페이지의 입력란을 공유해 주세요.',
+  CONTACT_BROWSER_UNAVAILABLE: '이 컴퓨터에서 Chrome을 찾지 못했어요. Chrome을 설치한 뒤 Tada를 다시 열어 주세요.',
+  CONTACT_BROWSER_DISCONNECTED: '전용 브라우저 연결이 끝났어요. 창을 다시 열고 필요한 탭을 공유해 주세요.',
+  CONTACT_BROWSER_TARGET_CHANGED: '공유한 페이지나 입력란이 바뀌었어요. 현재 탭을 다시 공유해 주세요.',
+  CONTACT_BROWSER_EFFECT_UNRESOLVED: '앞선 입력 결과를 확인하지 못해 같은 사이트의 새 입력을 멈췄어요. 브라우저에서 실제 상태를 확인해 주세요.',
+  CONTACT_BROWSER_ACTION_LIMIT: '브라우저 작업 보관 한도에 도달해 새 입력을 멈췄어요. 기존 기록은 유지됩니다.',
+  CONTACT_BROWSER_RESPONSE_UNKNOWN: '브라우저 응답을 확인하지 못했어요. 입력한 내용은 반복하지 않고 실제 화면을 확인해 주세요.',
+  CONTACT_BROWSER_CONSENT_REQUIRED: '공유할 탭과 입력 허용 범위를 확인해 주세요.',
+
   CONTACT_DOCUMENT_INVALID: '문서 제목과 내용을 확인해 주세요. 비어 있거나 너무 긴 문서는 저장할 수 없어요.',
   CONTACT_DOCUMENT_NOT_FOUND: '이 문서를 찾지 못했어요. 대화에서 문서를 다시 열어 주세요.',
   CONTACT_DOCUMENT_READ_REQUIRED: '최신 문서를 읽지 않아 수정본을 저장하지 않았어요. 다시 수정해 달라고 말씀해 주세요.',
@@ -604,6 +616,7 @@ function renderAssistance(result) {
     ? `최근 24시간 기준 ${use.remaining}회 여유가 있어요.${use.resumes_at ? ' 다시 사용 가능: ' + new Date(use.resumes_at).toLocaleString() : ''}`
     : '이전 기록의 일회성 사용 한도가 적용 중이에요. 지속 사용을 켜면 기록을 그대로 이어갑니다.';
   renderGoogle(result.google);
+  renderBrowser(result.browser);
   $('proactive-scope').textContent = result.google?.connected
     ? '현재 선택한 모델의 사용량을 씁니다. 연결된 Google 계정은 이 설정을 켠 경우에만 최근 메일과 다가오는 일정을 하루 한 번 살펴봅니다.'
     : '현재 선택한 모델의 사용량을 씁니다. Google 연결만으로 먼저 챙겨보기가 켜지지는 않습니다.';
@@ -845,3 +858,46 @@ $('document-editor-form').onsubmit = async event => {
   }
 };
 window.addEventListener('beforeunload', event => { if (editorUnsaved()) { event.preventDefault(); event.returnValue = ''; } });
+
+function renderBrowser(state) {
+  browserView = state;
+  $('browser-settings').hidden = !state;
+  $('browser-status').textContent = state?.shared ? `${state.shared.for_this_device ? '공유 중' : '다른 기기에서 공유 중'} · ${state.shared.origin}${state.shared.for_this_device ? '' : ' · 이 기기에서 사용하려면 아래에서 탭을 선택해 주세요.'}` : state?.available ? '공유한 탭이 없어요.' : '이 환경에서는 전용 브라우저를 찾지 못했어요.';
+  $('browser-stop').hidden = !state?.shared;
+  $('browser-sharing').hidden = !state?.shared;
+  $('browser-sharing-label').textContent = state?.shared ? `${state.shared.for_this_device ? 'Tada와 공유 중' : '다른 기기에서 공유 중'} · ${state.shared.origin}` : '';
+  for (const name of ['browser-open', 'browser-refresh']) $(name).disabled = browserBusy || !state?.available;
+  $('browser-stop').disabled = browserBusy; $('browser-sharing-stop').disabled = browserBusy;
+  const list = $('browser-actions'); list.replaceChildren();
+  for (const action of state?.actions ?? []) {
+    if (action.resolved || !['UNCERTAIN', 'ACKNOWLEDGED', 'DISPATCHING'].includes(action.state)) continue;
+    const box = element('div', '', 'browser-action');
+    box.append(element('p', `${action.field || '입력란'} · 요청한 내용: ${action.requested}`, 'muted'));
+    box.append(element('p', `${action.origin} · ${action.state === 'DISPATCHING' ? '입력 결과를 확인하고 있어요.' : action.verdict === 'APPLIED_MISMATCH' ? '입력은 적용됐지만 요청한 값과 달라요.' : '입력 결과가 불확실해 새 입력을 멈췄어요.'}`));
+    if (action.state !== 'DISPATCHING') {
+      box.append(element('p', '사이트에서 실제 내용을 먼저 확인해 주세요. 아래 버튼은 이전 결과를 성공으로 바꾸거나 같은 입력을 반복하지 않고, 새로 부탁하는 작업을 허용합니다.', 'muted'));
+      const button = element('button', '실제 상태를 확인했어요 · 새 작업 허용'); button.type = 'button'; button.disabled = browserBusy;
+      button.onclick = () => browserTask(async () => renderBrowser(await api('/api/browser/resolve', { id: action.id, consent: 'checked_browser_effect_allow_new_work_v1' })));
+      box.append(button);
+    }
+    list.append(box);
+  }
+}
+async function browserTask(action) {
+  if (browserBusy) return; browserBusy = true; renderBrowser(browserView);
+  try { await action(); notice(''); } catch (error) { notice(error.message); }
+  finally { browserBusy = false; renderBrowser(browserView); }
+}
+$('browser-open').onclick = () => browserTask(async () => { renderBrowser(await api('/api/browser/open', {})); $('browser-tabs').replaceChildren(element('p', '열린 전용 브라우저에서 사이트에 접속한 뒤 “공유할 탭 찾기”를 눌러 주세요.', 'muted')); });
+$('browser-refresh').onclick = () => browserTask(async () => {
+  const { tabs } = await api('/api/browser/tabs'); const list = $('browser-tabs'); list.replaceChildren();
+  if (!tabs.length) list.append(element('p', '전용 브라우저에서 필요한 사이트를 열어 주세요.', 'muted'));
+  for (const tab of tabs) {
+    const row = element('div', '', 'browser-tab'); row.append(element('strong', tab.title || '제목 없는 탭'), element('p', tab.url, 'muted'));
+    const button = element('button', '이 탭 읽기와 입력 허용'); button.type = 'button';
+    button.onclick = () => browserTask(async () => { renderBrowser(await api('/api/browser/share', { target: tab.id, url: tab.url, consent: 'shared_browser_text_input_v1' })); list.replaceChildren(); });
+    row.append(button); list.append(row);
+  }
+});
+const stopBrowser = () => browserTask(async () => renderBrowser(await api('/api/browser/stop', {})));
+$('browser-stop').onclick = stopBrowser; $('browser-sharing-stop').onclick = stopBrowser;
