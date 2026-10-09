@@ -49,17 +49,21 @@ const messages = {
 export function setupError(error) {
   return messages[error?.code] ?? messages[error?.message] ?? (error?.name === 'AbortError' ? messages.CHATGPT_LOGIN_CANCELLED : 'Tada를 여는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요. 기존 기록은 지우지 않았어요.');
 }
-export async function serveSetup({ run, autoStart = true }) {
+export async function serveSetup({ run, autoStart = true, autoRetry = false, retryDelays = [5000, 30000, 120000, 300000, 900000] }) {
+  if (typeof autoRetry !== 'boolean' || !Array.isArray(retryDelays) || !retryDelays.length || retryDelays.some(ms => !Number.isSafeInteger(ms) || ms < 1)) throw Error('CONTACT_SETUP_OPTIONS_INVALID');
   const secret = randomBytes(32).toString('base64url');
-  let origin, state = { stage: 'preparing', revision: randomUUID() }, task, controller, answer, entry, closed = false;
+  let origin, state = { stage: 'preparing', revision: randomUUID() }, task, controller, answer, entry, closed = false, retryTimer, attempts = 0;
   const publish = (stage, fields = {}) => { state = { stage, revision: randomUUID(), ...fields }; };
   const start = (reauthorize = false, upgrade = false) => {
     if (task || closed) return false;
+    clearTimeout(retryTimer); retryTimer = null;
     controller = new AbortController();
     const signal = controller.signal;
+    let retry = false, interactive = false;
     entry = null; publish('preparing');
     const ask = (stage, fields = {}) => new Promise((resolve, reject) => {
       signal.throwIfAborted();
+      interactive = true;
       const abort = () => { answer = null; reject(signal.reason); };
       signal.addEventListener('abort', abort, { once: true });
       publish(stage, fields);
@@ -68,20 +72,28 @@ export async function serveSetup({ run, autoStart = true }) {
     const ui = {
       signal, reauthorize, upgrade,
       consent: () => ask('consent'),
-      login: url => { signal.throwIfAborted(); publish('login', { url }); },
+      login: url => { signal.throwIfAborted(); interactive = true; publish('login', { url }); },
       selectModel: models => ask('model', { models }),
-      ready: source => { signal.throwIfAborted(); entry = typeof source === 'function' ? source : () => source; publish('ready', { url: entry() }); },
+      ready: source => { signal.throwIfAborted(); attempts = 0; entry = typeof source === 'function' ? source : () => source; publish('ready', { url: entry() }); },
       wait: () => new Promise(resolve => {
         if (signal.aborted) resolve(); else signal.addEventListener('abort', resolve, { once: true });
       }),
       fail: () => controller.abort(Error('CONTACT_STORAGE_FAILED')),
     };
     task = Promise.resolve().then(() => run(ui)).catch(error => {
+      // Only transient startup observations are repeatable. Login exchanges,
+      // uncertain refreshes, storage failures and admitted work are not retried.
+      retry = autoRetry && error?.retryable !== false && !signal.aborted && !entry && !interactive && (['CHATGPT_NETWORK_FAILED', 'OLLAMA_UNAVAILABLE', 'EADDRINUSE', 'ASSISTANT_CANCELLED'].includes(error?.message) || error?.code === 'EADDRINUSE' || error?.status >= 500 && error?.status <= 599);
       const needsUpgrade = !signal.aborted && ['CONTACT_REVIEW_UPGRADE_REQUIRED', 'CONTACT_ASSISTANCE_UPGRADE_REQUIRED'].includes(error?.message);
       if (!closed) publish('error', { message: setupError(signal.aborted ? signal.reason : error), retryable: !needsUpgrade && error?.retryable !== false, upgrade: needsUpgrade, reauthorize: ['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN', 'CHATGPT_PLAN_PERMISSION_REQUIRED'].includes(error?.message) });
     }).finally(() => {
       task = null; answer = null;
       if (!closed && state.stage !== 'error') publish('error', { message: 'Tada가 멈췄어요. 다시 열면 저장된 대화를 이어갈 수 있어요.' });
+      if (!closed && retry) {
+        const delay = retryDelays[Math.min(attempts++, retryDelays.length - 1)];
+        publish('error', { ...state, revision: randomUUID(), retry_at: Date.now() + delay });
+        retryTimer = setTimeout(() => start(), delay); retryTimer.unref();
+      }
     });
     return true;
   };
@@ -127,7 +139,7 @@ export async function serveSetup({ run, autoStart = true }) {
   origin = `http://127.0.0.1:${server.address().port}`;
   if (autoStart) start();
   return { url: `${origin}/#setup=${secret}`, start, async close() {
-    closed = true; controller?.abort(new DOMException('Closed', 'AbortError'));
+    closed = true; clearTimeout(retryTimer); controller?.abort(new DOMException('Closed', 'AbortError'));
     await task;
     await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   } };

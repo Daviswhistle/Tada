@@ -1,5 +1,7 @@
 # Tada
 
+현재 실행 경로의 [자동 실행과 복구](docs/background-running.md)는 설정에서 같은 비서를 Linux 사용자 서비스로 이어 실행합니다. WSL에서는 Linux 환경이 실행 중이어야 하며 Windows 부팅·절전 중 동작과 실제 휴대폰 수신은 별도 검증 대상입니다.
+
 **Ask. Go live your life. Tada.**
 
 Tada is being built as a personal AI assistant you can delegate to in ordinary language. You should not have to collect the documents, name the project, diagnose the error, or write a complete task specification first. The assistant should find the relevant context, work out what is needed, gather information, act through available tools, and check the result.

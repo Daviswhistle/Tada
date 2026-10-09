@@ -134,7 +134,7 @@ async function ownerQuestion(label) {
   prompt.on('SIGINT', () => abort.abort()); prompt.on('close', () => abort.abort());
   try { return await prompt.question(label, { signal: abort.signal }); } finally { prompt.close(); }
 }
-export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey, ui } = {}) {
+export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey, ui, background } = {}) {
   const options = contactOptions(args);
   if (options.help) { process.stdout.write(HELP); return; }
   if (!ui && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
@@ -209,6 +209,8 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     if (options.initialize) ui?.initialized?.();
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
     const googleClient = loadGoogleClientConfig({ data: options.data, passphrase, store });
+    const savedGoogleClient = background ? loadGoogleClientConfig({ data: options.data, passphrase, store, env: {} }) : null;
+    const portableGoogle = !background || googleClient.clientId === savedGoogleClient.clientId && googleClient.clientSecret === savedGoogleClient.clientSecret;
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone });
     const google = new GoogleConnection({ store, ...googleClient, openBrowser: openSystemBrowser });
@@ -240,7 +242,11 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       mobile = new MobileContact(store, service); await mobile.restore();
     }
     const tls = options['tls-cert'] ? { cert: readFileSync(options['tls-cert']), key: readFileSync(options['tls-key']) } : undefined;
-    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
+    const startup = background ? { status: () => background.status(), configure: (enabled, consent, authorize) => background.configure(enabled, consent, authorize, () => {
+      if (!portableGoogle) throw Error('CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED');
+    }),
+      handoff: async () => { await service.stopWhenIdle(); await background.handoff(); } } : null;
+    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
     if (ui) {
       service.on('fault', () => ui.fail());
       ui.signal.throwIfAborted();

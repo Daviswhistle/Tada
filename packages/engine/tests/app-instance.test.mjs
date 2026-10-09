@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { acquireAppInstance } from '../src/app-instance.mjs';
 import { startApp } from '../src/start-app.mjs';
@@ -48,6 +48,25 @@ test('instance discovery rejects a symlinked private directory', { skip: process
   mkdirSync(target); symlinkSync(target, data + '.app-private');
   try { await assert.rejects(acquireAppInstance(contactOptions(['--data', data]), { protector: protector() }), /PRIVATE_PATH_REQUIRED/); }
   finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('background startup waits for the existing lease, opens no browser, and never repeats initialization', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-background-owner-')), data = join(root, 'conversation'), os = protector();
+  let first, second, pending, runs = 0; const opened = [], argsSeen = [], written = [];
+  const instance = (options, config) => acquireAppInstance(options, { ...config, protector: os });
+  const run = async (args, { ui }) => { runs++; argsSeen.push(args); if (runs === 1) mkdirSync(data); ui.ready('http://127.0.0.1:8787/#entry=fixture'); await ui.wait(); };
+  const stdout = process.stdout.write;
+  try {
+    first = await startApp(['--data', data], { run, instance, open: async url => { opened.push(url); } });
+    process.stdout.write = function (chunk, ...rest) { written.push(String(chunk)); const callback = rest.find(value => typeof value === 'function'); callback?.(); return true; };
+    pending = startApp(['--background', '--data', data], { run, instance, open: async url => { opened.push(url); } });
+    await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(runs, 1);
+    await first.close(); second = await pending;
+    assert.equal(runs, 2); assert.equal(opened.length, 1);
+    assert.equal(argsSeen[1].includes('--init'), false); assert.equal(argsSeen[1].includes('--background'), false);
+    assert.equal(written.join('').includes('#setup='), false);
+    await assert.rejects(startApp(['--background', '--init', '--data', data]), /SETTINGS_INVALID/);
+  } finally { process.stdout.write = stdout; await second?.close(); await first?.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
 test('explicit initialization retries the newly created journal after a contact port collision', async () => {
@@ -127,4 +146,16 @@ test('window publication failure opens a useful error screen and releases owners
     const replacement = await acquireAppInstance(contactOptions(['--data', data]), { protector: protector() });
     assert.equal(replacement.existing, false); replacement.close();
   } finally { await app?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('relative TLS paths reopen the same instance after absolute background launch', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-tls-reopen-')), data = join(root, 'conversation'), os = protector();
+  const cert = join(root, 'cert.pem'), key = join(root, 'key.pem'); let app, reopened, runs = 0;
+  const instance = (options, config) => acquireAppInstance(options, { ...config, protector: os });
+  const run = async (_args, { ui }) => { runs++; mkdirSync(data); ui.ready('https://localhost:8787/#entry=fixture'); await ui.wait(); };
+  try {
+    app = await startApp(['--data', data, '--origin', 'https://localhost:8787', '--tls-cert', cert, '--tls-key', key], { instance, run, open: async () => {} });
+    reopened = await startApp(['--data', data, '--origin', 'https://localhost:8787', '--tls-cert', relative(process.cwd(), cert), '--tls-key', relative(process.cwd(), key)], { instance, run, open: async () => {} });
+    assert.equal(runs, 1); assert.equal(reopened.url, app.url);
+  } finally { await reopened?.close(); await app?.close(); rmSync(root, { recursive: true, force: true }); }
 });

@@ -39,7 +39,7 @@ export function validateContactAddress({ origin, bind = '127.0.0.1', port, tls }
   if (tls && url.protocol !== 'https:') throw new Error('CONTACT_REMOTE_TLS_REQUIRED');
   return url;
 }
-export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, mobile = null, messaging = () => store.messagingStatus() }) {
+export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, mobile = null, background = null, messaging = () => store.messagingStatus() }) {
   const url = validateContactAddress({ origin, bind, port, tls });
   const cookieName = url.protocol === 'https:' ? '__Host-tada' : 'tada_local';
   const pairing = new Map();
@@ -101,7 +101,19 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       if (req.method === 'GET' && target.pathname === '/api/state') {
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
-        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, host_stopping: service.stopped });
+        const startup = background ? await background.status() : null; store.assertDevice(device);
+        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
+      }
+      if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
+        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const { transfer, ...state } = await background.configure(data.enabled, data.consent, () => store.assertDevice(device));
+        // Deliver the accepted setting before releasing this runtime's lease.
+        if (transfer) {
+          let transferred = false;
+          const handoff = () => { if (!transferred) { transferred = true; void background.handoff().catch(() => service.emit('change')); } };
+          if (res.destroyed) handoff(); else { res.once('finish', handoff); res.once('close', handoff); }
+        }
+        return send(res, 200, { ...state, transferring: transfer === true });
       }
       if (req.method === 'POST' && target.pathname === '/api/continuing-use' && !target.search) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);

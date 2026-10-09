@@ -1,4 +1,5 @@
 // Browser receives visible turns, never private tool context, host secrets or an execution API.
+const connectionLost = '연결이 잠시 끊겼어요. 작성한 내용은 그대로 있어요.';
 const $ = id => document.getElementById(id);
 const link = new URLSearchParams(location.hash.slice(1));
 let code = link.get('pair');
@@ -11,6 +12,7 @@ const notice = text => {
   $('settings-notice').textContent = text; $('settings-notice').hidden = !text || !$('settings').open;
 };
 let continuingEnabled = false;
+let backgroundEnabled = false, backgroundBusy = false;
 const settingsPages = ['care', 'accounts', 'mobile'];
 function showSettingsPage(page) {
   $('settings-content').scrollTop = 0;
@@ -30,6 +32,13 @@ $('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open')
 for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
 $('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
+  CONTACT_BACKGROUND_UNAVAILABLE: '이 환경에서는 자동 실행을 준비하지 못했어요. 현재 대화는 계속 사용할 수 있습니다.',
+  CONTACT_BACKGROUND_SETTINGS_IN_USE: '다른 실행 설정이 저장돼 있어 덮어쓰지 않았어요. 기존 실행 설정을 확인해야 합니다.',
+  CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED: '현재 Google 연결은 이 실행 창의 설정을 사용하고 있어 자동 실행으로 옮기지 않았어요. 같은 연결 설정을 저장한 뒤 켜야 합니다. 지금 대화는 계속 사용할 수 있어요.',
+  CONTACT_BACKGROUND_BUSY: '자동 실행을 준비하고 있어요. 잠시 후 다시 확인해 주세요.',
+  CONTACT_BACKGROUND_START_FAILED: '자동 실행 설정은 저장했지만 시작을 확인하지 못했어요. 현재 비서는 계속 실행됩니다. 잠시 후 다시 켜 주세요.',
+  CONTACT_BACKGROUND_CONSENT_REQUIRED: '같은 계정과 대화로 자동 실행하는 안내를 확인해 주세요.',
+  CONTACT_HOST_STOPPING: '같은 비서로 다시 연결하고 있어요. 작성한 내용은 유지됩니다. 연결된 뒤 보내 주세요.',
   CONTACT_PROACTIVE_CONSENT_REQUIRED: '먼저 챙겨보기의 범위와 사용량 안내를 확인해 주세요.',
   CONTACT_ASSISTANCE_UPGRADE_REQUIRED: 'Tada를 다시 열어 기록 업데이트를 완료해 주세요. 원본은 먼저 백업합니다.',
   CONTACT_MOBILE_BUSY: '휴대폰 연결을 확인하고 있어요. 잠시 후 다시 시도해 주세요.',
@@ -72,7 +81,7 @@ async function api(path, data) {
   let response;
   try { response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
     headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) }); }
-  catch { throw Error('연결이 잠시 끊겼어요. 작성한 내용은 그대로 있어요.'); }
+  catch { throw Error(connectionLost); }
   const body = await response.json();
   if (!response.ok) {
     if (response.status === 401) paired(false);
@@ -166,6 +175,7 @@ async function refresh(older = false, quiet = false) {
     const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`);
     if (generation !== requestGeneration) return;
     paired(true);
+    if ($('notice').textContent === connectionLost) notice('');
     $('connection').textContent = result.host_stopping ? '잠시 멈추는 중' : '이야기할 준비가 됐어요';
     for (const turn of result.turns) turns.set(turn.seq, turn);
     if (older || nextBefore === null) nextBefore = result.next_before;
@@ -355,6 +365,16 @@ function renderGoogle(state) {
 }
 function renderAssistance(result) {
   const use = result.continuing_use;
+  const background = result.background;
+  backgroundEnabled = background?.enabled === true;
+  $('background-settings').hidden = !background;
+  $('background-toggle').disabled = backgroundBusy || !background?.available;
+  $('background-toggle').textContent = backgroundEnabled ? '다음 자동 시작 끄기' : '자동 실행 켜기';
+  $('background-toggle').setAttribute('aria-pressed', String(backgroundEnabled));
+  $('background-status').textContent = background?.checking ? '자동 실행 환경을 확인하고 있어요.' : !background?.available ? '이 환경의 자동 실행을 확인하지 못했어요. 현재 대화는 계속 사용할 수 있습니다.'
+    : background.error ? '자동 실행이 멈췄어요. 다시 켜서 연결할 수 있습니다.'
+    : backgroundEnabled ? (background.managed && background.running ? '백그라운드에서 실행 중이에요. 다음 시작과 종료 후 복구도 준비됐어요.' : '자동 실행을 켰어요. 접수한 일을 마치면 백그라운드 실행으로 이어집니다.')
+    : '다음 자동 시작은 꺼져 있어요. 지금 실행 중인 비서는 계속 사용할 수 있습니다.';
   continuingEnabled = use?.enabled === true;
   $('continuing-settings').hidden = !use?.available;
   $('continuing-toggle').textContent = continuingEnabled ? '지속 사용 끄기' : '지속 사용 켜기';
@@ -432,6 +452,18 @@ $('continuing-toggle').onclick = async () => {
   try { await api('/api/continuing-use', { enabled: !continuingEnabled, consent: continuingEnabled ? null : 'continuing_conversation_24h_v1' }); await refresh(false, true); }
   catch (error) { notice(error.message); }
   finally { button.disabled = false; }
+};
+$('background-toggle').onclick = async () => {
+  if (backgroundBusy) return;
+  backgroundBusy = true;
+  const button = $('background-toggle'); button.disabled = true;
+  try {
+    const result = await api('/api/background', { enabled: !backgroundEnabled, consent: backgroundEnabled ? null : 'same_assistant_background_v1' });
+    backgroundEnabled = result.enabled === true;
+    notice(result.transferring ? '자동 실행을 켰어요. 접수한 일을 마친 뒤 잠시 다시 연결합니다. 작성 중인 이야기는 그대로 두세요.' : '다음 자동 시작을 껐어요. 지금 대화는 계속됩니다.');
+    await refresh(false, true);
+  } catch (error) { notice(error.message); }
+  finally { backgroundBusy = false; button.disabled = false; }
 };
 $('proactive-upgrade').onclick = async () => {
   const button = $('proactive-upgrade'); button.disabled = true;

@@ -43,7 +43,8 @@ function render(state) {
   current = state;
   const [step, title, description] = state.stage === 'error' && state.upgrade === true
     ? ['업데이트 준비', '새 기능을 준비했어요.', ''] : copy[state.stage] ?? copy.error;
-  $('step').textContent = step; $('title').textContent = title; $('description').textContent = state.message ?? description;
+  $('step').textContent = step; $('title').textContent = title; $('description').textContent = (state.message ?? description)
+    + (state.retry_at ? ` ${new Date(state.retry_at).toLocaleTimeString()}에 자동으로 다시 연결합니다.` : '');
   for (const id of ['consent', 'login', 'model', 'ready', 'error']) $(id).hidden = id !== state.stage;
   $('retry').hidden = state.retryable === false;
   $('upgrade').hidden = state.upgrade !== true;

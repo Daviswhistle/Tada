@@ -12,12 +12,12 @@ function check(path, directory = false) {
   if (s.isSymbolicLink() || (directory ? !s.isDirectory() : !s.isFile() || s.nlink !== 1)
     || (process.platform !== 'win32' && (s.uid !== process.getuid() || (s.mode & 0o077)))) throw Error('CONTACT_APP_PRIVATE_PATH_REQUIRED');
 }
-export async function acquireAppInstance(options, { protector = windowsProtector(), timeoutMs = 20000 } = {}) {
+export async function acquireAppInstance(options, { protector = windowsProtector(), timeoutMs = 20000, reopen = true } = {}) {
   const root = `${resolve(options.data)}.app-private`, lease = join(root, 'owner.sqlite'), descriptor = join(root, 'window.json');
   const normalized = { ...options, data: resolve(options.data) }; delete normalized.initialize;
   const actions = { login: !!options.login, upgrade: !!options.upgrade };
   delete normalized.login; delete normalized.upgrade;
-  if (normalized['chatgpt-profile']) normalized['chatgpt-profile'] = resolve(normalized['chatgpt-profile']);
+  for (const key of ['chatgpt-profile', 'tls-cert', 'tls-key']) if (normalized[key]) normalized[key] = resolve(normalized[key]);
   const signature = createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(normalized).sort(([a], [b]) => a.localeCompare(b))))).digest('hex');
   for (let at = root; dirname(at) !== at; at = dirname(at)) if (existsSync(at) && lstatSync(at).isSymbolicLink()) throw Error('CONTACT_APP_PRIVATE_PATH_REQUIRED');
   mkdirSync(root, { recursive: true, mode: 0o700 }); check(root, true);
@@ -44,7 +44,7 @@ export async function acquireAppInstance(options, { protector = windowsProtector
     } catch (error) { db.close(); if (![5, 6].includes(error.errcode)) throw error; }
     // An owner may still be publishing its window. Never create a second runtime
     // or replace its descriptor. If it exits, the next lease attempt takes over.
-    if (existsSync(descriptor)) {
+    if (reopen && existsSync(descriptor)) {
       check(descriptor);
       try {
         if (lstatSync(descriptor).size > 16384) throw Error('CONTACT_APP_WINDOW_INVALID');

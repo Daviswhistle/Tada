@@ -9,7 +9,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../../../apps/contact/app.js', import.meta.url), 'utf8');
 function client() {
   const elements = new Map();
-  let focused = null;
+  let focused = null, offline = false;
   class Element {
     value = ''; hidden = false; disabled = false; textContent = ''; children = []; className = ''; parentNode = null; attributes = new Map(); scrolls = [];
     constructor(tag = 'div') { this.tagName = tag.toUpperCase(); }
@@ -58,6 +58,7 @@ function client() {
     window: { innerHeight: 800, scrollY: 0, scrollTo() {} },
     EventSource: class { addEventListener() {} close() {} },
     fetch: (path, options) => {
+      if (offline) return Promise.reject(Error('fixture network loss'));
       calls.push({ path, body: options.body ? JSON.parse(options.body) : null });
       if (path === '/api/turns') return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
       if (handlers.has(path)) return Promise.resolve({ ok: true, status: 200, json: async () => handlers.get(path)() });
@@ -67,7 +68,7 @@ function client() {
   };
   vm.createContext(context);
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
-  return { get, calls, pending, state, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
+  return { get, calls, pending, state, setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
     accept: () => pending.shift().resolve({ ok: true, status: 202, json: async () => ({ seq: 1 }) }),
     reject: () => pending.shift().reject(Error('fixture network loss')) };
 }
@@ -350,4 +351,26 @@ test('continuing use requires its explicit settings action and reports remaining
   assert.match(c.get('continuing-status').textContent, /12회/);
   c.state.continuing_use = { available: true, enabled: true, remaining: 0, resumes_at: Date.now() + 1000 }; await c.refresh();
   assert.match(c.get('continuing-status').textContent, /다시 사용 가능/);
+});
+
+test('background startup is explicit, shows managed state, and preserves the current draft during transfer', async () => {
+  const c = client(); c.state.background = { available: true, enabled: false, running: false, managed: false };
+  await c.refresh(); assert.equal(c.calls.some(call => call.path === '/api/background'), false);
+  c.get('message').value = 'Still writing this next instruction';
+  c.handle('/api/background', () => { c.state.background = { available: true, enabled: true, running: true, managed: true }; return { ...c.state.background, transferring: true }; });
+  await c.get('background-toggle').onclick();
+  assert.deepEqual(c.calls.find(call => call.path === '/api/background').body, { enabled: true, consent: 'same_assistant_background_v1' });
+  assert.equal(c.get('message').value, 'Still writing this next instruction');
+  assert.match(c.get('background-status').textContent, /백그라운드에서 실행 중/);
+  assert.equal(c.get('background-toggle').textContent, '다음 자동 시작 끄기');
+});
+
+test('successful reconnect clears only a transport notice and keeps unrelated recovery warnings', async () => {
+  const c = client(); await c.refresh(); c.get('message').value = 'Preserved draft';
+  c.setOffline(true); await c.refresh();
+  assert.match(c.get('notice').textContent, /연결이 잠시/);
+  c.setOffline(false); await c.refresh();
+  assert.equal(c.get('notice').textContent, ''); assert.equal(c.get('message').value, 'Preserved draft');
+  c.get('notice').textContent = 'Delivery outcome remains unknown'; await c.refresh();
+  assert.equal(c.get('notice').textContent, 'Delivery outcome remains unknown');
 });

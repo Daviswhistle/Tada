@@ -196,10 +196,17 @@ for (const configured of [false, true]) test(`normal app startup and restart ${c
     return new Response(JSON.stringify({ models: [{ slug: 'fixture-model', display_name: 'Fixture Model', visibility: 'list' }] }));
   };
   try {
-    for (let start = 0; start < 2; start++) {
+    for (let start = 0; start < 3; start++) {
+      if (start > 0) {
+        process.env.TADA_GOOGLE_OAUTH_CLIENT_ID = configured ? (start === 1 ? '' : client.client_id) : client.client_id;
+        process.env.TADA_GOOGLE_OAUTH_CLIENT_SECRET = configured ? (start === 1 ? '' : client.client_secret) : client.client_secret;
+      }
       app = await startApp(['--data', f.data, '--chatgpt-profile', profile, '--port', String(port)], {
         open: async () => {}, instance: async () => ({ existing: false, publish: async () => {}, close() {} }),
-        run: (args, { ui }) => main(args, { ui, keyProvider: async () => passphrase }),
+        run: (args, { ui }) => main(args, { ui, keyProvider: async () => passphrase, background: {
+          status: async () => ({ available: true }),
+          configure: async (_enabled, _consent, authorize, prepare) => { authorize(); prepare(); return { enabled: true, transfer: false }; },
+        } }),
       });
       const setup = new URL(app.url), headers = { Authorization: 'Bearer ' + new URLSearchParams(setup.hash.slice(1)).get('setup') };
       let state;
@@ -215,9 +222,15 @@ for (const configured of [false, true]) test(`normal app startup and restart ${c
       });
       assert.equal(paired.status, 200);
       const page = await nativeFetch(entry.origin + '/api/state', { headers: { Cookie: paired.headers.get('set-cookie').split(';')[0] } }).then(res => res.json());
-      assert.equal(page.google.configured, configured); assert.equal(page.google.connected, false); assert.equal(page.google.has_credential, false);
+      assert.equal(page.google.configured, start === 0 ? configured : configured ? start !== 1 : true); assert.equal(page.google.connected, false); assert.equal(page.google.has_credential, false);
       assert.equal(page.provider.provider, 'chatgpt-subscription'); assert.equal(page.usage.requests, 0);
       for (const value of [client.client_id, client.client_secret, passphrase]) assert.equal(JSON.stringify(page).includes(value), false);
+      const enabled = await nativeFetch(entry.origin + '/api/background', { method: 'POST',
+        headers: { Origin: entry.origin, 'Content-Type': 'application/json', Cookie: paired.headers.get('set-cookie').split(';')[0] },
+        body: JSON.stringify({ enabled: true, consent: 'same_assistant_background_v1' }) });
+      const outcome = await enabled.json();
+      if (start === 0 || configured && start === 2) assert.equal(outcome.enabled, true);
+      else assert.equal(outcome.error, 'CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED');
       await app.close(); app = null;
     }
     if (configured) assert.deepEqual(readFileSync(f.path), sealed); else assert.equal(existsSync(f.path), false);

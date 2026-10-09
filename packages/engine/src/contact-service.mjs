@@ -239,6 +239,12 @@ export class ContactService extends EventEmitter {
   }
   get stopped() { return this.#stopped; }
   async idle() { while (this.#drain) await this.#drain; }
+  async stopWhenIdle() {
+    while (this.#drain) await this.#drain;
+    // No asynchronous gap between draining admitted work and closing admission.
+    this.#stopped = true; clearInterval(this.#timer); this.#attentionAbort?.abort();
+    this.emit('change');
+  }
   async close() {
     this.#stopped = true;
     clearInterval(this.#timer);
