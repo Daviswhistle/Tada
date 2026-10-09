@@ -20,10 +20,10 @@ const passphrase = 'test-only secret with sufficient length';
 const route = contactRoute({ fixture: true });
 const noSources = { definitions: [], validate: () => false, execute: async () => { throw Error('TEST_NO_TOOLS'); }, verify: async () => false };
 const response = text => ({ message: { role: 'assistant', content: text }, input_tokens: 5, output_tokens: 3 });
-function setup() {
+function setup(options = {}) {
   const root = mkdtempSync(join(tmpdir(), 'tada-contact-test-'));
   const directory = join(root, 'private');
-  let store = new ContactStore({ directory, passphrase, route, initialize: true });
+  let store = new ContactStore({ directory, passphrase, route, initialize: true, ...options });
   return { root, directory, get store() { return store; },
     reopen() { store.close(); store = new ContactStore({ directory, passphrase, route }); return store; },
     close() { store.close(); rmSync(root, { recursive: true, force: true }); } };
@@ -478,4 +478,30 @@ test('reopening an old setup link refreshes expired pairing before sending the b
     assert.equal((await network.call('/api/pair', { code: code(first.url), name: 'Fixture' })).status, 403);
     assert.equal((await network.call('/api/pair', { code: code(renewed.url), name: 'Fixture' })).status, 200);
   } finally { Date.now = clock; await window?.close(); await network.host.close(); await service.close(); env.close(); }
+});
+
+
+test('authenticated view revisions detect off-page work mutations and host replacement without exposing records to an unpaired client',async()=>{
+ const e=setup({reviews:true});const service=new ContactService(e.store,{},noSources);let net=await serverFor(e.store,service);
+ try{
+  const owner=await net.pair('Owner');
+  const checkpoint=new ConversationAssistant({},noSources).checkpoint();
+  for(let i=0;i<6;i++){
+   const text=`Remember work ${i+1}`;const seq=e.store.submit(owner.id,randomUUID(),text).seq;e.store.claim();
+   const p={id:randomUUID(),timezone:'Asia/Seoul',spec:{operation_id:randomUUID(),target:null,expected_version:0,title:`Work ${i+1}`,details:'Read the report',state:'open',waiting_for:null,notify_at:new Date(Date.now()+3600000).toISOString().replace(/\.\d{3}Z$/u,'Z'),user_quote:text}};
+   e.store.finish(seq,{text:'Proposed',sources:[]},checkpoint,[p]);e.store.confirmFollowup(owner.id,p.id,'approve');
+  }
+  const getState=async()=> (await (await net.call('/api/state',undefined,owner.cookie)).json()).followups;
+  const before=await getState();assert.match(before.view_revision,/^[a-f0-9]{64}$/u);assert.equal((await getState()).view_revision,before.view_revision);
+  const sixth=e.store.followupPage('all',5).items[0];
+  assert.equal((await net.call('/api/followups/review',{commitment:sixth.id,version:sixth.version,consent:'one_local_read_only_review'},owner.cookie)).status,200);
+  const after=await getState();assert.notEqual(after.view_revision,before.view_revision);
+  assert.deepEqual({...after,view_revision:null},{...before,view_revision:null},'mutation is outside the state page');
+  e.store.cancelReview(owner.id,sixth.id,sixth.version);
+  const cancelled=await getState();assert.notEqual(cancelled.view_revision,after.view_revision,'writes without a service event still invalidate the view');
+  assert.deepEqual({...cancelled,view_revision:null},{...after,view_revision:null});
+  assert.equal((await net.call('/api/state')).status,401);
+  await net.host.close();net=await serverFor(e.store,service);
+  assert.notEqual((await getState()).view_revision,cancelled.view_revision,'restarted hosts cannot reuse an old display revision');
+ }finally{await net.host.close();await service.close();e.close();}
 });

@@ -225,6 +225,9 @@ export class ContactStore {
       return { id, token };
     });
   }
+  // Display invalidation only: includes writes from timers and recovery paths
+  // that need not emit an interactive service event. Never an authority token.
+  changeCount() { this.#check(); return this.#db.prepare('SELECT total_changes() AS n').get().n; }
   authenticate(token, now = Date.now()) {
     this.#check();
     if (typeof token !== 'string' || !TOKEN.test(token)) return null;

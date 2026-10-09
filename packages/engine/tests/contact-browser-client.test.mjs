@@ -8,9 +8,20 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../../apps/contact/app.js', import.meta.url), 'utf8');
 const parserSource = readFileSync(new URL('../../../node_modules/markdown-it/dist/browser/markdown-it.umd.min.js', import.meta.url), 'utf8');
-function client({ parser = true } = {}) {
+function client({ parser = true, hash = '#pair=fixture', initiallyOffline = false } = {}) {
   const elements = new Map();
-  let focused = null, offline = false;
+  let focused = null, offline = initiallyOffline, clock = 0, timerId = 0;
+  const timers = new Map(), streams = [], browserEvents = new Map(), stateResponses = [];
+  const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+  const advance = async ms => {
+    const end = clock + ms;
+    for (;;) {
+      const next = [...timers].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next) break;
+      clock = next[1].at; timers.delete(next[0]); next[1].callback(); await flush();
+    }
+    clock = end; await flush();
+  };
   class Element {
     value = ''; hidden = false; disabled = false; textContent = ''; children = []; className = ''; parentNode = null; attributes = new Map(); scrolls = [];
     constructor(tag = 'div') { this.tagName = tag.toUpperCase(); }
@@ -52,25 +63,37 @@ function client({ parser = true } = {}) {
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
-    URL, URLSearchParams, atob, crypto: { randomUUID },
-    location: { hash: '#pair=fixture', pathname: '/' }, history: { replaceState() {} },
-    document: { getElementById: get, hidden: false, body,
+    URL, URLSearchParams, atob, AbortController, performance: { now: () => clock }, crypto: { randomUUID },
+    setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { at: clock + delay, callback }); return id; },
+    clearTimeout(id) { timers.delete(id); },
+    location: { hash, pathname: '/' }, history: { replaceState() {} },
+    document: { getElementById: get, hidden: false, body, addEventListener: (name, fn) => browserEvents.set(name, fn),
       createElement: tag => new Element(tag), createTextNode: text => Object.assign(new Element('#text'), { textContent: text }), createDocumentFragment: () => new Element() },
-    window: { innerHeight: 800, scrollY: 0, scrollTo() {} },
-    EventSource: class { addEventListener() {} close() {} },
+    window: { innerHeight: 800, scrollY: 0, scrollTo() {}, confirm: () => true, addEventListener: (name, fn) => browserEvents.set(name, fn) },
+    EventSource: class {
+      readyState = 1; listeners = new Map();
+      constructor() { streams.push(this); }
+      addEventListener(name, fn) { this.listeners.set(name, fn); }
+      close() { this.readyState = 2; }
+      emit(name) { if (name === 'error') this.onerror?.(); else this.listeners.get(name)?.(); }
+    },
     fetch: (path, options) => {
+      calls.push({ path, body: options.body ? JSON.parse(options.body) : null, signal: options.signal });
       if (offline) return Promise.reject(Error('fixture network loss'));
-      calls.push({ path, body: options.body ? JSON.parse(options.body) : null });
       if (path === '/api/turns') return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
       if (handlers.has(path)) return Promise.resolve({ ok: true, status: 200, json: async () => handlers.get(path)() });
       assert.equal(path, '/api/state');
+      if (stateResponses.length) return stateResponses.shift()(options);
       return Promise.resolve({ ok: true, status: 200, json: async () => state });
     },
   };
   vm.createContext(context);
   if (parser) vm.runInContext(parserSource, context, { filename: 'actual-markdown.js' });
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
-  return { get, calls, pending, state, setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
+  return { get, calls, pending, state, streams, timers, advance, flush,
+    browserEvent: name => browserEvents.get(name)?.(),
+    queueState: fn => stateResponses.push(fn),
+    setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
     accept: () => pending.shift().resolve({ ok: true, status: 202, json: async () => ({ seq: 1 }) }),
     reject: () => pending.shift().reject(Error('fixture network loss')) };
 }
@@ -337,7 +360,7 @@ test('a connection error is visible inside the modal and remains available after
   c.get('mobile-token').value = 'fixture-not-a-real-secret';
   await c.get('mobile-form').onsubmit({ preventDefault() {} });
   assert.equal(c.get('settings-notice').hidden, false);
-  assert.match(c.get('settings-notice').textContent, /Fixture connection unavailable/);
+  assert.match(c.get('settings-notice').textContent, /연결이 잠시 끊겼어요/);
   assert.equal(c.get('notice').hidden, true);
   c.get('settings-close').onclick();
   assert.equal(c.get('notice').hidden, false); assert.equal(c.get('settings-notice').hidden, true);
@@ -571,4 +594,233 @@ test('persisted public citations remain clickable when the model answer contains
  const c=client();c.state.turns=[{seq:1,state:'answered',text:'자료 조사',answer:{text:'확인한 결과입니다. [S1]',verification:'provider_web_report_checked',sources:[{id:'S1',source:'ChatGPT public web research',path:'report-1',citations:[{url:'https://example.org/primary',title:'공식 원문'},{url:'javascript:bad()',title:'실행 금지'},{url:'https://user:secret@example.org',title:'인증 포함 금지'}]}]}}];
  await c.refresh();const links=c.get('messages').querySelectorAll('a');
  assert.deepEqual(links.map(a=>a.getAttribute('href')),['https://example.org/primary']);assert.equal(links[0].textContent,'공식 원문');assert.equal(links[0].getAttribute('rel'),'noopener noreferrer');
+});
+
+const visibleText = node => node.textContent + node.children.map(visibleText).join('');
+const response = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => structuredClone(body) });
+
+test('a terminal event stream recovers completed work without resubmission or losing a draft', async () => {
+  const c = client(); c.state.turns = [{ seq: 1, text: 'Prepare my meeting', state: 'running' }]; await c.refresh();
+  c.get('message').value = 'The next draft'; const dead = c.streams[0]; dead.readyState = 2; dead.emit('error');
+  c.state.turns[0] = { ...c.state.turns[0], state: 'answered', answer: { text: 'Meeting prepared', sources: [] } };
+  await c.advance(1999); assert.match(visibleText(c.get('messages')), /확인하고 있어요/);
+  await c.advance(1); assert.match(visibleText(c.get('messages')), /Meeting prepared/);
+  assert.equal(c.streams.length, 2); assert.equal(c.get('message').value, 'The next draft');
+  assert.ok(c.calls.every(call => call.path === '/api/state')); assert.equal(c.timers.size, 1);
+  const reads = c.calls.length; dead.emit('changed'); dead.emit('error'); await c.flush();
+  assert.equal(c.calls.length, reads, 'detached event handlers cannot change the active connection');
+  assert.equal(c.get('connection').textContent, '이야기할 준비가 됐어요');
+});
+
+test('a quiet but stuck event stream is checked periodically without replacing a healthy stream', async () => {
+  const c = client(); await c.refresh();
+  c.state.turns = [{ seq: 1, text: 'Work', state: 'answered', answer: { text: 'Saved result', sources: [] } }];
+  await c.advance(30000); assert.match(visibleText(c.get('messages')), /Saved result/);
+  assert.equal(c.calls.length, 2); assert.equal(c.streams.length, 1); assert.equal(c.timers.size, 1);
+  await c.advance(30000); assert.equal(c.calls.length, 3);
+});
+
+test('initial read failure retries with bounded backoff and succeeds without a pairing or message POST', async () => {
+  const c = client({ hash: '', initiallyOffline: true }); await c.flush();
+  for (const delay of [2000, 4000, 8000, 16000, 30000, 30000]) {
+    const count = c.calls.length; await c.advance(delay - 1); assert.equal(c.calls.length, count);
+    await c.advance(1); assert.equal(c.calls.length, count + 1); assert.equal(c.timers.size, 1);
+  }
+  c.setOffline(false); c.get('message').value = 'Kept'; await c.advance(30000);
+  assert.equal(c.get('conversation').hidden, false); assert.equal(c.get('message').value, 'Kept');
+  assert.equal(c.get('notice').textContent, ''); assert.ok(c.calls.every(call => call.path === '/api/state'));
+});
+
+test('a hung state response is aborted and recovered after the read timeout', async () => {
+  const c = client(); let signal;
+  c.queueState(options => { signal = options.signal; return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(Error('aborted')))); });
+  const reading = c.refresh(); await c.advance(9999); assert.equal(signal.aborted, false);
+  await c.advance(1); await reading; assert.equal(signal.aborted, true);
+  assert.equal(c.get('connection').textContent, '다시 연결하는 중'); await c.advance(2000);
+  assert.equal(c.get('connection').textContent, '이야기할 준비가 됐어요'); assert.equal(c.calls.length, 2);
+});
+
+for (const status of [200, 401, 503]) test(`superseded state response ${status} cannot overwrite the newer authenticated state`, async () => {
+  const c = client(); let finish;
+  c.queueState(() => new Promise(resolve => { finish = resolve; })); const old = c.refresh();
+  await c.refresh(); finish(response(status, status === 200 ? { ...c.state, host_stopping: true } : { error: 'CONTACT_PAIR_REQUIRED' })); await old;
+  assert.equal(c.get('conversation').hidden, false); assert.equal(c.get('connection').textContent, '이야기할 준비가 됐어요');
+  assert.equal(c.timers.size, 1); assert.equal(c.streams.length, 1);
+});
+
+for (const action of ['logout', 'revocation']) test(`${action} stops retries, rejects late state, and ignores old events and foreground wakeups`, async () => {
+  const c = client(); await c.refresh(); const stream = c.streams[0]; let finish;
+  c.queueState(() => new Promise(resolve => { finish = resolve; })); const old = c.refresh();
+  if (action === 'logout') { c.handle('/api/logout', () => ({})); await c.get('logout').onclick(); }
+  else { c.queueState(() => Promise.resolve(response(401, { error: 'CONTACT_PAIR_REQUIRED' }))); await c.refresh(); }
+  finish(response(200, c.state)); await old;
+  const count = c.calls.length; stream.emit('changed'); stream.emit('error'); c.browserEvent('online'); c.browserEvent('visibilitychange'); await c.advance(90000);
+  assert.equal(c.calls.length, count); assert.equal(c.get('conversation').hidden, true); assert.equal(stream.readyState, 2); assert.equal(c.timers.size, 0);
+});
+
+test('an uncertain submitted message keeps its request identity throughout automatic recovery', async () => {
+  const c = client(); await c.refresh(); c.get('message').value = 'Original work';
+  const first = c.submit(); c.reject(); await first;
+  const id = c.calls.find(call => call.path === '/api/turns').body.request_id;
+  c.streams[0].readyState = 2; c.streams[0].emit('error'); await c.advance(2000); await c.advance(30000);
+  assert.equal(c.calls.filter(call => call.path === '/api/turns').length, 1); assert.equal(c.get('message').value, 'Original work');
+  const explicitRetry = c.submit(); assert.equal(c.calls.filter(call => call.path === '/api/turns').at(-1).body.request_id, id); c.accept(); await explicitRetry;
+});
+
+test('auto-pair after an initial outage uses one read retry loop and pairs only after a definitive authentication denial', async () => {
+  const c = client({ hash: '#pair=fixture&auto=1', initiallyOffline: true }); await c.flush();
+  assert.equal(c.timers.size, 1); await c.advance(2000); assert.equal(c.timers.size, 1);
+  assert.ok(c.calls.every(call => call.path === '/api/state'));
+  c.setOffline(false); c.queueState(() => Promise.resolve(response(401, { error: 'CONTACT_PAIR_REQUIRED' })));
+  c.handle('/api/pair', () => ({})); await c.advance(4000);
+  assert.equal(c.calls.filter(call => call.path === '/api/pair').length, 1); assert.equal(c.get('conversation').hidden, false); assert.equal(c.timers.size, 1);
+});
+
+test('network return observes current state promptly while preserving a draft', async () => {
+  const c = client(); await c.refresh(); c.setOffline(true); await c.refresh();
+  c.get('message').value = 'Draft'; c.setOffline(false); c.browserEvent('online'); await c.flush();
+  assert.equal(c.get('connection').textContent, '이야기할 준비가 됐어요'); assert.equal(c.get('message').value, 'Draft');
+  assert.equal(c.timers.size, 1); assert.ok(c.calls.every(call => call.path === '/api/state'));
+});
+
+test('a state response whose body stalls is covered by the same bounded read timeout', async () => {
+  const c = client(); let signal;
+  c.queueState(options => { signal = options.signal; return Promise.resolve({ ok: true, status: 200,
+    json: () => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(Error('body aborted')))) }); });
+  const reading = c.refresh(); await c.flush(); await c.advance(10000); await reading;
+  assert.equal(signal.aborted, true); await c.advance(2000); assert.equal(c.get('conversation').hidden, false);
+});
+
+test('ambiguous automatic pairing is not retried by the recovery timer', async () => {
+  const c = client({ hash: '#pair=fixture&auto=1', initiallyOffline: true }); await c.flush(); c.setOffline(false);
+  c.queueState(() => Promise.resolve(response(401, { error: 'CONTACT_PAIR_REQUIRED' })));
+  c.handle('/api/pair', () => { throw Error('Ambiguous pairing transport'); }); await c.advance(2000);
+  const count = c.calls.length; await c.advance(90000); c.browserEvent('online'); await c.flush();
+  assert.equal(c.calls.length, count); assert.equal(c.calls.filter(call => call.path === '/api/pair').length, 1);
+  assert.equal(c.get('conversation').hidden, true); assert.equal(c.timers.size, 0);
+});
+
+
+test('repeated reconnect errors cannot postpone the earliest scheduled state read', async () => {
+ const c=client(); await c.refresh(); c.setOffline(true); const stream=c.streams[0]; stream.readyState=0; stream.emit('error');
+ await c.advance(2000); await c.advance(2000);
+ c.setOffline(false); c.state.turns=[{seq:1,text:'Work',state:'answered',answer:{text:'Saved during outage',sources:[]}}];
+ for(let i=0;i<20;i++){await c.advance(3000);stream.emit('error');}
+ assert.match(visibleText(c.get('messages')),/Saved during outage/);
+ assert.ok(c.calls.length>3); assert.equal(c.timers.size,1); assert.ok(c.calls.every(call=>call.path==='/api/state'));
+});
+
+test('unchanged observations retain the expanded historical work page while changed work is refreshed',async()=>{
+ const c=client(); const item={id:'current',title:'Current work',details:'Current',state:'open',notify_at:null,timezone:'Asia/Seoul'};
+ c.state.followups={available:true,reviews_available:false,items:[item],proposals:[],notices:[]};
+ c.handle('/api/followups?offset=0',()=>({items:[{...item,id:'past',title:'Earlier completed work',state:'done'}],next_offset:null}));
+ await c.refresh(); await c.get('followup-more').onclick();
+ assert.match(visibleText(c.get('followup-items')),/Earlier completed work/);
+ await c.advance(30000); assert.match(visibleText(c.get('followup-items')),/Earlier completed work/);
+ assert.equal(c.get('followup-more').hidden,true);
+ c.state.followups.items[0]={...item,title:'Changed current work'}; await c.advance(30000);
+ assert.match(visibleText(c.get('followup-items')),/Changed current work/);
+ assert.doesNotMatch(visibleText(c.get('followup-items')),/Earlier completed work/);
+ assert.equal(c.get('followup-more').hidden,false);
+});
+
+
+test('an action on a later work page invalidates the passive cache and exposes the current reservation and cancellation',async()=>{
+ const c=client();
+ const items=Array.from({length:6},(_,i)=>({id:randomUUID(),version:1,title:`Work ${i+1}`,details:'Review',state:'open',notify_at:new Date(Date.now()+3600000).toISOString(),timezone:'Asia/Seoul',review:null}));
+ c.state.followups={available:true,reviews_available:true,items:structuredClone(items.slice(0,5)),proposals:[],notices:[]};
+ c.handle('/api/followups?offset=0',()=>({items:structuredClone(items.slice(0,5)),next_offset:5}));
+ c.handle('/api/followups?offset=5',()=>({items:structuredClone(items.slice(5)),next_offset:null}));
+ c.handle('/api/followups/review',()=>{items[5].review={state:'armed'};return {};});
+ c.handle('/api/followups/review/cancel',()=>{items[5].review={state:'cancelled'};return {};});
+ const showAll=async()=>{await c.get('followup-more').onclick();await c.get('followup-more').onclick();};
+ await c.refresh();await showAll();
+ await c.get('followup-items').children[5].children.find(n=>n.tagName==='BUTTON').onclick();
+ assert.equal(c.get('followup-more').hidden,false);await showAll();
+ assert.match(visibleText(c.get('followup-items').children[5]),/자동 확인 예약됨/);
+ await c.get('followup-items').children[5].children.find(n=>n.textContent==='자동 확인 취소').onclick();
+ await showAll();assert.match(visibleText(c.get('followup-items').children[5]),/자동 확인이 취소됐어요/);
+ // A change event invalidates a page even if the first five records are equal.
+ c.state.followups.view_revision='changed-elsewhere';c.streams[0].emit('changed');await c.flush();assert.equal(c.get('followup-more').hidden,false);
+ assert.equal(c.get('followup-items').children.length,5);
+});
+
+
+for(const stop of ['logout','revocation'])test(`late admitted message cannot restart recovery after ${stop}`,async()=>{
+ const c=client();await c.refresh();c.get('message').value='Submitted before leaving';const sending=c.submit();
+ if(stop==='logout'){c.handle('/api/logout',()=>({}));await c.get('logout').onclick();}
+ else{c.queueState(()=>Promise.resolve(response(401,{error:'CONTACT_PAIR_REQUIRED'})));await c.refresh();}
+ c.setOffline(true);const count=c.calls.length;c.accept();await sending;c.browserEvent('online');c.browserEvent('visibilitychange');await c.advance(120000);
+ assert.equal(c.calls.length,count);assert.equal(c.timers.size,0);assert.equal(c.get('conversation').hidden,true);
+});
+
+test('an explicitly successful pairing can start observation after a stopped connection',async()=>{
+ const c=client();await c.refresh();c.handle('/api/logout',()=>({}));await c.get('logout').onclick();
+ c.handle('/api/pair',()=>({}));await c.get('pair-form').onsubmit({preventDefault(){}});
+ assert.equal(c.get('conversation').hidden,false);assert.equal(c.timers.size,1);
+});
+
+test('an uncertain work mutation invalidates the view before polling, without replaying the mutation',async()=>{
+ const c=client();const item={id:randomUUID(),version:1,title:'Outside first page',details:'Review',state:'open',notify_at:new Date(Date.now()+3600000).toISOString(),timezone:'Asia/Seoul',review:{state:'armed'}};
+ c.state.followups={available:true,reviews_available:true,items:[],proposals:[],notices:[],view_revision:'initial'};
+ c.handle('/api/followups?offset=0',()=>({items:[structuredClone(item)],next_offset:null}));
+ c.handle('/api/followups/review/cancel',()=>{item.review.state='cancelled';throw Error('Response lost');});
+ await c.refresh();await c.get('followup-more').onclick();await c.get('followup-items').children[0].children.find(n=>n.textContent==='자동 확인 취소').onclick();
+ await c.advance(30000);assert.equal(c.get('followup-more').hidden,false);await c.get('followup-more').onclick();
+ assert.match(visibleText(c.get('followup-items')),/자동 확인이 취소됐어요/);
+ assert.equal(c.calls.filter(x=>x.path==='/api/followups/review/cancel').length,1);
+});
+
+test('a host revision refreshes work outside the first page even when the change event is lost',async()=>{
+ const c=client();const item={id:randomUUID(),title:'Historical work',details:'Old state',state:'open',notify_at:null,timezone:'Asia/Seoul'};
+ c.state.followups={available:true,reviews_available:false,items:[],proposals:[],notices:[],view_revision:'first'};
+ c.handle('/api/followups?offset=0',()=>({items:[structuredClone(item)],next_offset:null}));
+ await c.refresh();await c.get('followup-more').onclick();c.streams[0].emit('changed');await c.flush();
+ assert.match(visibleText(c.get('followup-items')),/Historical work/,'unchanged heartbeat preserves the expanded list');
+ item.state='done';c.state.followups.view_revision='second';await c.advance(30000);
+ assert.equal(c.get('followup-more').hidden,false);await c.get('followup-more').onclick();assert.match(visibleText(c.get('followup-items')),/완료로 기록/);
+});
+
+for (const change of ['cancel', 'logout', 'reconnect']) test(`a late work page cannot overwrite the view after ${change}`, async () => {
+  const c = client(); let finish;
+  const item = { id: randomUUID(), version: 1, title: 'Work', details: 'Review', state: 'open', notify_at: new Date(Date.now() + 3600000).toISOString(), timezone: 'Asia/Seoul', review: { state: 'armed' } };
+  c.state.followups = { available: true, reviews_available: true, items: [structuredClone(item)], proposals: [], notices: [], view_revision: 'first' };
+  c.handle('/api/followups?offset=0', () => new Promise(resolve => { finish = resolve; }));
+  await c.refresh(); const page = c.get('followup-more').onclick(); await c.flush();
+  if (change === 'cancel') {
+    c.state.followups.items[0].review.state = 'cancelled'; c.state.followups.view_revision = 'second';
+    c.streams[0].emit('changed'); await c.flush();
+  } else {
+    c.handle('/api/logout', () => ({})); await c.get('logout').onclick();
+    if (change === 'reconnect') { c.handle('/api/pair', () => ({})); await c.get('pair-form').onsubmit({ preventDefault() {} }); }
+  }
+  finish({ items: [{ ...item, title: 'Stale page' }], next_offset: null }); await page; await c.advance(30000);
+  assert.doesNotMatch(visibleText(c.get('followup-items')), /Stale page/);
+  if (change === 'cancel') {
+    assert.match(visibleText(c.get('followup-items')), /자동 확인이 취소됐어요/);
+    assert.doesNotMatch(visibleText(c.get('followup-items')), /자동 확인 예약됨|자동 확인 취소/);
+  } else assert.equal(c.get('conversation').hidden, change === 'logout');
+});
+
+test('an unchanged heartbeat admits a pending work page once even with duplicate page requests', async () => {
+  const c = client(), finishes = [];
+  c.state.followups = { available: true, reviews_available: false, items: [], proposals: [], notices: [], view_revision: 'first' };
+  c.handle('/api/followups?offset=0', () => new Promise(resolve => { finishes.push(resolve); }));
+  await c.refresh(); const first = c.get('followup-more').onclick(), second = c.get('followup-more').onclick(); await c.flush();
+  c.streams[0].emit('changed'); await c.flush();
+  const item = { id: randomUUID(), title: 'Historical work', details: 'Work', state: 'done', notify_at: null, timezone: 'Asia/Seoul' };
+  finishes[0]({ items: [item], next_offset: 5 }); await first;
+  finishes[1]({ items: [item], next_offset: 5 }); await second;
+  assert.equal(c.get('followup-items').children.length, 1);
+  assert.match(visibleText(c.get('followup-items')), /Historical work/);
+});
+
+test('a stale page failure after logout does not replace current connection guidance', async () => {
+  const c = client(); let fail;
+  c.state.followups = { available: true, reviews_available: false, items: [], proposals: [], notices: [] };
+  c.handle('/api/followups?offset=0', () => new Promise((resolve, reject) => { fail = reject; }));
+  await c.refresh(); const page = c.get('followup-more').onclick(); await c.flush();
+  c.handle('/api/logout', () => ({})); await c.get('logout').onclick(); const notice = c.get('notice').textContent;
+  fail(Error('Late page failure')); await page;
+  assert.equal(c.get('notice').textContent, notice); assert.equal(c.timers.size, 0);
 });

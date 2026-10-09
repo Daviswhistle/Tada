@@ -53,6 +53,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
   const cookieName = `${legacyCookieName}_${sha(store.id).slice(0, 24)}`;
   const pairing = new Map();
   const streams = new Set();
+  const viewInstance = randomBytes(16).toString('hex');
   let pairWindow = Date.now(), pairAttempts = 0, appPair;
   const cookieOf = req => {
     const cookies = (req.headers.cookie ?? '').split(';').map(s => s.trim());
@@ -125,7 +126,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
         const startup = background ? await background.status() : null; store.assertDevice(device);
-        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
       }
       if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);

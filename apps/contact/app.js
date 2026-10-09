@@ -7,6 +7,41 @@ const autoPair = link.get('auto') === '1';
 if (location.hash) history.replaceState(null, '', location.pathname);
 let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = null, known = false;
 let turns = new Map();
+let connectionStopped = false, recoveryEnabled = false, recoveryTimer = null, recoveryAt = 0, recoveryDelay = 2000, stateRequest = null;
+function clearRecoveryTimer() { clearTimeout(recoveryTimer); recoveryTimer = null; recoveryAt = 0; }
+function scheduleRecovery(delay) {
+  if (!recoveryEnabled) return;
+  const at = performance.now() + delay;
+  // Repeated stream failures must not postpone an already scheduled read.
+  if (recoveryTimer !== null && recoveryAt <= at) return;
+  clearRecoveryTimer(); recoveryAt = at;
+  recoveryTimer = setTimeout(() => {
+    recoveryTimer = null;
+    if (!recoveryEnabled) return;
+    if (stateRequest) { scheduleRecovery(1000); return; }
+    // Only state reads are retried. Pairing still requires a definitive 401;
+    // an ambiguous message submission is never sent again by this timer.
+    if (code && autoPair) openConversation(); else refresh(false, true);
+  }, delay);
+}
+function subscribe() {
+  if (channel?.readyState === 2) { channel.close(); channel = null; }
+  if (channel) return;
+  const current = channel = new EventSource('/api/events');
+  current.addEventListener('changed', () => { if (channel === current && recoveryEnabled) refresh(false, true); });
+  current.onerror = () => {
+    if (channel !== current || !recoveryEnabled) return;
+    if (current.readyState === 2) { current.close(); channel = null; }
+    $('connection').textContent = '재연결 중 · 접수한 요청은 유지됩니다';
+    scheduleRecovery(recoveryDelay);
+  };
+}
+function resumeConnection() {
+  if (!recoveryEnabled || stateRequest) return;
+  if (code && autoPair) openConversation(); else refresh(false, true);
+}
+window.addEventListener('online', resumeConnection);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeConnection(); });
 const notice = text => {
   $('notice').textContent = text; $('notice').hidden = !text || $('settings').open;
   $('settings-notice').textContent = text; $('settings-notice').hidden = !text || !$('settings').open;
@@ -81,22 +116,23 @@ const errors = {
   CONTACT_GOOGLE_RESPONSE_INVALID: 'Google에서 받은 정보를 확인할 수 없어 답변을 멈췄어요. 잠시 후 새로 말씀해 주세요. 대화는 보존했고 자동으로 다시 실행하지 않았어요.',
   CONTACT_GOOGLE_RESPONSE_LIMIT: 'Google에서 받은 자료가 너무 커 확인을 마치지 못했어요. 요청 내용을 좁히거나 다른 자료로 이어서 말씀해 주세요. 대화는 보존했고 자동으로 다시 실행하지 않았어요.',
 };
-async function api(path, data) {
-  let response;
+async function api(path, data, options = {}) {
+  if (data !== undefined) invalidateFollowups();
+  let response, body;
   try { response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-    headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data) }); }
+    headers: data === undefined ? {} : { 'Content-Type': 'application/json' }, body: data === undefined ? undefined : JSON.stringify(data), signal: options.signal });
+    body = await response.json(); }
   catch { throw Error(connectionLost); }
-  const body = await response.json();
   if (!response.ok) {
-    if (response.status === 401) paired(false);
+    if (response.status === 401 && options.handleAuthentication !== false) paired(false);
     const error = new Error(errors[body.error] ?? '요청을 처리하지 못했습니다. 기존 접수 상태를 확인한 뒤 다시 시도해 주세요.');
     error.authenticationRequired = response.status === 401; throw error;
   }
   return body;
 }
-function paired(yes) {
+function paired(yes, stopConnection = true) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings-open').hidden = !yes; if (!yes && $('settings').open) $('settings').close(); if (!yes) $('followups').hidden = true;
-  if (!yes) { $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
+  if (!yes) { connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
@@ -275,9 +311,13 @@ function render() {
   if (nearEnd) window.scrollTo(0, document.body.scrollHeight);
 }
 async function refresh(older = false, quiet = false) {
+  if (connectionStopped) return;
   const generation = ++requestGeneration;
+  recoveryEnabled = true; clearRecoveryTimer(); stateRequest?.abort();
+  const controller = stateRequest = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`);
+    const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`, undefined, { signal: controller.signal, handleAuthentication: false });
     if (generation !== requestGeneration) return;
     paired(true);
     if ($('notice').textContent === connectionLost) notice('');
@@ -298,17 +338,20 @@ async function refresh(older = false, quiet = false) {
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
     const unknown = result.messaging?.deliveries?.unknown ?? 0;
     if (unknown) notice('일부 텔레그램 알림은 전달 여부를 확인하지 못했어요. 중복 발송하지 않았고, 답변은 이 대화에서 확인할 수 있어요.');
-    if (!channel) {
-      channel = new EventSource('/api/events');
-      channel.addEventListener('changed', () => refresh());
-      channel.onerror = () => { $('connection').textContent = '재연결 중 · 접수한 요청은 유지됩니다'; };
-    }
+    subscribe(); recoveryDelay = 2000; clearRecoveryTimer(); scheduleRecovery(30000);
     return true;
-  } catch (error) { $('connection').textContent = '다시 연결하는 중'; if (!quiet) notice(error.message); return error.authenticationRequired ? false : undefined; }
+  } catch (error) {
+    if (generation !== requestGeneration) return;
+    if (error.authenticationRequired) { paired(false); $('connection').textContent = '기기 연결이 필요해요'; if (!quiet) notice(error.message); return false; }
+    $('connection').textContent = '다시 연결하는 중'; if (!quiet) notice(error.message);
+    scheduleRecovery(recoveryDelay); recoveryDelay = Math.min(30000, recoveryDelay * 2);
+  } finally {
+    clearTimeout(timeout); if (stateRequest === controller) stateRequest = null;
+  }
 }
 $('pair-form').onsubmit = async event => {
   event.preventDefault();
-  try { await api('/api/pair', { code, name: $('device-name').value }); code = null; notice(''); await refresh(); }
+  try { await api('/api/pair', { code, name: $('device-name').value }); code = null; connectionStopped = false; notice(''); await refresh(); }
   catch (error) { notice(error.message); }
 };
 $('message-form').onsubmit = async event => {
@@ -414,10 +457,17 @@ function workCard(item) {
   }
   return card;
 }
+let followupSnapshot = null, followupViewGeneration = 0;
+function invalidateFollowups() { followupSnapshot = null; followupViewGeneration++; }
 function renderFollowups(state) {
   reviewsAvailable = state?.reviews_available === true;
   $('followups').hidden = !state?.available;
-  if (!state?.available) return;
+  if (!state?.available) { invalidateFollowups(); return; }
+  const snapshot = JSON.stringify(state);
+  // The host revision includes changes outside this first page and changes
+  // after a lost response; heartbeats alone do not invalidate the view.
+  if (followupSnapshot === snapshot) return;
+  followupSnapshot = snapshot; followupViewGeneration++;
   $('followup-items').replaceChildren(...state.items.map(workCard));
   $('work-count').textContent = state.items.length ? String(state.items.length) : '';
   $('work-empty').hidden = !!state.items.length;
@@ -450,13 +500,22 @@ function renderFollowups(state) {
   }));
 }
 $('followup-more').onclick = async () => {
-  if (followupOffset === null) return;
+  if (connectionStopped || followupOffset === null) return;
+  const offset = followupOffset, generation = followupViewGeneration;
+  const current = () => !connectionStopped && generation === followupViewGeneration && offset === followupOffset;
   try {
-    const result = await api(`/api/followups?offset=${followupOffset}`);
-    if (followupOffset === 0) $('followup-items').replaceChildren();
+    const result = await api(`/api/followups?offset=${offset}`, undefined, { handleAuthentication: false });
+    // A page belongs to the view that requested it. A newer state, mutation or
+    // connection must not be overwritten by a delayed page (or its error).
+    if (!current()) return;
+    if (offset === 0) $('followup-items').replaceChildren();
     for (const item of result.items) $('followup-items').append(workCard(item));
     followupOffset = result.next_offset; $('followup-more').hidden = followupOffset === null;
-  } catch (error) { notice(error.message); }
+  } catch (error) {
+    if (!current()) return;
+    if (error.authenticationRequired) paired(false);
+    notice(error.message);
+  }
 };
 
 for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 확인할 항목을 체크리스트 문서로 만들어줘.'], ['suggest-remember', '잊지 않게 챙겨줬으면 하는 일이 있어.']]) {
@@ -662,11 +721,10 @@ async function openConversation() {
     const restored = await refresh(false, true);
     if (restored === true) { code = null; notice(''); return; }
     if (restored !== false) {
-      notice('연결이 잠시 끊겼어요. 기존 기기로 다시 연결하고 있어요.');
-      setTimeout(openConversation, 2000); return;
+      notice(connectionLost); return;
     }
-    try { await api('/api/pair', { code, name: '내 컴퓨터' }); code = null; notice(''); await refresh(); }
+    try { await api('/api/pair', { code, name: '내 컴퓨터' }); code = null; connectionStopped = false; notice(''); await refresh(); }
     catch (error) { paired(false); notice(error.message); }
-  } else if (code) { paired(false); $('connection').textContent = '새 기기 연결'; } else await refresh();
+  } else if (code) { paired(false, false); $('connection').textContent = '새 기기 연결'; } else await refresh();
 }
 openConversation();
