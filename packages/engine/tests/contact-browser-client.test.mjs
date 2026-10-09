@@ -461,3 +461,29 @@ test('missing formatting script falls back to the complete original answer', asy
   const answer = c.get('messages').querySelectorAll('div.answer')[0];
   assert.equal(answer.querySelectorAll('p')[0].textContent, text);
 });
+
+test('personal-work delegation is an explicit settings choice and keeps the current draft', async () => {
+  const c = client();
+  c.state.followups.delegation = { available: true, enabled: false };
+  await c.refresh(); assert.equal(c.get('delegation-settings').hidden, false);
+  assert.equal(c.calls.some(call => call.path === '/api/followup-delegation'), false);
+  c.get('message').value = '아직 작성 중인 다음 부탁';
+  c.handle('/api/followup-delegation', () => {
+    c.state.followups.delegation.enabled = !c.state.followups.delegation.enabled; return c.state.followups.delegation;
+  });
+  await c.get('delegation-toggle').onclick();
+  assert.deepEqual(c.calls.find(call => call.path === '/api/followup-delegation').body, { enabled: true, consent: 'personal_followups_v1' });
+  assert.match(c.get('delegation-status').textContent, /바로 처리/);
+  assert.equal(c.get('message').value, '아직 작성 중인 다음 부탁');
+  await c.get('delegation-toggle').onclick();
+  assert.deepEqual(c.calls.findLast(call => call.path === '/api/followup-delegation').body, { enabled: false, consent: null });
+  assert.match(c.get('delegation-status').textContent, /한 번 더 확인/);
+});
+
+test('a failed delegated save explains expired device coverage without claiming an active reminder', async () => {
+  const c = client(); c.state.turns = [{ seq: 1, state: 'failed', text: '내년에 알려줘', error: 'CONTACT_FOLLOWUP_DEVICE_EXPIRES' }];
+  await c.refresh();
+  const status = c.get('messages').querySelectorAll('div.status')[0];
+  assert.match(status.textContent, /기기의 접근권 유효기간/);
+  assert.doesNotMatch(status.textContent, /CONTACT_|저장했어요/);
+});

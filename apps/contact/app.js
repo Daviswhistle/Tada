@@ -11,7 +11,7 @@ const notice = text => {
   $('notice').textContent = text; $('notice').hidden = !text || $('settings').open;
   $('settings-notice').textContent = text; $('settings-notice').hidden = !text || !$('settings').open;
 };
-let continuingEnabled = false;
+let continuingEnabled = false, delegationEnabled = false, delegationBusy = false;
 let backgroundEnabled = false, backgroundBusy = false;
 const settingsPages = ['care', 'accounts', 'mobile'];
 function showSettingsPage(page) {
@@ -32,6 +32,8 @@ $('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open')
 for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
 $('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
+  CONTACT_FOLLOWUP_DELEGATION_CONSENT_REQUIRED: '대화로 맡길 개인 할 일과 알림의 범위를 확인해 주세요.',
+  CONTACT_FOLLOWUP_DELEGATION_CHANGED: '대화로 맡기기 설정이 바뀌어 이번 변경을 저장하지 않았어요. 현재 설정을 확인한 뒤 다시 말씀해 주세요.',
   CONTACT_BACKGROUND_UNAVAILABLE: '이 환경에서는 자동 실행을 준비하지 못했어요. 현재 대화는 계속 사용할 수 있습니다.',
   CONTACT_BACKGROUND_SETTINGS_IN_USE: '다른 실행 설정이 저장돼 있어 덮어쓰지 않았어요. 기존 실행 설정을 확인해야 합니다.',
   CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED: '현재 Google 연결은 이 실행 창의 설정을 사용하고 있어 자동 실행으로 옮기지 않았어요. 같은 연결 설정을 저장한 뒤 켜야 합니다. 지금 대화는 계속 사용할 수 있어요.',
@@ -184,7 +186,7 @@ function render() {
       if (turn.error === 'CHATGPT_TEMPORARILY_UNAVAILABLE') status.textContent = '지금 ChatGPT 연결 서비스를 사용할 수 없어요. 연결과 대화는 보존했어요. 잠시 후 다시 말씀해 주세요.';
       if (['CHATGPT_PLAN_UNAVAILABLE', 'CHATGPT_PERMISSION_DENIED'].includes(turn.error)) status.textContent = '선택한 ChatGPT 계정이나 워크스페이스 정책에서 이 연결을 허용하지 않아요. 계정 설정을 확인해 주세요. 다른 결제 방식으로 전환하지 않았어요.';
       if (['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN'].includes(turn.error)) status.textContent = 'ChatGPT 연결을 갱신해야 해요. 컴퓨터에서 Tada 연결을 다시 열어 로그인해 주세요. 대화는 보존했어요.';
-      if (['failed', 'interrupted'].includes(turn.state) && turn.error?.startsWith('CONTACT_GOOGLE_') && Object.hasOwn(errors, turn.error)) status.textContent = errors[turn.error];
+      if (['failed', 'interrupted'].includes(turn.state) && Object.hasOwn(errors, turn.error)) status.textContent = errors[turn.error];
       if (['failed', 'interrupted'].includes(turn.state) && ['CONTACT_GOOGLE_RECONNECT_REQUIRED', 'CONTACT_GOOGLE_SCOPE_DENIED', 'CONTACT_GOOGLE_PERMISSION_DENIED'].includes(turn.error)) {
         const settings = document.createElement('button'); settings.type = 'button'; settings.textContent = 'Google 연결 설정';
         settings.onclick = () => {
@@ -280,7 +282,7 @@ $('notifications').onclick = async () => {
 
 let followupOffset = null;
 let reviewsAvailable = false;
-const workStates = { open: '챙길 일', waiting: '회신·조건 대기', done: '사용자 확인 완료', cancelled: '취소' };
+const workStates = { open: '챙길 일', waiting: '회신·조건 대기', done: '완료로 기록', cancelled: '취소' };
 function element(tag, text, className) {
   const item = document.createElement(tag); item.textContent = text;
   if (className) item.className = className;
@@ -409,7 +411,22 @@ function renderGoogle(state) {
       : '이 컴퓨터의 자격 증명은 지웠어요. Google 서버의 연결 해제는 확인하지 못했습니다.'
     : '아직 연결하지 않았어요.';
 }
+$('delegation-toggle').onclick = async () => {
+  if (delegationBusy) return;
+  delegationBusy = true; $('delegation-toggle').disabled = true;
+  try {
+    await api('/api/followup-delegation', { enabled: !delegationEnabled, consent: delegationEnabled ? null : 'personal_followups_v1' });
+    notice(''); await refresh();
+  } catch (error) { notice(error.message); }
+  finally { delegationBusy = false; $('delegation-toggle').disabled = false; }
+};
 function renderAssistance(result) {
+  const delegation = result.followups?.delegation;
+  delegationEnabled = delegation?.enabled === true;
+  $('delegation-settings').hidden = !delegation?.available;
+  $('delegation-toggle').disabled = delegationBusy;
+  $('delegation-toggle').textContent = delegationEnabled ? '변경할 때마다 다시 확인하기' : '개인 할 일과 알림 맡기기';
+  $('delegation-status').textContent = delegationEnabled ? '부탁하신 할 일과 알림을 바로 처리해요.' : '현재는 저장하기 전에 내용과 시각을 한 번 더 확인해요.';
   const use = result.continuing_use;
   const background = result.background;
   backgroundEnabled = background?.enabled === true;

@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { DocumentSources } from './document-sources.mjs';
 import { ConversationAssistant } from './conversation.ts';
 import { ReviewSources } from './review-sources.mjs';
+import { preparePersonalRequest } from './personal-request.mjs';
 import { FollowupSources } from './followup-sources.mjs';
 import { GoogleSources } from './google-sources.mjs';
 import { followupTimezone } from './followup-contract.mjs';
@@ -93,9 +94,10 @@ export class ContactService extends EventEmitter {
         // turns and the separately opted-in daily suggestion path may use it.
         const google = review || !this.#google ? null : new GoogleSources(this.#sources, this.#store, this.#google, job);
         this.#active.google = google;
+        const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
-          ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews) : (google ?? this.#sources);
+          ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal })) : (google ?? this.#sources);
         const continuing = this.#store.continuingUseEnabled();
         const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job, { history: continuing });
         const metered = { chat: async (messages, tools, signal) => {
@@ -124,9 +126,12 @@ export class ContactService extends EventEmitter {
         assistant.noteContext(this.#store.reminderContext(prior.through, job.seq));
         const answer = await assistant.ask(job.text, abort.signal);
         abort.signal.throwIfAborted(); sources.assertCurrent?.(abort.signal);
-        const proposals = !proactive && base instanceof FollowupSources ? base.proposals() : [];
+        const proposals = !answer.refused && !proactive && base instanceof FollowupSources ? base.proposals() : [];
         const document = !answer.refused && sources instanceof DocumentSources ? sources.prepared() : null;
         const checkpoint = assistant.checkpoint();
+        // Isolated personal-work intake uses this same durable meter. Include
+        // its requests in both visible usage and the continuing checkpoint.
+        answer.usage = this.#store.usage(); checkpoint.usage = { ...answer.usage };
         // The full document stays in the encrypted answer. Persist a compact
         // receipt in model context; read_document retrieves it when needed.
         const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events']);
@@ -146,7 +151,11 @@ export class ContactService extends EventEmitter {
           const currentUser = checkpoint.history.findLastIndex(message => message.role === 'user');
           checkpoint.history.splice(currentUser + 1, checkpoint.history.length, { role: 'assistant', content: `Saved document: ${JSON.stringify({ id: document.id, root: document.root, based_on: document.based_on, title: document.title, revision: document.revision })}. Use read_document for content.` });
         }
-        if (proposals.length) {
+        const directIds = proposals.length && base instanceof FollowupSources ? base.directProposalIds() : [];
+        if (directIds.length) {
+          answer.notice = `요청하신 개인 할 일·알림 ${directIds.length}건의 변경을 저장했어요. 아래 맡긴 일에서 내용과 시각을 확인할 수 있어요.${proposals.length > directIds.length ? ` 별도 제안 ${proposals.length - directIds.length}건은 확인 후 저장됩니다.` : ''}`;
+          checkpoint.history.push({ role: 'assistant', content: answer.notice });
+        } else if (proposals.length) {
           const notice = '\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.';
           if (document) {
             answer.notice = notice.trim(); checkpoint.history.push({ role: 'assistant', content: notice.trim() });
@@ -158,7 +167,7 @@ export class ContactService extends EventEmitter {
           }
         }
         sources.assertCurrent?.(abort.signal);
-        this.#store.finish(job.seq, answer, checkpoint, proposals, document);
+        this.#store.finish(job.seq, answer, checkpoint, proposals, document, directIds.length ? { epoch: delegation, proposal_ids: directIds } : null);
       } catch (error) {
         this.#store.fail(job.seq, safeCode(error), this.#stopped ? 'interrupted' : 'failed');
         const details = failureDetails(error);

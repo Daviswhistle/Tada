@@ -19,20 +19,26 @@ export const FOLLOWUP_TOOLS = [
     state: { type: 'string', enum: ['open', 'waiting', 'done', 'cancelled'],
       description: 'New: open/waiting. Waiting needs an external dependency. done/cancelled need an existing target.' },
     waiting_for: { ...nullableString, description: 'Nonempty dependency for waiting; null otherwise.' },
-    notify_at: { ...nullableString, description: 'User-authorized future ISO time, seconds and Z/offset; null for no alert.' },
+    notify_at: { ...nullableString, description: 'Authorized future ISO time: YYYY-MM-DDTHH:mm:ssZ or offset; no fractions. null: no alert.' },
     user_quote: { ...string, description: 'Exact nonempty request substring from CURRENT human message; max 1500 UTF-8 bytes.' },
   }, ['operation_id', 'target', 'expected_version', 'title', 'details', 'state', 'waiting_for', 'notify_at', 'user_quote']),
 ];
 
 export class FollowupSources {
-  #base; #store; #job; #proposals = new Map(); #timezone; #clock; #localReviews;
-  constructor(base, store, job, timezone, clock = Date.now, localReviews = true) {
-    this.#base = base; this.#store = store; this.#job = job;
+  #base; #store; #job; #proposals = new Map(); #timezone; #clock; #localReviews; #delegation; #prepare; #directResult = null; #directIds = new Set();
+  constructor(base, store, job, timezone, clock = Date.now, localReviews = true, delegation = null, prepare = null) {
+    this.#base = base; this.#store = store; this.#job = job; this.#delegation = delegation; this.#prepare = prepare;
     this.#timezone = followupTimezone(timezone); this.#clock = clock; this.#localReviews = localReviews;
     const names = base.definitions.map(d => d?.function?.name);
-    if (FOLLOWUP_TOOLS.some(d => names.includes(d.function.name))) throw new Error('CONTACT_TOOL_COLLISION');
+    if (FOLLOWUP_TOOLS.some(d => names.includes(d.function.name)) || delegation !== null && names.includes('apply_personal_request')) throw new Error('CONTACT_TOOL_COLLISION');
   }
-  get definitions() { return [...this.#base.definitions, ...structuredClone(FOLLOWUP_TOOLS)]; }
+  get definitions() {
+    const tools = structuredClone(FOLLOWUP_TOOLS);
+    if (this.#delegation !== null) tools.push(tool('apply_personal_request',
+      'Carry out an explicit personal-work or one-time reminder request from the CURRENT owner message. Takes no proposed fields: the host independently interprets the owner request and saved work without external sources or this conversation output. Use propose_followup for suggestions needing confirmation. No external actions.', {}, []));
+    return [...this.#base.definitions, ...tools];
+  }
+  get delegation() { return this.#delegation; }
   get hostContext() {
     const proactive = this.#store.proactiveStatus();
     const connectedGoogle = ['list_recent_emails', 'list_upcoming_events'].every(name => this.#base.definitions.some(tool => tool.function.name === name));
@@ -40,11 +46,12 @@ export class FollowupSources {
       ? ' Proactive care is DISABLED; armed reminders/reviews are unchanged. Current host settings supersede past capability claims.'
       : ` Proactive care is ENABLED; mode ${proactive.mode}; Google mail/calendar ${connectedGoogle ? 'available within the scope above' : 'unavailable'}. The host checks ${connectedGoogle ? 'permitted mail/calendar changes and saved work' : 'saved conversation/work'} ${proactive.mode === 'continuous' ? 'every 15 minutes; AI suggestions at most four times daily, 09:00-21:00' : 'once daily, 09:00-21:00'}.${connectedGoogle && proactive.mode === 'continuous' ? ' Calendar reminders: 30 minutes before timed events, all-day mornings.' : ''} This active standing schedule needs no per-check user message, while the host is awake and running. Conversation preferences inform subsequent checks. Acknowledgement does not create/change schedules or source access. Current host settings supersede past capability claims.`;
     const base = this.#base.hostContext ? `${this.#base.hostContext}\n` : '';
-    return `${base}Host time: ${new Date(this.#clock()).toISOString()}; timezone: ${this.#timezone}. Retrieve saved work before changes. Proposals need owner confirmation; do not investigate deferred work early.${this.#store.contactVersion >= 4 && this.#localReviews ? ' After saving, the owner may separately approve one local read-only review on its card or via /review COMMITMENT_ID VERSION in Telegram. Only an armed review runs later; a reminder alone does not. Review results do not prove completion.' : ' Per-task LOCAL FILE reviews are unavailable; enabled proactive care is separate. Reminders alone never run a model.'}${standing}`; }
+    return `${base}Host time: ${new Date(this.#clock()).toISOString()}; timezone: ${this.#timezone}. Retrieve saved work before changes. ${this.#delegation === null ? 'Proposals need owner confirmation' : 'Personal-work delegation is enabled: use apply_personal_request for the current explicit owner request. It independently interprets that request without source content. propose_followup ALWAYS needs individual confirmation, including source-derived suggestions'}; do not investigate deferred work early.${this.#store.contactVersion >= 4 && this.#localReviews ? ' After saving, the owner may separately approve one local read-only review on its card or via /review COMMITMENT_ID VERSION in Telegram. Only an armed review runs later; a reminder alone does not. Review results do not prove completion.' : ' Per-task LOCAL FILE reviews are unavailable; enabled proactive care is separate. Reminders alone never run a model.'}${standing}`; }
   get verificationKind() { return this.#base.verificationKind; }
   isEvidenceRead(name) { return this.#base.isEvidenceRead?.(name) === true; }
-  assertCurrent(signal) { signal?.throwIfAborted(); this.#base.assertCurrent?.(signal); signal?.throwIfAborted(); }
+  assertCurrent(signal) { signal?.throwIfAborted(); this.#base.assertCurrent?.(signal); if (this.#directIds.size && this.#delegation !== null) this.#store.assertFollowupDelegation(this.#delegation); signal?.throwIfAborted(); }
   validate(name, args) {
+    if (name === 'apply_personal_request') return this.#delegation !== null && args && typeof args === 'object' && !Array.isArray(args) && Object.keys(args).length === 0;
     if (name === 'list_followups') return args && Object.keys(args).sort().join(',') === 'offset,status'
       && ['active', 'all'].includes(args.status) && Number.isSafeInteger(args.offset) && args.offset >= 0 && (this.#store.continuingUseEnabled() || args.offset <= 1000);
     if (name === 'propose_followup') {
@@ -56,6 +63,22 @@ export class FollowupSources {
     signal.throwIfAborted();
     if (!this.validate(name, args)) throw new Error('CONTACT_FOLLOWUP_INVALID');
     if (name === 'list_followups') return this.#store.followupPage(args.status, args.offset);
+    if (name === 'apply_personal_request') {
+      this.#store.assertFollowupDelegation(this.#delegation);
+      if (typeof this.#prepare !== 'function') throw Error('CONTACT_FOLLOWUP_INVALID');
+      this.#directResult ??= this.#prepare(signal);
+      const prepared = await this.#directResult;
+      signal.throwIfAborted();
+      this.#store.assertFollowupDelegation(this.#delegation); this.#store.assertTurnAuthority(this.#job.seq);
+      const proposals = prepared.proposals.map(p => ({ ...p, spec: { ...p.spec, operation_id: `direct_${p.id}` } }));
+      if (this.#proposals.size + proposals.filter(p => !this.#directIds.has(p.id)).length > 4) throw Error('CONTACT_FOLLOWUP_LIMIT');
+      const receipt = { status: proposals.length ? 'commit_with_answer' : 'no_direct_change', activated: false,
+        changes: proposals.map(p => ({ id: p.id, title: p.spec.title, state: p.spec.state, notify_at: p.spec.notify_at })),
+        explanation: prepared.explanation, note: 'Only these independently prepared changes commit with the final answer. Other proposals still need owner confirmation.' };
+      if (budget && !budget.fits(receipt)) throw Error('ASSISTANT_SOURCE_LIMIT');
+      for (const proposal of proposals) { this.#proposals.set(proposal.spec.operation_id, proposal); this.#directIds.add(proposal.id); }
+      return receipt;
+    }
     if (name !== 'propose_followup') return this.#base.execute(name, args, signal, budget);
     const spec = validateFollowupProposal(args, this.#job.text, this.#clock());
     const response = id => {
@@ -66,6 +89,7 @@ export class FollowupSources {
     };
     const old = this.#proposals.get(spec.operation_id);
     if (old) {
+      if (this.#directIds.has(old.id)) throw Error('CONTACT_FOLLOWUP_ID_REUSED');
       // Both values already have the exact validated, flat scalar field set.
       // JSON object key order is not a change to the owner's work description.
       if (Object.keys(spec).some(key => old.spec[key] !== spec[key])) throw new Error('CONTACT_FOLLOWUP_ID_REUSED');
@@ -82,5 +106,6 @@ export class FollowupSources {
     return result;
   }
   verify(evidence, signal) { return this.#base.verify(evidence, signal); }
+  directProposalIds() { return [...this.#directIds]; }
   proposals() { return structuredClone([...this.#proposals.values()]); }
 }

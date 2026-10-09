@@ -1,5 +1,10 @@
-// Structured proposals, not phrase matching. A model cannot activate a reminder:
-// only the authenticated owner's review of this exact immutable proposal can.
+// Structured personal-work changes: individual confirmation or an explicit,
+// current standing delegation admits the exact payload at atomic answer commit.
+export const FOLLOWUP_DELEGATION_CONSENT = 'personal_followups_v1';
+export function validFollowupDelegation(value) {
+  return exact(value, ['version', 'enabled', 'epoch', 'device']) && value.version === 1
+    && typeof value.enabled === 'boolean' && isFollowupId(value.epoch) && isFollowupId(value.device);
+}
 export const FOLLOWUP_STATES = ['open', 'waiting', 'done', 'cancelled'];
 export const isFollowupId = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(value);
 const exact = (object, keys) => object && typeof object === 'object' && !Array.isArray(object)

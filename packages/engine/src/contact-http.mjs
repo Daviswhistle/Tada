@@ -117,6 +117,11 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         }
         return send(res, 200, { ...state, transferring: transfer === true });
       }
+      if (req.method === 'POST' && target.pathname === '/api/followup-delegation' && !target.search) {
+        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const result = store.configureFollowupDelegation(device, data.enabled, data.consent);
+        service.emit('change'); return send(res, 200, result);
+      }
       if (req.method === 'POST' && target.pathname === '/api/continuing-use' && !target.search) {
         const data = await jsonBody(req); object(data, ['enabled', 'consent']);
         const result = store.configureContinuingUse(device, data.enabled, data.consent);

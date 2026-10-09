@@ -2,7 +2,7 @@
 // Separate from the existing action ledger: documents are conversation results,
 // never an authority to overwrite arbitrary files or publish externally.
 import { DatabaseSync, backup } from 'node:sqlite';
-import { validateFollowupProposal, followupTimezone, followupInstant, isFollowupId, followupReviewText } from './followup-contract.mjs';
+import { validateFollowupProposal, followupTimezone, followupInstant, isFollowupId, followupReviewText, FOLLOWUP_DELEGATION_CONSENT, validFollowupDelegation } from './followup-contract.mjs';
 import { randomBytes, randomUUID, createHash, createCipheriv, createDecipheriv, scryptSync } from 'node:crypto';
 import { mkdirSync, lstatSync, existsSync, openSync, closeSync, fsyncSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
@@ -449,7 +449,7 @@ export class ContactStore {
     return Math.min(room, Math.max(0, (run ? 4 : 8) - used));
   }
 
-  finish(seq, answer, checkpoint, proposals = [], document = null) {
+  finish(seq, answer, checkpoint, proposals = [], document = null, delegation = null) {
     return this.#tx(() => {
       const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq);
       if (row?.state !== 'running') return false;
@@ -465,8 +465,16 @@ export class ContactStore {
         if (Object.keys(checked).some(k => checked[k] !== document[k]) || Buffer.byteLength(answer.text) > 4096) throw Error('CONTACT_DOCUMENT_INVALID');
         answer = { ...answer, document: { ...checked, sha256: hash(answer.text) } };
       }
-      this.#saveFollowupProposals(row, proposals);
+      const directIds = delegation?.proposal_ids ?? [];
+      if (delegation !== null) {
+        if (Object.keys(delegation).sort().join(',') !== 'epoch,proposal_ids' || !Array.isArray(directIds)
+            || !directIds.length || new Set(directIds).size !== directIds.length
+            || directIds.some(id => !isFollowupId(id) || !proposals.some(p => p.id === id))) throw Error('CONTACT_FOLLOWUP_INVALID');
+        this.assertFollowupDelegation(delegation.epoch);
+      }
+      this.#saveFollowupProposals(row, proposals, directIds.length);
       this.#db.prepare("UPDATE turns SET state='answered',answer=? WHERE seq=?").run(this.#seal(`answer:${row.request_id}`, answer), seq);
+      for (const id of directIds) this.#decideFollowup(row.device, id, 'approve', Date.now(), delegation.epoch);
       if (!answer.quiet) this.#db.prepare('INSERT INTO context VALUES(1,?,?) ON CONFLICT(singleton) DO UPDATE SET through_seq=excluded.through_seq,payload=excluded.payload')
         .run(seq, this.#seal(`context:${seq}`, checkpoint));
       return true;
@@ -721,12 +729,39 @@ export class ContactStore {
 
   // Work records belong to this same encrypted contact journal, not a parallel bot.
   #followups() { this.#check(); if (this.#version < 3) throw new Error('CONTACT_FOLLOWUP_UPGRADE_REQUIRED'); }
+  followupDelegationStatus(now = Date.now()) {
+    const policy = this.#setting('followup_delegation');
+    let enabled = policy?.enabled === true;
+    if (enabled) { try { this.#device(policy.device, now); } catch { enabled = false; } }
+    return { available: this.#version >= 5, enabled };
+  }
+  captureFollowupDelegation() {
+    return this.followupDelegationStatus().enabled ? this.#setting('followup_delegation').epoch : null;
+  }
+  assertFollowupDelegation(epoch, now = Date.now()) {
+    const policy = this.#setting('followup_delegation');
+    if (!isFollowupId(epoch) || policy?.epoch !== epoch || !this.followupDelegationStatus(now).enabled)
+      throw Error('CONTACT_FOLLOWUP_DELEGATION_CHANGED');
+  }
+  configureFollowupDelegation(device, enabled, consent, now = Date.now()) {
+    if (typeof enabled !== 'boolean' || (enabled ? consent !== FOLLOWUP_DELEGATION_CONSENT : consent !== null) || !counter(now))
+      throw Error('CONTACT_FOLLOWUP_DELEGATION_CONSENT_REQUIRED');
+    return this.#tx(() => {
+      this.#device(device, now);
+      if (enabled && this.followupDelegationStatus(now).enabled) return this.followupDelegationStatus(now);
+      this.#saveSetting('followup_delegation', { version: 1, enabled, epoch: randomUUID(), device });
+      return this.followupDelegationStatus(now);
+    });
+  }
   #proposal(row) {
     const value = this.#open(`followup-proposal:${row.id}`, row.payload);
     return { id: row.id, turn: row.turn, status: row.state, created: row.created, ...value };
   }
   #commitment(row) {
     const value = this.#open(`followup:${row.id}:${row.version}`, row.payload);
+    if (Object.hasOwn(value, 'approval_basis') || Object.hasOwn(value, 'delegation_epoch')) {
+      if (value.approval_basis !== 'owner_delegation' || !isFollowupId(value.delegation_epoch)) throw Error('CONTACT_FOLLOWUP_INTEGRITY');
+    }
     if (value.state !== row.state || (value.notify_at === null ? null : followupInstant(value.notify_at)) !== row.notify_at) {
       this.#poisoned = true; throw new Error('CONTACT_FOLLOWUP_INTEGRITY');
     }
@@ -739,7 +774,7 @@ export class ContactStore {
           : notice?.state === 'superseded' ? 'suppressed' : 'scheduled';
     }
     return { id: row.id, version: row.version, origin_turn: row.origin_turn, owner_device: row.device,
-      updated: row.updated, ...value, review: this.reviewState(row.id, row.version), notification_status: notification, completion_basis: row.state === 'done' ? 'owner_confirmation' : null };
+      updated: row.updated, ...value, review: this.reviewState(row.id, row.version), notification_status: notification, completion_basis: row.state === 'done' ? value.approval_basis ?? 'owner_confirmation' : null };
   }
   followup(id) {
     this.#followups(); if (!isFollowupId(id)) throw new Error('CONTACT_FOLLOWUP_INVALID');
@@ -752,7 +787,7 @@ export class ContactStore {
     const condition = status === 'active' ? "WHERE state IN('open','waiting')" : '';
     const rows = this.#db.prepare(`SELECT * FROM followups ${condition} ORDER BY updated DESC,id LIMIT 6 OFFSET ?`).all(offset);
     return { pending: this.#db.prepare("SELECT * FROM followup_proposals WHERE state='pending' ORDER BY created,id LIMIT 8").all().map(row => { const p = this.#proposal(row); return { id: p.id, title: p.spec.title, target: p.spec.target, status: 'pending_owner_confirmation' }; }), items: rows.slice(0, 5).map(row => this.#commitment(row)), next_offset: rows.length > 5 ? offset + 5 : null,
-      note: 'These are owner-confirmed work records. Waiting does not imply external monitoring. Done means the owner marked it done, not independent outcome verification.' };
+      note: 'These are owner-requested work records, admitted by individual confirmation or personal-work delegation. Waiting does not imply external monitoring. Done means the owner marked it done, not independent outcome verification.' };
   }
   followupState() {
     this.#check(); if (this.#version < 3) return { available: false };
@@ -760,13 +795,15 @@ export class ContactStore {
     const notices = this.#db.prepare("SELECT * FROM followup_notices WHERE state='ready' ORDER BY created,id").all()
       .map(row => ({ id: row.id, commitment: row.commitment, version: row.version, created: row.created,
         ...this.#open(`followup-notice:${row.id}`, row.payload) }));
-    return { available: true, reviews_available: this.#version >= 4, ...this.followupPage('active', 0), proposals, notices };
+    return { available: true, reviews_available: this.#version >= 4, delegation: this.followupDelegationStatus(), ...this.followupPage('active', 0), proposals, notices };
   }
-  #saveFollowupProposals(turn, proposals) {
+  #saveFollowupProposals(turn, proposals, immediatelyApproved = 0) {
     if (!Array.isArray(proposals) || proposals.length > 4) throw new Error('CONTACT_FOLLOWUP_INVALID');
     if (!proposals.length) return;
     this.#followups();
-    if (this.#db.prepare("SELECT count(*) n FROM followup_proposals WHERE state='pending'").get().n + proposals.length > 32
+    // Delegated changes are approved in this same transaction, so they consume
+    // history but no pending-review capacity. Old pending cards remain intact.
+    if ((this.#db.prepare("SELECT count(*) n FROM followup_proposals WHERE state='pending'").get().n + proposals.length - immediatelyApproved > 32)
         || (!this.continuingUseEnabled() && this.#db.prepare('SELECT count(*) n FROM followup_proposals').get().n + proposals.length > 1000)) throw new Error('CONTACT_FOLLOWUP_LIMIT');
     const text = this.#turn(turn).text;
     const ids = new Set(), operations = new Set();
@@ -794,46 +831,48 @@ export class ContactStore {
   confirmFollowup(device, proposalId, decision, now = Date.now()) {
     this.#followups();
     if (!isFollowupId(proposalId) || !['approve', 'reject'].includes(decision) || !counter(now)) throw new Error('CONTACT_FOLLOWUP_INVALID');
-    return this.#tx(() => {
-      this.#device(device, now);
-      const row = this.#db.prepare('SELECT * FROM followup_proposals WHERE id=?').get(proposalId);
-      if (!row) throw new Error('CONTACT_FOLLOWUP_NOT_FOUND');
-      const proposal = this.#proposal(row), spec = proposal.spec;
-      const target = spec.target ?? proposal.id;
-      if (row.state !== 'pending') {
-        if (row.state === (decision === 'approve' ? 'approved' : 'rejected'))
-          return { proposal: proposalId, status: row.state, commitment: decision === 'approve' ? target : null, replay: true };
-        throw new Error('CONTACT_FOLLOWUP_DECISION_CONFLICT');
-      }
-      if (decision === 'reject') {
-        this.#db.prepare("UPDATE followup_proposals SET state='rejected' WHERE id=?").run(proposalId);
-        return { proposal: proposalId, status: 'rejected', commitment: null, replay: false };
-      }
-      this.#device(row.device, now);
-      if (spec.notify_at !== null && followupInstant(spec.notify_at) >= this.#db.prepare('SELECT expires FROM devices WHERE id=?').get(device).expires) throw new Error('CONTACT_FOLLOWUP_DEVICE_EXPIRES');
-      if (now - row.created > 86400000 || this.#db.prepare('SELECT state FROM turns WHERE seq=?').get(row.turn)?.state !== 'answered')
-        throw new Error('CONTACT_FOLLOWUP_EXPIRED');
-      // Recheck the exact immutable payload, not a new interpretation of the chat.
-      validateFollowupProposal(spec, this.turn(row.turn).text, now);
-      const old = spec.target === null ? null : this.followup(spec.target);
-      if (spec.target !== null && (!old || old.version !== spec.expected_version)) throw new Error('CONTACT_FOLLOWUP_STALE');
-      const continuing = this.continuingUseEnabled();
-      const addsActive = ['open', 'waiting'].includes(spec.state) && !['open', 'waiting'].includes(old?.state);
-      if ((continuing ? addsActive : !old) && this.#db.prepare(continuing ? "SELECT count(*) n FROM followups WHERE state IN('open','waiting')" : 'SELECT count(*) n FROM followups').get().n >= 1000) throw new Error('CONTACT_FOLLOWUP_LIMIT');
-      const version = old ? old.version + 1 : 1;
-      if (!Number.isSafeInteger(version)) throw new Error('CONTACT_FOLLOWUP_LIMIT');
-      const value = { title: spec.title, details: spec.details, state: spec.state, waiting_for: spec.waiting_for,
-        notify_at: spec.notify_at, timezone: proposal.timezone, user_quote: spec.user_quote };
-      if (old) this.#suppressFollowup(target);
-      this.#db.prepare('INSERT INTO followups VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,device=excluded.device,state=excluded.state,payload=excluded.payload,notify_at=excluded.notify_at,updated=excluded.updated')
-        .run(target, version, old?.origin_turn ?? row.turn, device, spec.state,
-          this.#seal(`followup:${target}:${version}`, value), spec.notify_at === null ? null : followupInstant(spec.notify_at), now, now);
-      this.#db.prepare("UPDATE followup_proposals SET state='approved' WHERE id=?").run(proposalId);
-      for (const other of this.#db.prepare("SELECT * FROM followup_proposals WHERE state='pending'").all()) {
-        if (this.#proposal(other).spec.target === target) this.#db.prepare("UPDATE followup_proposals SET state='superseded' WHERE id=?").run(other.id);
-      }
-      return { proposal: proposalId, status: 'approved', commitment: target, version, replay: false };
-    });
+    return this.#tx(() => this.#decideFollowup(device, proposalId, decision, now));
+  }
+  #decideFollowup(device, proposalId, decision, now, delegation = null) {
+    this.#device(device, now);
+    const row = this.#db.prepare('SELECT * FROM followup_proposals WHERE id=?').get(proposalId);
+    if (!row) throw new Error('CONTACT_FOLLOWUP_NOT_FOUND');
+    const proposal = this.#proposal(row), spec = proposal.spec;
+    const target = spec.target ?? proposal.id;
+    if (row.state !== 'pending') {
+      if (row.state === (decision === 'approve' ? 'approved' : 'rejected'))
+        return { proposal: proposalId, status: row.state, commitment: decision === 'approve' ? target : null, replay: true };
+      throw new Error('CONTACT_FOLLOWUP_DECISION_CONFLICT');
+    }
+    if (decision === 'reject') {
+      this.#db.prepare("UPDATE followup_proposals SET state='rejected' WHERE id=?").run(proposalId);
+      return { proposal: proposalId, status: 'rejected', commitment: null, replay: false };
+    }
+    this.#device(row.device, now);
+    if (spec.notify_at !== null && followupInstant(spec.notify_at) >= this.#db.prepare('SELECT expires FROM devices WHERE id=?').get(device).expires) throw new Error('CONTACT_FOLLOWUP_DEVICE_EXPIRES');
+    if (now - row.created > 86400000 || this.#db.prepare('SELECT state FROM turns WHERE seq=?').get(row.turn)?.state !== 'answered')
+      throw new Error('CONTACT_FOLLOWUP_EXPIRED');
+    // Recheck the exact immutable payload, not a new interpretation of the chat.
+    validateFollowupProposal(spec, this.turn(row.turn).text, now);
+    const old = spec.target === null ? null : this.followup(spec.target);
+    if (spec.target !== null && (!old || old.version !== spec.expected_version)) throw new Error('CONTACT_FOLLOWUP_STALE');
+    const continuing = this.continuingUseEnabled();
+    const addsActive = ['open', 'waiting'].includes(spec.state) && !['open', 'waiting'].includes(old?.state);
+    if ((continuing ? addsActive : !old) && this.#db.prepare(continuing ? "SELECT count(*) n FROM followups WHERE state IN('open','waiting')" : 'SELECT count(*) n FROM followups').get().n >= 1000) throw new Error('CONTACT_FOLLOWUP_LIMIT');
+    const version = old ? old.version + 1 : 1;
+    if (!Number.isSafeInteger(version)) throw new Error('CONTACT_FOLLOWUP_LIMIT');
+    const value = { title: spec.title, details: spec.details, state: spec.state, waiting_for: spec.waiting_for,
+      notify_at: spec.notify_at, timezone: proposal.timezone, user_quote: spec.user_quote,
+      ...(delegation === null ? {} : { approval_basis: 'owner_delegation', delegation_epoch: delegation }) };
+    if (old) this.#suppressFollowup(target);
+    this.#db.prepare('INSERT INTO followups VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,device=excluded.device,state=excluded.state,payload=excluded.payload,notify_at=excluded.notify_at,updated=excluded.updated')
+      .run(target, version, old?.origin_turn ?? row.turn, device, spec.state,
+        this.#seal(`followup:${target}:${version}`, value), spec.notify_at === null ? null : followupInstant(spec.notify_at), now, now);
+    this.#db.prepare("UPDATE followup_proposals SET state='approved' WHERE id=?").run(proposalId);
+    for (const other of this.#db.prepare("SELECT * FROM followup_proposals WHERE state='pending'").all()) {
+      if (this.#proposal(other).spec.target === target) this.#db.prepare("UPDATE followup_proposals SET state='superseded' WHERE id=?").run(other.id);
+    }
+    return { proposal: proposalId, status: 'approved', commitment: target, version, replay: false };
   }
   dismissFollowupNotice(device, noticeId) {
     this.#followups();
@@ -1041,6 +1080,7 @@ export class ContactStore {
       const valid = name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
         : name === 'google' ? validGoogleCredential(value)
         : name === 'google_disconnect' ? validGoogleDisconnect(value)
+        : name === 'followup_delegation' ? validFollowupDelegation(value)
         : name === 'continuing_use' ? validContinuingUse(value)
         : name === 'attention' ? validAttention(value)
         : name === 'proactive' && Object.keys(value).sort().join(',') === 'device,enabled,epoch,last_fingerprint,next_at,timezone,version'
