@@ -11,3 +11,24 @@ The full-control host-shell profile is not a sandbox. Same-user process separati
 Use fake credentials and mock accounts in public fixtures. Diagnostics must not include instance values. CI validation jobs use read-only repository permissions, pinned action revisions, no model credentials, and no pull_request_target execution of contributed code. Dependency lockfiles must be reviewed with changes.
 
 A nonpublic vulnerability reporting channel, responsible maintainer, response process, and release signing identity are still to be designated. Do not publish credentials or exploit material in a public issue to compensate for that missing channel. Public security advisories and release readiness require a maintainer decision.
+
+## Dependency maintenance — 2026-10-10
+
+Ajv is pinned to 8.20.0, replacing 8.17.1. This removes the reported
+[optional `$data` ReDoS advisory](https://github.com/advisories/GHSA-2g4f-4pwh-qvx6).
+Tada does not enable `$data`; this maintenance does not imply that the vulnerable
+option was exposed. Only Ajv and its lockfile entry changed; other dependency
+versions, strict validators, schemas and fixtures are unchanged.
+
+Clean installation and `npm audit` passed with zero reported vulnerabilities at
+this date. All 1,101 Node checks, Rust formatting, Clippy, workspace tests and
+agentd process fixtures passed. The bundled dependency also passed all 178
+shared contract tests on native Windows, plus the eight portable and seven
+running-upgrade checks. This is dependency and regression
+evidence, not an independent security review or release qualification.
+
+The rebuilt Windows archive contains 1,009 manifest files; every archive entry
+was compared with the built bytes. Its SHA-256 is
+`63d545f238884073afe3ae1ce24004b89c5af5089c051cd1bd3915ccbe0abbdc`.
+The prior tray verification record describes the preceding archive and retains
+its then-current advisory; it is not the dependency state of this rebuild.
