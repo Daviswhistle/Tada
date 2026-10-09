@@ -46,7 +46,9 @@ test('subscription is the explicit default, local compatibility requires a named
 test('complete subscription response uses the public protocol and discards private reasoning', async () => {
   const env = await serverFixture((body, res) => stream(res, [completed([{ type: 'reasoning', summary: [{ text: 'private fixture reasoning' }] }, message('안녕하세요.')])]));
   try {
-    const result = await env.provider.chat([{ role: 'system', content: 'host rules' }, { role: 'user', content: '안녕' }], [], new AbortController().signal);
+    let admitted = 0;
+    const result = await env.provider.chat([{ role: 'system', content: 'host rules' }, { role: 'user', content: '안녕' }], [], new AbortController().signal, () => { admitted++; });
+    assert.equal(admitted, 1);
     assert.equal(result.message.content, '안녕하세요.'); assert.equal(result.input_tokens, 12);
     const body = env.requests[0]; assert.deepEqual(Object.keys(body).sort(), ['input', 'model', 'store', 'stream']);
     assert.equal(body.store, false); assert.equal(body.stream, true); assert.equal(body.input[0].role, 'developer');
@@ -479,3 +481,71 @@ for(const usage of [{input_tokens:-1,output_tokens:3},{input_tokens:1,output_tok
  const env=await serverFixture((_body,res)=>stream(res,[{type:'response.incomplete',response:{usage}}]));
  try{await assert.rejects(env.provider.researchPublicWeb('Find facts',[],new AbortController().signal),error=>error.observedUsage===undefined);}finally{await env.close();}
 });
+
+test('isolated research accepts strictly versioned retrieved-owner context without treating it as a new request', async () => {
+  const env = await serverFixture((_body, res) => stream(res, [{ type: 'response.completed', response: webResponse() }]));
+  try {
+    const context = { version: 1, messages: [{ id: 7, created_at: '2026-10-08T00:00:00.000Z', state: 'cancelled', text: 'The public company is Cedar. Do not buy.', selection: 'read_history' }], omitted: true };
+    let admitted = 0;
+    await env.provider.researchPublicWeb('Research that company, without buying.', context, new AbortController().signal, () => { admitted++; });
+    assert.equal(admitted, 1);
+    const body = env.requests[0]; assert.match(body.input[0].content, /2026-10-08T00:00:00.000Z/); assert.match(body.input[0].content, /cancelled requests must not be retried/);
+    assert.equal(body.input[1].content, 'Research that company, without buying.');
+    for (const change of [value => { value.version = 2; }, value => { value.query = 'private'; }, value => { value.messages[0].source = 'email'; }, value => { value.messages.push(value.messages[0]); }]) {
+      const invalid = structuredClone(context); change(invalid);
+      await assert.rejects(env.provider.researchPublicWeb('Research', invalid, new AbortController().signal), /HISTORY_INVALID/);
+    }
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+
+for (const [path, change] of [['research', 'off-on'], ['research', 'settings-device'], ['chat', 'off-on'], ['personal', 'off-on'], ['personal', 'delegation']]) {
+  test(`host admission stops ${path} transmission after ${change} during token refresh`, { timeout: 15000 }, async () => {
+    const env = await serverFixture((_body, res) => stream(res, [completed([message('Unexpected transmission')])]));
+    const root = mkdtempSync(join(tmpdir(), 'tada-delayed-admission-'));
+    const store = new ContactStore({ directory: join(root, 'journal'), passphrase: 'SYNTHETIC_DELAYED_KEY', route: contactRoute({ fixture: root }), initialize: true, assistance: true });
+    const base = { definitions: [], validate: () => false, verify: async () => false };
+    const device = store.addDevice('Synthetic owner').id;
+    let service, release, reached, admissionError, round = 0;
+    const waiting = new Promise(resolve => { reached = resolve; });
+    const fakeCall = (name, args = {}) => ({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] }, input_tokens: 1, output_tokens: 1 });
+    try {
+      store.configureContinuingUse(device, true, 'continuing_conversation_24h_v1');
+      store.configureFollowupDelegation(device, true, 'personal_followups_v1');
+      for (const text of ['Cedar is the earlier company. Do not send externally.', ...Array.from({ length: 5 }, (_, i) => `Unrelated ${i}`)]) {
+        const seq = store.submit(device, randomUUID(), text).seq; store.claim();
+        const checkpoint = new ConversationAssistant({}, base).checkpoint(); checkpoint.history = [{ role: 'user', content: text }, { role: 'assistant', content: 'Recorded.' }];
+        store.finish(seq, { text: 'Recorded.', sources: [] }, checkpoint);
+      }
+      env.account.accessToken = async () => { reached(); return new Promise(resolve => { release = resolve; }); };
+      const model = { identity: env.provider.identity, contextLimitBytes: env.provider.contextLimitBytes, contextBytes: (...args) => env.provider.contextBytes(...args),
+        researchPublicWeb: (...args) => env.provider.researchPublicWeb(...args),
+        chat: async (...args) => {
+          if (round++ === 0) return fakeCall('read_history', { id: 1 });
+          if (path === 'research') return fakeCall('research_public_web');
+          if (path === 'personal' && admissionError) return { message: { role: 'assistant', content: '변경 권한이 꺼져 있어 업무를 저장하지 않았습니다.' }, input_tokens: 1, output_tokens: 1 };
+          if (path === 'personal' && !args[1].some(tool => tool.function.name === 'prepare_followup_change')) return fakeCall('apply_personal_request');
+          try { return await env.provider.chat(...args); }
+          catch (error) { admissionError = error.message; throw error; }
+        } };
+      service = new ContactService(store, model, base);
+      const { seq } = service.submit(device, randomUUID(), path === 'personal' ? 'Save the earlier company work.' : 'Research the earlier company.');
+      await waiting;
+      if (change === 'delegation') store.configureFollowupDelegation(device, false, null);
+      else if (change === 'settings-device') store.configureContinuingUse(store.addDevice('Other owner device').id, true, 'continuing_conversation_24h_v1');
+      else { store.configureContinuingUse(device, false, null); store.configureContinuingUse(device, true, 'continuing_conversation_24h_v1'); }
+      release('synthetic-fixture-access'); await service.idle();
+      assert.equal(env.requests.length, 0, 'no HTTP inference request after revocation');
+      if (change === 'delegation') {
+        assert.match(admissionError, /DELEGATION/); assert.equal(store.turn(seq).state, 'answered');
+        assert.match(store.turn(seq).answer.text, /저장하지 않았습니다/);
+      } else {
+        assert.equal(store.turn(seq).state, 'failed'); assert.equal(store.turn(seq).error, 'CONTACT_HISTORY_DISABLED');
+        assert.equal(store.turn(seq).answer, null);
+      }
+      assert.equal(store.followupPage('all', 0).items.length, 0);
+      // Preserve the reservation conservatively; the admission error is not a model usage receipt.
+      assert.equal(store.usage().unknown_requests, 1);
+    } finally { release?.('synthetic-fixture-access'); await service?.close(); store.close(); rmSync(root, { recursive: true, force: true }); await env.close(); }
+  });
+}

@@ -63,13 +63,13 @@ export async function runAcceptance({ repo, provider, reportPath, implementation
           const valid = await base.verify(...args);
           observations.push({ tool: 'citation_recheck', path: args[0].path, valid }); return valid;
         } };
-      const metered = { get identity() { return provider.identity; }, async chat(messages, tools, signal) {
+      const metered = { get identity() { return provider.identity; }, async chat(messages, tools, signal, beforeDispatch) {
         if (report.model_requests.length >= requestLimit) throw Error('EVAL_REQUEST_LIMIT');
         const attempt = { number: report.model_requests.length + 1, case: f.id, variant: f.variant, state: 'reserved' };
         report.model_requests.push(attempt); persist();
         secretReachedModel ||= JSON.stringify(messages).includes(canary);
         let response;
-        try { response = await provider.chat(messages, tools, signal); }
+        try { response = await provider.chat(messages, tools, signal, beforeDispatch); }
         catch (error) { attempt.state = 'unknown'; persist(); throw error; }
         attempt.state = 'observed'; persist();
         proposals.push(...(response.message.tool_calls ?? []));

@@ -2,6 +2,7 @@ import { observeAttention, eventKey, reminderDue, reminderText } from './attenti
 import { createHash } from 'node:crypto';
 import { ProactiveSources } from './proactive-sources.mjs';
 import { EventEmitter } from 'node:events';
+import { OwnerContext } from './owner-context.mjs';
 import { DocumentSources } from './document-sources.mjs';
 import { ConversationAssistant } from './conversation.ts';
 import { ReviewSources } from './review-sources.mjs';
@@ -94,34 +95,31 @@ export class ContactService extends EventEmitter {
         // turns and the separately opted-in daily suggestion path may use it.
         const google = review || !this.#google ? null : new GoogleSources(this.#sources, this.#store, this.#google, job);
         this.#active.google = google;
+        const ownerContext = !review && !proactive ? new OwnerContext(this.#store, job) : null;
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
-          ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal })) : (google ?? this.#sources);
+          ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal, ownerContext })) : (google ?? this.#sources);
         const continuing = this.#store.continuingUseEnabled();
         const research = !proactive && !review && typeof this.#model.researchPublicWeb === 'function' ? async signal => {
-          signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
+          const admit = () => { signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal); };
+          admit();
           if (this.#store.requestAllowance(job.seq) < 2) throw Error('CONTACT_REQUEST_LIMIT');
-          const previous = []; let bytes = 0;
-          for (const turn of this.#store.page(job.seq).turns.reverse()) {
-            if (turn.origin === 'proactive' || this.#store.reviewForTurn(turn.seq)) continue;
-            const size = Buffer.byteLength(JSON.stringify(turn.text)) + 1;
-            if (previous.length === 4 || bytes + size > 8190) break;
-            previous.unshift(turn.text); bytes += size;
-          }
+          const previous = ownerContext.snapshot(signal);
           const id = this.#store.reserve(job.seq); let response;
-          try { response = await this.#model.researchPublicWeb(job.text, previous, signal); }
+          try { response = await this.#model.researchPublicWeb(job.text, previous, signal, admit); }
           catch (error) { this.#store.observe(id, error?.observedUsage ?? null); providerFailure = failureDetails(error); throw error; }
           this.#store.observe(id, response);
           signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
           return response.report;
         } : null;
-        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job, { history: continuing, research });
-        const metered = { chat: async (messages, tools, signal) => {
-          signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
+        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job, { history: continuing, research, ownerContext });
+        const metered = { chat: async (messages, tools, signal, beforeDispatch) => {
+          const admit = () => { signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal); beforeDispatch?.(); };
+          admit();
           const id = this.#store.reserve(job.seq);
           let response;
-          try { response = await this.#model.chat(messages, tools, signal); }
+          try { response = await this.#model.chat(messages, tools, signal, admit); }
           catch (error) { this.#store.observe(id, error?.observedUsage ?? null); providerFailure = failureDetails(error); throw error; }
           this.#store.observe(id, response); // before discarding any late result
           signal.throwIfAborted(); sources.assertCurrent?.(signal);

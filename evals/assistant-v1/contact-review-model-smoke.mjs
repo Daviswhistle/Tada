@@ -77,7 +77,7 @@ const check = (name, value) => { checks[name] = !!value; assert.equal(checks[nam
 try {
   const provider = new OllamaLocal({ model, endpoint });
   const runtime = await provider.inspect(AbortSignal.timeout(20000)); evidence.runtime = runtime;
-  const observedModel = { chat: async (messages, tools, signal) => {
+  const observedModel = { chat: async (messages, tools, signal, beforeDispatch) => {
     const request = ++modelRequest;
     diagnostics.record({ request, stage, kind: 'request',
       registered_tools: tools.map(tool => tool.function?.name),
@@ -87,7 +87,7 @@ try {
       check('scheduled_model_sees_due_time', !!times && Date.parse(times[1]) >= Date.parse(times[2]));
     }
     try {
-      const response = await provider.chat(messages, tools, signal);
+      const response = await provider.chat(messages, tools, signal, beforeDispatch);
       diagnostics.record({ request, stage, kind: 'response', message: response.message,
         input_tokens: response.input_tokens, output_tokens: response.output_tokens });
       return response;

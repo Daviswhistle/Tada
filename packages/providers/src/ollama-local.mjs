@@ -87,7 +87,7 @@ export class OllamaLocal {
       model_digest: item.digest, runtime_version: version.version, billing: 'local-compute-only' });
     return this.identity;
   }
-  async chat(messages, tools, signal) {
+  async chat(messages, tools, signal, beforeDispatch) {
     if (!this.identity) throw new Error('OLLAMA_INSPECT_REQUIRED');
     // Recheck installed identity before sending user content. Changing an alias is not consent.
     const tags = await jsonRequest(this.endpoint, '/api/tags', undefined, signal);
@@ -102,6 +102,7 @@ export class OllamaLocal {
     // separates that channel, and we discard it below. Bound the whole output,
     // including reasoning, and reject a length-limited/incomplete turn.
     if (this.thinking) body.think = true;
+    signal?.throwIfAborted(); beforeDispatch?.();
     const raw = await jsonRequest(this.endpoint, '/api/chat', body, signal, 65536);
     if (raw.done !== true || raw.done_reason !== 'stop' || raw.message?.role !== 'assistant'
         || typeof raw.message.content !== 'string') throw new Error('OLLAMA_INCOMPLETE_TURN');

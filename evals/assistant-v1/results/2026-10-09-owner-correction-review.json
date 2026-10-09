@@ -1,0 +1,36 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-owner-correction.json",
+  "report_sha256": "37947b3bb3c4941b81235c18927f4d09ea539a93496fae555d7b24977c9c5de3",
+  "observed_requests": 15,
+  "unknown_requests": 0,
+  "public_web_requests": 0,
+  "cases": [
+    {
+      "case": "A09",
+      "variant": 1,
+      "verdict": "passed",
+      "reason": "Read yesterday owner record and corrected the same work title and plan from Gaon to Saebom; preserved scope, prohibitions and reminder; current correction is bound to v2 and old pending v1 change is superseded."
+    },
+    {
+      "case": "A09",
+      "variant": 2,
+      "verdict": "passed",
+      "reason": "Paged history to identify yesterday target Nuri instead of current wrong Daon; updated same work with lineage and unchanged authorized reminder; superseded old pending proposal."
+    }
+  ],
+  "full_suite_denominator": 16,
+  "currently_passed_cases": [
+    "A05",
+    "A09",
+    "A10",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "other_cases": "not_run_on_current_subscription_route",
+  "primary_concurred": true,
+  "scope": "Correction of an existing personal-work record and invalidation of its old unconfirmed change. Not new research, external execution-plan revision, complex multi-candidate reasoning, phone delivery or release qualification. Storage before/after and proposal lineage, not answer verification labels, establish the effect."
+}

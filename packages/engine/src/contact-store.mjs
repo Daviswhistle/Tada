@@ -109,7 +109,7 @@ function prepare(root, initialize) {
 }
 
 export class ContactStore {
-  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false;
+  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0;
   constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
         || passphrase.length > 1024 || typeof route !== 'string' || !/^[a-f0-9]{64}$/u.test(route)) {
@@ -423,6 +423,8 @@ export class ContactStore {
       .map(r => window.receipts.find(old => old.id === r.seq) ?? { id: r.seq, at: window.clock_at });
     this.#saveSetting('continuing_use', { ...window, last_request: last, receipts });
   }
+  // In-flight history selection only; restart already interrupts every active turn.
+  historyRevision() { this.#check(); return this.#historyRevision; }
   continuingUseEnabled(now = Date.now()) {
     const policy = this.#setting('continuing_use');
     if (!policy?.enabled) return false;
@@ -444,6 +446,7 @@ export class ContactStore {
       const rows = prior ? [] : this.#db.prepare('SELECT seq FROM requests ORDER BY seq DESC LIMIT 64').all().reverse();
       const value = prior ? useWindow(prior, now) : { version: 1, enabled, device, clock_at: now, last_request: rows.at(-1)?.seq ?? 0, receipts: rows.map(r => ({ id: r.seq, at: now })) };
       this.#saveSetting('continuing_use', { ...value, enabled, device });
+      if (prior?.enabled !== enabled || prior?.device !== device) this.#historyRevision++;
       if (prior?.enabled && (!enabled || prior.device !== device) && this.#version >= 5) {
         const care = this.#setting('proactive');
         if (care?.version === 2) {

@@ -27,11 +27,11 @@ export async function runPublicResearch({provider,implementation,reportPath,requ
    store.configureContinuingUse(device,true,'continuing_conversation_24h_v1');
    const seed=store.submit(device,randomUUID(),variant.history).seq;store.claim();const checkpoint=new ConversationAssistant({},noSources).checkpoint();checkpoint.history=[{role:'user',content:variant.history},{role:'assistant',content:'이 회사와 기준으로 살펴보겠습니다.'}];store.finish(seed,{text:'이 회사와 기준으로 살펴보겠습니다.',sources:[]},checkpoint);
    const record=(kind,input)=>{if(report.model_requests.length>=requestLimit)throw Error('EVAL_REQUEST_LIMIT');const item={company:variant.company,kind,input:plain(input),observed:false};report.model_requests.push(item);save();return item;};
-   const model={identity:provider.identity,contextLimitBytes:provider.contextLimitBytes,contextBytes:(...args)=>provider.contextBytes(...args),chat:async(messages,tools,signal)=>{
-    const item=record('conversation',{messages,offered:tools.map(t=>t.function.name)});const response=await provider.chat(messages,tools,signal);item.observed=true;item.response=plain(response);save();return response;
-   },researchPublicWeb:async(request,previous,signal)=>{
+   const model={identity:provider.identity,contextLimitBytes:provider.contextLimitBytes,contextBytes:(...args)=>provider.contextBytes(...args),chat:async(messages,tools,signal,beforeDispatch)=>{
+    const item=record('conversation',{messages,offered:tools.map(t=>t.function.name)});const response=await provider.chat(messages,tools,signal,beforeDispatch);item.observed=true;item.response=plain(response);save();return response;
+   },researchPublicWeb:async(request,previous,signal,beforeDispatch)=>{
     const item=record('public_web',{request,previous});
-    try { const response=await provider.researchPublicWeb(request,previous,signal);item.observed=true;item.response=plain(response);save();return response; }
+    try { const response=await provider.researchPublicWeb(request,previous,signal,beforeDispatch);item.observed=true;item.response=plain(response);save();return response; }
     catch(error){item.error=/^[A-Z_]+$/u.test(error?.message)?error.message:'EVAL_PROVIDER_FAILED';if(/^RESEARCH_[A-Z_]+$/u.test(error?.reason))item.reason=error.reason;item.usage_observed=!!error?.observedUsage;save();throw error;}
    }};
    service=new ContactService(store,model,noSources,{timezone:'Asia/Seoul'});service.on('turn-failed',failure=>result.errors.push(failure));

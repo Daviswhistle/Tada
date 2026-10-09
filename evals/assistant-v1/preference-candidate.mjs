@@ -67,19 +67,19 @@ export async function runPreferenceAcceptance({ repo, provider, reportPath, impl
       for (const text of ['내일은 점심을 밖에서 먹을 예정이야.', '메모해 둔 책 제목은 달의 지도였어.', '이번 주 운동은 수요일에 했어.', '출장은 아직 정해지지 않았어.', '주말 일정은 나중에 정할게.']) seed(text);
       seed(`이번에 정리할 대상은 ${fixture.project}의 이번 주 운영 보고야. 연결된 문서 폴더에 이번 주 확정 기록과 예전 초안이 있어. 이번 주 확정 내용으로 정리할 거야.`);
       result.fixture.active_context = result.fixture.history.at(-1);
-      const metered = { get identity() { return provider.identity; }, async chat(messages, tools, signal) {
+      const metered = { get identity() { return provider.identity; }, async chat(messages, tools, signal, beforeDispatch) {
         if (report.model_requests.length >= requestLimit) throw Error('EVAL_REQUEST_LIMIT');
         const attempt = { number: report.model_requests.length + 1, case: 'A05', variant: fixture.variant, state: 'reserved' };
         report.model_requests.push(attempt); const call = { number: attempt.number, operation: 'chat', messages: structuredClone(messages), tool_names: tools.map(tool => tool.function.name) }; result.calls.push(call); persist();
-        try { const response = await provider.chat(messages, tools, signal); attempt.state = 'observed'; call.response = response.message; persist(); return response; }
+        try { const response = await provider.chat(messages, tools, signal, beforeDispatch); attempt.state = 'observed'; call.response = response.message; persist(); return response; }
         catch (error) { attempt.state = 'unknown'; persist(); throw error; }
       } };
-      if (typeof provider.researchPublicWeb === 'function') metered.researchPublicWeb = async (request, previous, signal) => {
+      if (typeof provider.researchPublicWeb === 'function') metered.researchPublicWeb = async (request, previous, signal, beforeDispatch) => {
         if (report.model_requests.length >= requestLimit) throw Error('EVAL_REQUEST_LIMIT');
         const attempt = { number: report.model_requests.length + 1, case: 'A05', variant: fixture.variant, state: 'reserved' };
         report.model_requests.push(attempt);
         const call = { number: attempt.number, operation: 'public_web', request, previous: structuredClone(previous) }; result.calls.push(call); persist();
-        try { const response = await provider.researchPublicWeb(request, previous, signal); attempt.state = 'observed'; call.research_response = response; persist(); return response; }
+        try { const response = await provider.researchPublicWeb(request, previous, signal, beforeDispatch); attempt.state = 'observed'; call.research_response = response; persist(); return response; }
         catch (error) { attempt.state = 'unknown'; persist(); throw error; }
       };
       if (typeof provider.contextBytes === 'function') metered.contextBytes = (...args) => provider.contextBytes(...args);

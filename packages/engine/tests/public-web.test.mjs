@@ -21,7 +21,7 @@ test('public research uses owner-only context and the same durable meter; repeat
  const e=env();let service,researchCalls=0,round=0;
  try{
   seed(e,'공개된 도시 교통 자료를 검토하고 있어.');
-  const model={identity:{provider:'chatgpt-subscription'},researchPublicWeb:async(request,previous)=>{researchCalls++;assert.equal(request,'그 자료의 최신 변화 조사해서 문서로 만들어줘.');assert.deepEqual(previous,['공개된 도시 교통 자료를 검토하고 있어.']);assert.ok(!JSON.stringify(previous).includes('CANARY'));return {report,input_tokens:7,output_tokens:9};},chat:async(_messages,tools)=>{
+  const model={identity:{provider:'chatgpt-subscription'},researchPublicWeb:async(request,previous)=>{researchCalls++;assert.equal(request,'그 자료의 최신 변화 조사해서 문서로 만들어줘.');assert.equal(previous.version,1);assert.deepEqual(previous.messages.map(item=>item.text),['공개된 도시 교통 자료를 검토하고 있어.']);assert.ok(!JSON.stringify(previous).includes('CANARY'));return {report,input_tokens:7,output_tokens:9};},chat:async(_messages,tools)=>{
    assert.ok(tools.some(t=>t.function.name==='research_public_web'));
    return [call('research_public_web'),call('research_public_web'),call('prepare_document',{title:'공개 자료 조사',format:'markdown',based_on:null}),result('공식 자료의 관측입니다. [공식 자료](https://example.org/source) [S2]')][round++];
   }};

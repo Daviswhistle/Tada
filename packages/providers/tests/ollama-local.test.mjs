@@ -120,3 +120,17 @@ test('length-truncated completion cannot release tool calls', async () => {
     await assert.rejects(provider.chat([], []), /INCOMPLETE_TURN/u);
   });
 });
+
+test('host admission is rechecked after the asynchronous local identity read', async () => {
+  let tags = 0, chats = 0, allowed = true, checks = 0;
+  await server(fixture({
+    '/api/tags': (_req, res) => { if (tags++ > 0) allowed = false; res.end(JSON.stringify({ models: [{ name: 'unit:latest', size: 10, digest }] })); },
+    '/api/chat': (_req, res) => { chats++; res.end('{}'); },
+  }), async endpoint => {
+    const provider = new OllamaLocal({ model: 'unit', endpoint }); await provider.inspect();
+    await assert.rejects(provider.chat([{ role: 'user', content: 'private owner context' }], [], new AbortController().signal, () => {
+      checks++; if (!allowed) throw Error('CONTACT_HISTORY_DISABLED');
+    }), /CONTACT_HISTORY_DISABLED/);
+    assert.equal(checks, 1); assert.equal(chats, 0);
+  });
+});

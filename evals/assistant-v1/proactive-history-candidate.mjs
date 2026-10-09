@@ -66,11 +66,11 @@ export async function runProactiveHistory({ provider, implementation, reportPath
       });
       const model = { identity: provider.identity, contextLimitBytes: provider.contextLimitBytes,
         contextBytes: (...args) => provider.contextBytes(...args),
-        chat: async (messages, tools, signal) => {
+        chat: async (messages, tools, signal, beforeDispatch) => {
           if (report.model_requests.length >= requestLimit) throw Error('EVAL_REQUEST_LIMIT');
           const request = { variant, messages: plain(messages), offered: tools.map(t => t.function.name), observed: false };
           report.model_requests.push(request); save();
-          const response = await provider.chat(messages, tools, signal);
+          const response = await provider.chat(messages, tools, signal, beforeDispatch);
           request.observed = true; request.response = plain(response); save(); return response;
         },
       };

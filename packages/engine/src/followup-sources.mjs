@@ -35,7 +35,7 @@ export class FollowupSources {
   get definitions() {
     const tools = structuredClone(FOLLOWUP_TOOLS);
     if (this.#delegation !== null) tools.push(tool('apply_personal_request',
-      'Carry out an explicit personal-work or one-time reminder request from the CURRENT owner message. Takes no proposed fields: the host independently interprets the owner request and saved work without external sources or this conversation output. Use propose_followup for suggestions needing confirmation. No external actions.', {}, []));
+      'Carry out an explicit personal-work or one-time reminder request from the CURRENT owner message. Takes no proposed fields: the host independently interprets the owner request and saved work without external sources or this conversation output. Resolve references to older owner messages with read_history first. Use propose_followup for suggestions needing confirmation. No external actions.', {}, []));
     return [...this.#base.definitions, ...tools];
   }
   get delegation() { return this.#delegation; }

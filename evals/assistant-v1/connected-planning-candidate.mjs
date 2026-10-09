@@ -128,11 +128,11 @@ export async function runPlanningAcceptance({ repo, provider, reportPath, implem
       };
       const connection = new GoogleConnection({ store, clientId: '123456789012-fixture.apps.googleusercontent.com', openBrowser: async () => true, fetchImpl });
       connection.configureRelatedMail(owner, true, 'related_mail_readonly_v1');
-      const metered = { get identity() { return provider.identity; }, async chat(messages, tools, signal) {
+      const metered = { get identity() { return provider.identity; }, async chat(messages, tools, signal, beforeDispatch) {
         if (report.model_requests.length >= requestLimit) throw Error('EVAL_REQUEST_LIMIT');
         const attempt = { number: report.model_requests.length + 1, case: f.case, variant: f.variant, state: 'reserved' };
         report.model_requests.push(attempt); const call = { number: attempt.number, messages: structuredClone(messages) }; result.calls.push(call); persist();
-        try { const response = await provider.chat(messages, tools, signal); attempt.state = 'observed'; call.response = response.message; persist(); return response; }
+        try { const response = await provider.chat(messages, tools, signal, beforeDispatch); attempt.state = 'observed'; call.response = response.message; persist(); return response; }
         catch (error) { attempt.state = 'unknown'; persist(); throw error; }
       } };
       if (typeof provider.contextBytes === 'function') metered.contextBytes = (...args) => provider.contextBytes(...args);

@@ -11,7 +11,8 @@ function validProviderState(value: ProviderState): boolean {
 export interface ModelPort {
   readonly contextLimitBytes?: number;
   contextBytes?(messages: Message[], tools: unknown[]): number;
-  chat(messages: Message[], tools: unknown[], signal: AbortSignal): Promise<{
+  // Providers recheck host authority after asynchronous preparation, immediately before transmitting input.
+  chat(messages: Message[], tools: unknown[], signal: AbortSignal, beforeDispatch?: () => void): Promise<{
     message: Message; input_tokens: number; output_tokens: number; refused?: boolean;
   }>;
 }

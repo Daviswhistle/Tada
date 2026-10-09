@@ -38,8 +38,8 @@ for (let index = 0; index < variants.length; index++) {
     await sources.initialize();
     // Only this synthetic evaluator records proposed tool arguments, to diagnose
     // rejected proposals. No prompt, reasoning text or oracle is logged/passed in.
-    const observedModel = { async chat(messages, tools, signal) {
-      const response = await provider.chat(messages, tools, signal);
+    const observedModel = { async chat(messages, tools, signal, beforeDispatch) {
+      const response = await provider.chat(messages, tools, signal, beforeDispatch);
       trace.push({ kind: 'model_proposals', calls: response.message.tool_calls ?? [] });
       return response;
     } };

@@ -67,6 +67,7 @@ $('settings').onclose = () => { $('mobile-token').value = ''; $('settings-open')
 for (const name of settingsPages) $('settings-nav-' + name).onclick = () => showSettingsPage(name);
 $('settings-contact-link').onclick = () => { showSettingsPage('mobile'); $('settings-nav-mobile').focus(); };
 const errors = {
+  CONTACT_HISTORY_DISABLED: '이전 대화 사용 설정이 바뀌어 이번 작업을 중지했어요. 현재 설정을 확인한 뒤 다시 말씀해 주세요.',
   CONTACT_FOLLOWUP_DELEGATION_CONSENT_REQUIRED: '대화로 맡길 개인 할 일과 알림의 범위를 확인해 주세요.',
   CONTACT_FOLLOWUP_DELEGATION_CHANGED: '대화로 맡기기 설정이 바뀌어 이번 변경을 저장하지 않았어요. 현재 설정을 확인한 뒤 다시 말씀해 주세요.',
   CONTACT_BACKGROUND_UNAVAILABLE: '이 환경에서는 자동 실행을 준비하지 못했어요. 현재 대화는 계속 사용할 수 있습니다.',
@@ -332,7 +333,7 @@ async function refresh(older = false, quiet = false) {
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
     $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
-      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·공개 웹 조사·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 웹 조사는 현재 부탁과 최근에 하신 말씀을 바탕으로 기존 구독에서 처리하며, 계정의 검색 지원 여부와 사용량 한도가 적용됩니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 켜면 같은 범위를 자동으로 살펴봅니다. 수시 확인을 켜면 15분마다 변화를 확인하고 일정 시각도 챙깁니다.'
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·공개 웹 조사·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 웹 조사는 현재 부탁과 최근 말씀, 이번 대화에서 찾아 읽은 이전 말씀을 바탕으로 기존 구독에서 처리하며, 계정의 검색 지원 여부와 사용량 한도가 적용됩니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 켜면 같은 범위를 자동으로 살펴봅니다. 수시 확인을 켜면 15분마다 변화를 확인하고 일정 시각도 챙깁니다.'
       : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');
