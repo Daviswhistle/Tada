@@ -434,6 +434,15 @@ export class ContactStore {
       const rows = prior ? [] : this.#db.prepare('SELECT seq FROM requests ORDER BY seq DESC LIMIT 64').all().reverse();
       const value = prior ? useWindow(prior, now) : { version: 1, enabled, device, clock_at: now, last_request: rows.at(-1)?.seq ?? 0, receipts: rows.map(r => ({ id: r.seq, at: now })) };
       this.#saveSetting('continuing_use', { ...value, enabled, device });
+      if (prior?.enabled && (!enabled || prior.device !== device) && this.#version >= 5) {
+        const care = this.#setting('proactive');
+        if (care?.version === 2) {
+          // Revocation must survive a quick off/on or a new settings device
+          // while a model request is pending. Do not revive its old history
+          // context when current continuing use becomes enabled again.
+          this.#db.prepare("UPDATE turns SET state='cancelled',error='CONTACT_HISTORY_DISABLED' WHERE state IN('queued','running') AND seq IN(SELECT turn FROM proactive_runs WHERE epoch=?)").run(care.epoch);
+        }
+      }
       return this.useStatus(now);
     });
   }

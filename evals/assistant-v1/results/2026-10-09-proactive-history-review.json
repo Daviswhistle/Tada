@@ -1,0 +1,38 @@
+{
+  "implementation": "8215f1b6c72f304a202368fbb150a98e30198e24",
+  "source_report": "2026-10-09-proactive-history.json",
+  "source_sha256": "f815350eac10ed9c6dd651b8d303d467da926a63be78f180e55b61b6504922d3",
+  "harness_sha256": "eea52f972e334c7433823df158d2741e969267dee7320d94749cb32d7e6961d2",
+  "model": "gpt-6-astra",
+  "kind": "feature acceptance: selected subscription, synthetic history and Google, automatic care",
+  "independent_evaluator": "Existing release acceptance auditor; read-only review of raw report and fixed runtime commit",
+  "primary_verification": "Primary checked actual model messages, synthetic owner history, tool calls, answers, source receipts and usage against both variants.",
+  "variants": [
+    {
+      "variant": "owner_cancelled",
+      "status": "passed",
+      "reason": "Retrieved the owner cancellation newer than the email and returned quiet NO_NEW_SUGGESTION; did not assert verified external cancellation.",
+      "verification": "not_applicable"
+    },
+    {
+      "variant": "confirmed_constraints",
+      "status": "passed",
+      "reason": "Applied confirmed eight attendees, wheelchair access and captions; excluded the separate one-off twenty-person/interpreter event. Distinguished current deadline from historical preferences, admitted reply status was unknown, and offered a draft without sending.",
+      "verification": "cited_sources_rechecked"
+    }
+  ],
+  "request_receipts": {
+    "observed": 6,
+    "unknown": 0,
+    "responses_per_variant": 3
+  },
+  "execution_profile_evidence": "Runtime 8215f1b inspected provider before construction and passed its actual identity. ContactService computes localReviews=false from that identity; separate execution_profile snapshot was added only after this run.",
+  "production_scope_changed": false,
+  "formal_16_case_credit": 0,
+  "release_qualified": false,
+  "limitations": [
+    "Two fixed synthetic situations, not actual Google or general autonomous judgement qualification.",
+    "No physical phone, external delivery, long-term availability or installation proof.",
+    "Formal acceptance remains 5 of 16; no A05/A09 credit inferred."
+  ]
+}

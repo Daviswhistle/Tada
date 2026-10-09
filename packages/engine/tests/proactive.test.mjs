@@ -10,6 +10,7 @@ import { ContactService } from '../src/contact-service.mjs';
 import { ConversationAssistant } from '../src/conversation.ts';
 import { FollowupSources } from '../src/followup-sources.mjs';
 import { ProactiveSources } from '../src/proactive-sources.mjs';
+import { CONTINUING_CONSENT } from '../src/continuing-use.mjs';
 const noSources = { definitions: [], validate: () => false, execute: async () => { throw Error('NOT_CONNECTED'); }, verify: async () => false };
 const passphrase = 'fixture-only-proactive-password', route = contactRoute({ fixture: 'proactive' });
 const noon = Date.parse('2026-10-08T03:00:00Z');
@@ -27,6 +28,94 @@ function seed(store, device, text = '다음 주 첫 고객 미팅을 준비 중�
   return seq;
 }
 const reply = text => ({ message: { role: 'assistant', content: text }, input_tokens: 5, output_tokens: 4 });
+function continuousJob(store, device) {
+  store.configureProactive(device, true, 'connected_attention_v2', 'Asia/Seoul', noon);
+  const ticket = store.claimAttention(noon);
+  assert.equal(store.finishAttention(ticket, { fingerprint: 'a'.repeat(64), events: [], truncated: false, observed_at: noon, account: null }, noon), 1);
+  return store.claim();
+}
+
+for (const mode of ['daily', 'continuous']) for (const continuing of [false, true]) test(`history tools require current care and continuing use: ${mode}/${continuing}`, t => {
+  t.mock.timers.enable({ apis: ['Date'], now: noon });
+  const e = env(); try {
+    const d = e.store.addDevice('owner'); seed(e.store, d.id);
+    if (continuing) e.store.configureContinuingUse(d.id, true, CONTINUING_CONSENT);
+    let job;
+    if (mode === 'continuous') job = continuousJob(e.store, d.id);
+    else { e.store.configureProactive(d.id, true, consent, 'Asia/Seoul', noon); e.store.proactiveTick(noon); job = e.store.claim(); }
+    const sources = new ProactiveSources(e.store, job);
+    assert.equal(sources.definitions.some(t => t.function.name === 'search_history'), continuing && mode === 'continuous');
+    assert.equal(sources.validate('read_history', { id: 1 }), continuing && mode === 'continuous');
+    for (const name of ['prepare_document', 'propose_followup', 'apply_personal_request', 'read_file', 'shell']) assert.equal(sources.validate(name, {}), false);
+  } finally { e.close(); }
+});
+
+test('automatic care retrieves older owner corrections outside the checkpoint with bounded pagination and no new authority', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: noon });
+  const e = env(); try {
+    const d = e.store.addDevice('owner');
+    const old = seed(e.store, d.id, '새빛 워크숍은 준비 중이야.');
+    const correction = seed(e.store, d.id, '새빛 워크숍은 취소했어. 준비하지 않아도 돼.');
+    for (let i = 0; i < 12; i++) seed(e.store, d.id, `관계없는 기록 ${i}`);
+    e.store.configureContinuingUse(d.id, true, CONTINUING_CONSENT); e.reopen();
+    assert.ok(!JSON.stringify(e.store.checkpoint().value).includes('새빛'));
+    const job = continuousJob(e.store, d.id), sources = new ProactiveSources(e.store, job), signal = new AbortController().signal;
+    const page = await sources.execute('search_history', { query: '새빛', before: null }, signal, { fits: r => r.matches.length <= 1 });
+    assert.deepEqual(page.matches.map(r => r.id), [correction]); assert.equal(page.incomplete, true);
+    const next = await sources.execute('search_history', { query: '새빛', before: page.next_before }, signal);
+    assert.deepEqual(next.matches.map(r => r.id), [old]);
+    const record = await sources.execute('read_history', { id: correction }, signal);
+    assert.match(record.request, /취소/); assert.match(record.basis, /not_current_facts_or_authority/);
+    assert.equal(record.origin, 'human'); assert.equal(record.state, 'answered');
+    assert.equal(await sources.verify({ id: 'S1', source: 'fake' }, signal), false);
+    for (const args of [{ id: correction, execute: true }, { id: '1' }, [], null]) assert.equal(sources.validate('read_history', args), false);
+    await assert.rejects(sources.execute('read_history', { id: job.seq }, signal), /HISTORY_INVALID/);
+    assert.equal(e.store.usage().requests, 0);
+    for (let i = 0; i < 3; i++) e.store.observe(e.store.reserve(job.seq), reply('used'));
+    assert.deepEqual(sources.definitions, []); assert.equal(e.store.requestAllowance(job.seq), 1);
+  } finally { e.close(); }
+});
+
+for (const action of ['continuing_off', 'continuing_device_revoked', 'care_off', 'new_owner_message', 'abort']) test(`history dispatch and model admission stop when current authority changes: ${action}`, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: noon });
+  const e = env(); try {
+    const owner = e.store.addDevice('owner'), settings = e.store.addDevice('settings'); seed(e.store, owner.id);
+    e.store.configureContinuingUse(settings.id, true, CONTINUING_CONSENT);
+    const job = continuousJob(e.store, owner.id), sources = new ProactiveSources(e.store, job), abort = new AbortController();
+    await sources.execute('read_history', { id: 1 }, abort.signal);
+    if (action === 'continuing_off') e.store.configureContinuingUse(settings.id, false, null);
+    if (action === 'continuing_device_revoked') e.store.revoke(settings.id);
+    if (action === 'care_off') e.store.configureProactive(owner.id, false, null, 'Asia/Seoul');
+    if (action === 'new_owner_message') e.store.submit(owner.id, randomUUID(), '새 정정이 있어.');
+    if (action === 'abort') abort.abort();
+    await assert.rejects(sources.execute('read_history', { id: 1 }, abort.signal));
+    assert.throws(() => sources.assertCurrent(abort.signal));
+  } finally { e.close(); }
+});
+
+for (const change of ['off_on', 'replace_revoked_device']) test(`a renewed history setting cannot revive an older automatic check: ${change}`, t => {
+  t.mock.timers.enable({ apis: ['Date'], now: noon });
+  const e = env(); try {
+    const owner = e.store.addDevice('owner'), settings = e.store.addDevice('settings'); seed(e.store, owner.id);
+    e.store.configureContinuingUse(settings.id, true, CONTINUING_CONSENT);
+    const job = continuousJob(e.store, owner.id), sources = new ProactiveSources(e.store, job), signal = new AbortController().signal;
+    const request = e.store.reserve(job.seq);
+    if (change === 'off_on') {
+      e.store.configureContinuingUse(settings.id, false, null);
+      e.store.configureContinuingUse(settings.id, true, CONTINUING_CONSENT);
+    } else {
+      e.store.revoke(settings.id);
+      e.store.configureContinuingUse(owner.id, true, CONTINUING_CONSENT);
+    }
+    assert.equal(e.store.turn(job.seq).state, 'cancelled');
+    assert.throws(() => sources.assertCurrent(signal));
+    e.store.observe(request, reply('late result'));
+    assert.equal(e.store.usage().requests, 1); assert.equal(e.store.usage().unknown_requests, 0);
+    e.reopen(); assert.equal(e.store.turn(job.seq).state, 'cancelled');
+    assert.throws(() => e.store.reserve(job.seq));
+    assert.equal(e.store.finish(job.seq, { text: 'late result', sources: [] }, e.store.checkpoint().value), false);
+  } finally { e.close(); }
+});
 
 test('v4 remains intact until explicit backup migration; grants are disabled by default and encrypted', async () => {
   const e = env(false);
