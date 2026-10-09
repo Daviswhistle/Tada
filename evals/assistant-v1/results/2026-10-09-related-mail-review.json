@@ -1,0 +1,42 @@
+{
+  "implementation": "892e9479fae1d72ea0a4fcbfb760f2fb005068ca",
+  "source_report": "2026-10-09-related-mail.json",
+  "source_sha256": "106b7c167110a2b3f4cde241afde10aa17c7f0531f451f4bd37ba6259281bfe0",
+  "harness_sha256": "d710a8f1b919b942928f159cc0532f27a56ad7bd96e2c23d931502b739f004e5",
+  "model": "gpt-6-astra",
+  "kind": "feature acceptance: real selected subscription with synthetic Google sources",
+  "independent_evaluator": "Existing release acceptance auditor, read-only semantic review",
+  "primary_verification": "Primary checked raw answers, original synthetic messages, tool receipts, profiles and usage. No actual Gmail content or account credentials are included.",
+  "conditions": [
+    {
+      "kind": "meeting_preparation",
+      "status": "passed",
+      "reason": "Found prior-month agenda, current calendar and confirmed equipment; produced grounded preparation and distinguished suggested questions from observed facts.",
+      "verification": "cited_sources_rechecked"
+    },
+    {
+      "kind": "already_answered",
+      "status": "passed",
+      "reason": "Observed the sent reply and subsequent counterpart confirmation; produced no repeated reminder.",
+      "verification": "not_applicable: quiet answer has no final citation recheck"
+    },
+    {
+      "kind": "new_request_after_reply",
+      "status": "passed",
+      "reason": "Raised only the new projector decision and its deadline; did not repeat resolved attendee/laptop requests or claim to send a reply.",
+      "verification": "cited_sources_rechecked"
+    }
+  ],
+  "request_receipts": {
+    "observed": 9,
+    "unknown": 0
+  },
+  "production_scope_changed": false,
+  "formal_16_case_credit": 0,
+  "release_qualified": false,
+  "limitations": [
+    "Synthetic Google data, not actual Gmail qualification.",
+    "No physical phone receipt or reply proof.",
+    "No new formal A13 acceptance; the unchanged 16-case denominator remains 3 passed and 13 not run."
+  ]
+}

@@ -1741,3 +1741,25 @@ for (const mode of ['citation_correction', 'argument_correction', 'missing_calen
     else { assert.equal(turn.error, 'ASSISTANT_INCOMPLETE_CHECK'); assert.equal(turn.answer, null); }
   } finally { await service.close(); connection.close(); e.close(); await fake.close(); }
 });
+
+test('related-mail HTTP setting rejects wrong consent and unknown fields, and persists only the explicit grant', async () => {
+  const e = environment(), fake = await googleServer(), owner = e.store.addDevice('Owner');
+  e.store.saveGoogleCredential(owner.id, makeCredential(owner.id), null);
+  const service = new ContactService(e.store, { chat: async () => reply('ok') }, noSources);
+  makeConnection(e.store, service, fake);
+  const network = await contactNetwork(e.store, service);
+  try {
+    const initial = (await network.call('/api/state', undefined, network.cookie)).json().google;
+    assert.equal(initial.related_mail.enabled, false);
+    assert.equal((await network.call('/api/google/related-mail', { enabled: true, consent: 'google_readonly_v1' }, network.cookie)).status, 400);
+    assert.equal((await network.call('/api/google/related-mail', { enabled: true, consent: 'related_mail_readonly_v1', extra: true }, network.cookie)).status, 400);
+    assert.equal(e.store.relatedMailEpoch(), null);
+    assert.equal((await network.call('/api/google/related-mail', { enabled: true, consent: 'related_mail_readonly_v1' })).status, 401);
+    assert.equal((await network.call('/api/google/related-mail', { enabled: true, consent: 'related_mail_readonly_v1' }, network.cookie)).status, 200);
+    const state = (await network.call('/api/state', undefined, network.cookie)).json();
+    assert.equal(state.google.related_mail.enabled, true); assert.equal(fake.requests.length, 0);
+    assert.equal(JSON.stringify(state).includes(refreshToken), false);
+    assert.equal((await network.call('/api/google/related-mail', { enabled: false, consent: null }, network.cookie)).status, 200);
+    assert.equal(e.store.relatedMailEpoch(), null);
+  } finally { await network.host.close(); await service.close(); e.close(); await fake.close(); }
+});

@@ -135,6 +135,10 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         const data = await jsonBody(req); object(data, ['consent']); store.assertDevice(device);
         return send(res, 202, await service.connectGoogle(device, data.consent));
       }
+      if (req.method === 'POST' && target.pathname === '/api/google/related-mail' && !target.search) {
+        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        return send(res, 200, service.configureRelatedMail(device, data.enabled, data.consent));
+      }
       if (req.method === 'POST' && target.pathname === '/api/google/disconnect' && !target.search) {
         const data = await jsonBody(req); object(data, []); store.assertDevice(device);
         return send(res, 200, await service.disconnectGoogle(device));

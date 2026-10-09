@@ -111,13 +111,14 @@ export class GoogleConnection extends EventEmitter {
     if (!credential) return null;
     let ownerLive = true;
     try { this.#assertDevice(credential.device); } catch { ownerLive = false; }
-    return { epoch: credential.epoch, email: credential.email,
+    return { epoch: credential.epoch, email: credential.email, related_mail_epoch: this.#store.relatedMailEpoch(),
       connected: this.#configured() && ownerLive && !credential.reconnect_required && scopesMatch(credential.scopes) };
   }
-  assertSnapshot(device, snapshot) {
+  assertSnapshot(device, snapshot, calendarOnly = false) {
     this.#assertDevice(device);
     const current = this.#store.googleCredential();
     if ((snapshot?.epoch ?? null) !== (current?.epoch ?? null)) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+    if (!calendarOnly && (snapshot?.related_mail_epoch ?? null) !== this.#store.relatedMailEpoch()) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     if (current) {
       if (!scopesMatch(current.scopes)) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
       if (snapshot?.connected) this.#assertDevice(current.device);
@@ -133,11 +134,18 @@ export class GoogleConnection extends EventEmitter {
     const reconnect = !!credential && (!ownerLive || credential.reconnect_required || !scopesMatch(credential.scopes));
     const pending = !!this.#attempt && !this.#attempt.completed;
     return { available: true, configured, connected: ready && configured && !!credential && ownerLive && !credential.reconnect_required && scopesMatch(credential.scopes),
-      has_credential: !!credential,
+      has_credential: !!credential, related_mail: { enabled: this.#store.relatedMailEpoch() !== null },
       pending, state: !ready ? 'upgrade_required' : !configured ? 'not_configured' : pending ? 'connecting'
         : !credential ? 'disconnected' : reconnect ? 'reconnect_required' : 'connected',
       account: credential?.email ?? null, last_checked: credential?.last_checked ?? null,
       error: credential?.last_error ?? this.#lastError, last_disconnect: credential ? null : this.#lastDisconnect };
+  }
+  configureRelatedMail(device, enabled, consent) {
+    if (enabled === true && !this.#configured()) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
+    const prior = this.#store.relatedMailEpoch();
+    const result = this.#store.configureRelatedMail(device, enabled, consent);
+    this.#changed(prior !== this.#store.relatedMailEpoch());
+    return result;
   }
   async connect(device, consent) {
     if (!this.#configured()) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
@@ -407,19 +415,27 @@ export class GoogleConnection extends EventEmitter {
     const gmailRequest = url.origin === gmailOrigin && url.pathname.startsWith('/gmail/v1/');
     const calendarRequest = url.origin === calendarOrigin && url.pathname.startsWith('/calendar/v3/');
     if (!gmailRequest && !calendarRequest) throw Error('CONTACT_GOOGLE_URL_REJECTED');
+    // A refresh may outlive the separate mail consent or its authorizing
+    // device. Capture that scope per API call and check it at actual dispatch,
+    // including a 401 refresh retry. Calendar-only reads do not use this grant.
+    const relatedEpoch = gmailRequest ? this.#store.relatedMailEpoch() : null;
+    const assertRequest = requestSignal => {
+      this.#assertAuthority(device, epoch, requestSignal);
+      if (gmailRequest && relatedEpoch !== this.#store.relatedMailEpoch()) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
+    };
     let requestUrl = url;
     if (this.#endpoints && gmailRequest) requestUrl = new URL(`${url.pathname}${url.search}`, new URL(this.#endpoints.gmail).origin);
     if (this.#endpoints && calendarRequest) requestUrl = new URL(`${url.pathname}${url.search}`, new URL(this.#endpoints.calendar).origin);
     for (let attempt = 0; attempt < 2; attempt++) {
-      this.#assertAuthority(device, epoch, signal);
+      assertRequest(signal);
       const token = await this.#refresh(device, epoch, signal);
       const epochSignal = this.#epochSignal(epoch), timeoutSignal = AbortSignal.timeout(10000);
       const requestSignal = AbortSignal.any([signal, epochSignal, timeoutSignal]);
       try {
-        this.#assertAuthority(device, epoch, requestSignal);
+        assertRequest(requestSignal);
         const response = await this.#fetch(requestUrl, { method: 'GET', redirect: 'error', signal: requestSignal,
           headers: { ...jsonHeaders, Authorization: `Bearer ${token}` } });
-        this.#assertAuthority(device, epoch, requestSignal);
+        assertRequest(requestSignal);
         if (response.status === 401 && attempt === 0) { this.#access.delete(epoch); continue; }
         if (response.status === 401) {
           this.#store.noteGoogleError(epoch, 'reconnect_required', this.#clock()); this.#changed();
@@ -434,8 +450,8 @@ export class GoogleConnection extends EventEmitter {
           throw Error('CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE');
         }
         const result = await responseJson(response, maxBytes);
-        this.#assertAuthority(device, epoch, requestSignal);
-        this.#store.noteGoogleCheck(epoch, this.#clock()); this.#assertAuthority(device, epoch, requestSignal); this.#changed();
+        assertRequest(requestSignal);
+        this.#store.noteGoogleCheck(epoch, this.#clock()); assertRequest(requestSignal); this.#changed();
         return result;
       } catch (error) {
         this.#requestFailure(error, device, epoch, signal, epochSignal, timeoutSignal);

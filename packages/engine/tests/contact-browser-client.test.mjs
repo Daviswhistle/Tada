@@ -487,3 +487,22 @@ test('a failed delegated save explains expired device coverage without claiming 
   assert.match(status.textContent, /기기의 접근권 유효기간/);
   assert.doesNotMatch(status.textContent, /CONTACT_|저장했어요/);
 });
+
+test('related-mail access is an explicit on-screen choice, reflects revocation, and preserves the current draft', async () => {
+  const c = client();
+  c.state.google = { available: true, configured: true, connected: true, has_credential: true, state: 'connected', account: 'owner@example.test', related_mail: { enabled: false } };
+  await c.refresh();
+  assert.equal(c.get('related-mail-settings').hidden, false);
+  assert.equal(c.get('related-mail-toggle').getAttribute('aria-pressed'), 'false');
+  assert.equal(c.calls.some(call => call.path === '/api/google/related-mail'), false);
+  c.get('message').value = '아직 쓰는 중인 메시지';
+  c.handle('/api/google/related-mail', () => { c.state.google.related_mail.enabled = !c.state.google.related_mail.enabled; return c.state.google.related_mail; });
+  await c.get('related-mail-toggle').onclick();
+  assert.deepEqual(c.calls.find(call => call.path === '/api/google/related-mail').body, { enabled: true, consent: 'related_mail_readonly_v1' });
+  assert.equal(c.get('related-mail-toggle').getAttribute('aria-pressed'), 'true');
+  assert.match(c.get('related-mail-status').textContent, /보낸 기록/u);
+  await c.get('related-mail-toggle').onclick();
+  assert.equal(c.get('related-mail-toggle').getAttribute('aria-pressed'), 'false');
+  assert.equal(c.get('message').value, '아직 쓰는 중인 메시지');
+  c.state.google.pending = true; await c.refresh(); assert.equal(c.get('related-mail-toggle').disabled, true);
+});

@@ -3,6 +3,7 @@ export const GOOGLE_SCOPES = Object.freeze([
   'https://www.googleapis.com/auth/calendar.events.readonly',
 ]);
 export const GOOGLE_CONSENT = 'google_readonly_v1';
+export const RELATED_MAIL_CONSENT = 'related_mail_readonly_v1';
 
 const uuid = value => typeof value === 'string'
   && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
@@ -26,4 +27,11 @@ export function validGoogleDisconnect(value) {
   return !!value && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).sort().join(',') === 'epoch,remote_revoked,version'
     && value.version === 1 && uuid(value.epoch) && typeof value.remote_revoked === 'boolean';
+}
+
+export function validRelatedMail(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join(',') === 'device,enabled,epoch,google_epoch,version'
+    && value.version === 1 && typeof value.enabled === 'boolean' && uuid(value.epoch) && uuid(value.device)
+    && (value.google_epoch === null || uuid(value.google_epoch)) && (!value.enabled || value.google_epoch !== null);
 }

@@ -134,7 +134,7 @@ export class ContactService extends EventEmitter {
         answer.usage = this.#store.usage(); checkpoint.usage = { ...answer.usage };
         // The full document stays in the encrypted answer. Persist a compact
         // receipt in model context; read_document retrieves it when needed.
-        const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events']);
+        const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events', 'search_related_emails', 'read_email_thread']);
         for (const message of checkpoint.history) {
           if (message.role === 'tool' && message.tool_name === 'read_document') {
             const newline = message.content.indexOf('\n');
@@ -198,6 +198,11 @@ export class ContactService extends EventEmitter {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
     return this.#google.connect(device, consent);
+  }
+  configureRelatedMail(device, enabled, consent) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
+    return this.#google.configureRelatedMail(device, enabled, consent);
   }
   async disconnectGoogle(device) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');

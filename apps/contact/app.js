@@ -68,6 +68,8 @@ const errors = {
   CONTACT_FOLLOWUP_DECISION_CONFLICT: '이미 처리되거나 다른 변경으로 대체된 제안입니다. 최신 업무 기록을 확인해 주세요.',
   CONTACT_GOOGLE_NOT_CONFIGURED: '이 Tada에서는 아직 Google 연결을 준비하지 못했어요. 계정이나 연결 키를 직접 입력할 필요는 없습니다.',
   CONTACT_GOOGLE_CONSENT_REQUIRED: 'Google에서 읽을 항목과 선택한 모델로의 전송 안내를 확인해 주세요.',
+  CONTACT_GOOGLE_RELATED_CONSENT_REQUIRED: '관련 메일을 검색하고 보낸 기록을 확인할 범위를 먼저 확인해 주세요.',
+  CONTACT_GOOGLE_SEARCH_LIMIT: '이번에는 메일 검색 결과 세 페이지까지 확인했어요. 찾지 못한 자료는 검색 범위를 좁혀 이어서 확인할 수 있어요.',
   CONTACT_GOOGLE_BUSY: 'Google 연결을 이미 확인 중이에요. 브라우저의 권한 화면을 마친 뒤 돌아와 주세요.',
   CONTACT_GOOGLE_BROWSER_FAILED: '이 컴퓨터에서 Google 권한 화면을 열지 못했어요. 브라우저를 확인한 뒤 다시 시도해 주세요.',
   CONTACT_GOOGLE_CONNECT_FAILED: 'Google 연결을 시작하지 못했어요. Tada 설정에서 다시 시도해 주세요.',
@@ -300,9 +302,28 @@ const googleDisconnect = element('button', 'Google 연결 해제'); googleDiscon
 const googleDetails = document.createElement('details'); googleDetails.id = 'google-scope-details';
 googleDetails.append(element('summary', '확인하는 자료와 범위'));
 googleDetails.append(element('p', '최근 7일 받은편지함의 보낸 사람·제목·미리보기와 필요한 메일의 짧은 본문, 앞으로 7일 기본 캘린더 일정만 읽어요. 목록은 각각 최대 20개이며, 자료가 많으면 일부만 살펴봅니다.', 'muted'));
-googleDetails.append(element('p', '보낸편지함과 전체 대화는 읽지 않아 답장 여부는 확인할 수 없어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다. Google 권한 화면에서도 읽기 범위를 확인할 수 있어요.', 'muted'));
+const googleReplyScope = element('p', '', 'muted'); googleDetails.append(googleReplyScope);
 googleSection.append(googleDetails);
+const relatedMail = document.createElement('div'); relatedMail.id = 'related-mail-settings'; relatedMail.hidden = true;
+relatedMail.append(element('h3', '관련 메일까지 찾아보기'));
+relatedMail.append(element('p', '필요한 주제나 사람으로 이전 메일을 찾고, 같은 메일 대화의 보낸 기록을 함께 확인해요. 받은편지함 밖의 보관·발신 메일도 포함하며, 필요한 발췌는 선택한 Tada 모델로 전송합니다.', 'muted'));
+const relatedDetails = document.createElement('details'); relatedDetails.append(element('summary', '추가로 읽는 범위'));
+relatedDetails.append(element('p', '검색은 한 번에 20개씩, 대화 한 차례에 최대 세 페이지입니다. 선택한 메일 대화의 최근 20개 제목·보낸 사람·미리보기와 필요한 본문 최대 4 KiB를 읽어요. 먼저 챙겨보기가 켜져 있으면 같은 범위를 활용하며 최근 7일 발신 메일 최대 20개의 변화도 확인합니다. 스팸·휴지통·임시보관·첨부는 읽지 않고 메일을 보내거나 수정하지 않습니다. Google을 다시 연결하면 이 설정도 다시 선택해야 해요.', 'muted'));
+relatedMail.append(relatedDetails);
+const relatedStatus = element('p', '', 'muted'); relatedStatus.id = 'related-mail-status'; relatedStatus.setAttribute('role', 'status');
+const relatedToggle = element('button', '범위를 확인하고 켜기'); relatedToggle.id = 'related-mail-toggle'; relatedToggle.type = 'button';
+relatedMail.append(relatedStatus, relatedToggle); googleSection.append(relatedMail);
 $('google-settings-slot').append(googleSection);
+let relatedEnabled = false, relatedBusy = false;
+relatedToggle.onclick = async () => {
+  if (relatedBusy) return;
+  relatedBusy = true; relatedToggle.disabled = true;
+  try {
+    await api('/api/google/related-mail', { enabled: !relatedEnabled, consent: relatedEnabled ? null : 'related_mail_readonly_v1' });
+    notice('');
+  } catch (error) { notice(error.message); }
+  finally { relatedBusy = false; relatedToggle.disabled = false; await refresh(); }
+};
 function when(value, timezone) {
   if (value === null) return '시간 알림 없음';
   try { return new Intl.DateTimeFormat('ko', { timeZone: timezone, year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'shortOffset' }).format(new Date(value)) + ` · ${timezone}`; }
@@ -390,6 +411,15 @@ let proactiveEnabled = false; let proactiveMode = 'daily';
 function renderGoogle(state) {
   googleSection.hidden = state?.available !== true;
   if (!state?.available) return;
+  relatedEnabled = state.related_mail?.enabled === true;
+  relatedMail.hidden = !state.has_credential;
+  relatedToggle.disabled = relatedBusy || !state.connected || state.pending;
+  relatedToggle.textContent = relatedEnabled ? '관련 메일 탐색 끄기' : '범위를 확인하고 켜기';
+  relatedToggle.setAttribute('aria-pressed', String(relatedEnabled));
+  relatedStatus.textContent = relatedEnabled ? '켜져 있어요. 관련 메일과 보낸 기록을 함께 확인합니다.' : '꺼져 있어요. 최근 7일 받은편지함만 확인합니다.';
+  googleReplyScope.textContent = relatedEnabled
+    ? '아래의 관련 메일 탐색도 켜져 있어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다.'
+    : '보낸편지함과 전체 대화는 읽지 않아 답장 여부는 확인할 수 없어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다. Google 권한 화면에서도 읽기 범위를 확인할 수 있어요.';
   googleConnect.disabled = !state.configured || state.pending || state.state === 'upgrade_required';
   googleConnect.textContent = state.connected || state.state === 'reconnect_required' ? 'Google 다시 연결' : '내용을 확인하고 Google 연결';
   googleDisconnect.hidden = !state.has_credential && !state.pending;

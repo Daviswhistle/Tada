@@ -8,7 +8,7 @@ import { mkdirSync, lstatSync, existsSync, openSync, closeSync, fsyncSync } from
 import { resolve, join, dirname } from 'node:path';
 import { ATTENTION_CONSENT, ATTENTION_INTERVAL, validAttention, localDay, localHour, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { CONTINUING_CONSENT, REQUEST_LIMIT, REQUEST_WINDOW, validContinuingUse, useWindow } from './continuing-use.mjs';
-import { GOOGLE_SCOPES, validGoogleCredential, validGoogleDisconnect } from './google-contract.mjs';
+import { GOOGLE_SCOPES, validGoogleCredential, validGoogleDisconnect, validRelatedMail, RELATED_MAIL_CONSENT } from './google-contract.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const counter = value => Number.isSafeInteger(value) && value >= 0;
@@ -1080,6 +1080,7 @@ export class ContactStore {
       const valid = name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
         : name === 'google' ? validGoogleCredential(value)
         : name === 'google_disconnect' ? validGoogleDisconnect(value)
+        : name === 'related_mail' ? validRelatedMail(value)
         : name === 'followup_delegation' ? validFollowupDelegation(value)
         : name === 'continuing_use' ? validContinuingUse(value)
         : name === 'attention' ? validAttention(value)
@@ -1117,6 +1118,23 @@ export class ContactStore {
     });
   }
   googleEpoch() { return this.#setting('google')?.epoch ?? null; }
+  relatedMailEpoch() {
+    const value = this.#setting('related_mail');
+    if (!value?.enabled || value.google_epoch !== this.googleEpoch() || !this.googleConnected()) return null;
+    try { this.#device(value.device); return value.epoch; } catch { return null; }
+  }
+  configureRelatedMail(device, enabled, consent) {
+    if (typeof enabled !== 'boolean' || (enabled ? consent !== RELATED_MAIL_CONSENT : consent !== null))
+      throw Error('CONTACT_GOOGLE_RELATED_CONSENT_REQUIRED');
+    return this.#tx(() => {
+      this.#device(device);
+      if (enabled) this.assertGoogleAuthority(device, this.googleEpoch());
+      if (enabled && this.relatedMailEpoch()) return { enabled: true };
+      this.#saveSetting('related_mail', { version: 1, enabled, epoch: randomUUID(), device, google_epoch: this.googleEpoch() });
+      this.#sweepProactive();
+      return { enabled: this.relatedMailEpoch() !== null };
+    });
+  }
   googleConnected() {
     const value = this.#setting('google');
     if (!value || value.reconnect_required || value.scopes.length !== GOOGLE_SCOPES.length) return false;
@@ -1243,7 +1261,9 @@ export class ContactStore {
     const recent = this.#db.prepare('SELECT max(seq) seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs)').get().seq;
     const work = this.#db.prepare("SELECT f.id,f.version,f.state,d.revoked,d.expires FROM followups f JOIN devices d ON d.id=f.device ORDER BY f.id").all();
     const google = this.#setting('google');
-    return hash(JSON.stringify([recent, work, google ? { epoch: google.epoch, reconnect_required: google.reconnect_required } : null]));
+    const related = this.#setting('related_mail');
+    return hash(JSON.stringify([recent, work, google ? { epoch: google.epoch, reconnect_required: google.reconnect_required } : null,
+      ...(related ? [{ related_epoch: related.epoch, active: this.relatedMailEpoch() }] : [])]));
   }
   proactiveTick(now = Date.now(), googleAvailable = false) {
     if (this.#version < 5) return 0;
@@ -1281,10 +1301,10 @@ export class ContactStore {
     const run = this.proactiveForTurn(seq), grant = this.#setting('proactive');
     if (!this.#proactiveLive(run) || !this.#attentionNoticeLive(seq)) return { stopped: true };
     const receipt = this.#setting('attention').notified.find(n => n.turn === seq);
-    return { key: receipt.key, text: this.#turn(row).answer.text, created: row.created, ticket: { epoch: grant.epoch, device: grant.device, google_epoch: this.googleEpoch(), local_fingerprint: this.#proactiveFingerprint(), timezone: grant.timezone, claimed_at: Date.now() } };
+    return { key: receipt.key, text: this.#turn(row).answer.text, created: row.created, ticket: { epoch: grant.epoch, device: grant.device, google_epoch: this.googleEpoch(), related_mail_epoch: this.relatedMailEpoch(), local_fingerprint: this.#proactiveFingerprint(), timezone: grant.timezone, claimed_at: Date.now() } };
   }
   assertAttentionDelivery(id, seq, ticket) {
-    this.assertAttention(ticket); this.#assertProactiveAuthority(seq);
+    this.assertAttention(ticket, true); this.#assertProactiveAuthority(seq);
     const row = this.#db.prepare('SELECT * FROM telegram_outbox WHERE id=?').get(id);
     if (row?.state !== 'sending' || row.turn !== seq || !this.#attentionNoticeLive(seq)) throw Error('CONTACT_PROACTIVE_STOPPED');
     this.#device(row.device);
@@ -1310,10 +1330,11 @@ export class ContactStore {
       model_next_at: old?.model_next_at ?? 0, model_day: old?.model_day ?? '', model_runs: old?.model_runs ?? 0, notified: old?.notified ?? [],
       ...(old?.epoch === grant.epoch && old.google_epoch === this.googleEpoch() ? old : {}) };
   }
-  assertAttention(ticket) {
+  assertAttention(ticket, calendarOnly = false) {
     const grant = this.#setting('proactive');
     if (grant?.version !== 2 || ticket.epoch !== grant.epoch || ticket.device !== grant.device
         || !this.#proactiveLive(ticket) || ticket.google_epoch !== this.googleEpoch()) throw Error('CONTACT_PROACTIVE_STOPPED');
+    if (!calendarOnly && (ticket.related_mail_epoch ?? null) !== this.relatedMailEpoch()) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     if (ticket.google_epoch && !this.googleConnected()) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
   }
   claimAttention(now = Date.now()) {
@@ -1323,7 +1344,7 @@ export class ContactStore {
       const grant = this.#setting('proactive');
       if (grant?.version !== 2 || !this.#proactiveLive(grant, now) || now < grant.next_at) return null;
       this.#saveSetting('proactive', { ...grant, next_at: now + ATTENTION_INTERVAL });
-      return { epoch: grant.epoch, device: grant.device, google_epoch: this.googleEpoch(), local_fingerprint: this.#proactiveFingerprint(), claimed_at: now, has_context: !!this.#db.prepare('SELECT seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs) LIMIT 1').get() };
+      return { epoch: grant.epoch, device: grant.device, google_epoch: this.googleEpoch(), related_mail_epoch: this.relatedMailEpoch(), local_fingerprint: this.#proactiveFingerprint(), claimed_at: now, has_context: !!this.#db.prepare('SELECT seq FROM turns WHERE seq NOT IN(SELECT turn FROM proactive_runs) LIMIT 1').get() };
     });
   }
   failAttention(ticket, error) {
@@ -1331,6 +1352,13 @@ export class ContactStore {
       const grant = this.#setting('proactive');
       if (grant?.version !== 2 || ticket.epoch !== grant.epoch || ticket.device !== grant.device
           || !this.#proactiveLive(ticket) || ticket.google_epoch !== this.googleEpoch()) return false;
+      if ((ticket.related_mail_epoch ?? null) !== this.relatedMailEpoch()) {
+        // Discard the old mail observation, but promptly capture fresh authority
+        // so a near-term calendar reminder is not lost during the 15-minute gap.
+        // Model cooldown/counts live in attention and are deliberately retained.
+        this.#saveSetting('proactive', { ...grant, next_at: Math.min(grant.next_at, Date.now()) });
+        return false;
+      }
       // Authentication failure changes the Google status/fingerprint itself;
       // record that failure without restoring any withdrawn read authority.
       const state = this.#attentionState(grant);

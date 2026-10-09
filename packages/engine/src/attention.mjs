@@ -38,14 +38,17 @@ export function reminderText(event, now, timezone) {
 export async function observeAttention(store, connection, ticket, signal, now = Date.now(), calendarOnly = false) {
   const snapshot = connection.captureGrant(ticket.device);
   if (!snapshot?.connected || snapshot.epoch !== ticket.google_epoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
-  const guard = () => { signal.throwIfAborted(); store.assertAttention(ticket); connection.assertSnapshot(ticket.device, snapshot); };
+  const guard = () => { signal.throwIfAborted(); store.assertAttention(ticket, calendarOnly); connection.assertSnapshot(ticket.device, snapshot, calendarOnly); };
   const get = async url => { guard(); const result = await connection.apiJson(ticket.device, snapshot.epoch, url, signal, 262144); guard(); return result; };
   const mailURL = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
   mailURL.searchParams.set('q', `in:inbox after:${Math.floor((now - 7 * 86400000) / 1000)} before:${Math.floor(now / 1000)}`);
   mailURL.searchParams.set('maxResults', '20');
+  const sentURL = new URL(mailURL);
+  sentURL.searchParams.set('q', `in:sent -in:spam -in:trash -in:drafts after:${Math.floor((now - 7 * 86400000) / 1000)} before:${Math.floor(now / 1000)}`);
   const calendarURL = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
   for (const [key, value] of Object.entries({ timeMin: new Date(now).toISOString(), timeMax: new Date(now + 7 * 86400000).toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '20', timeZone: 'UTC' })) calendarURL.searchParams.set(key, value);
-  const [mailResult, calendarResult] = await Promise.allSettled([calendarOnly ? Promise.resolve({}) : get(mailURL), get(calendarURL)]);
+  const [mailResult, calendarResult, sentResult] = await Promise.allSettled([calendarOnly ? Promise.resolve({}) : get(mailURL), get(calendarURL),
+    !calendarOnly && snapshot.related_mail_epoch ? get(sentURL) : Promise.resolve({})]);
   guard();
   if (calendarResult.status === 'rejected') throw calendarResult.reason;
   const calendar = calendarResult.value;
@@ -63,11 +66,23 @@ export async function observeAttention(store, connection, ticket, signal, now = 
     error = /^[A-Z_]{1,64}$/u.test(failure?.message) ? failure.message : 'CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE';
     mail = {}; ids = [];
   }
+  let sent = {}, sentIds = [];
+  try {
+    if (sentResult.status === 'rejected') throw sentResult.reason;
+    sent = sentResult.value;
+    if (sent.messages !== undefined && !Array.isArray(sent.messages)) throw Error('CONTACT_GOOGLE_SOURCE_INVALID');
+    sentIds = (sent.messages ?? []).slice(0, 20).map(item => item?.id);
+    if (sentIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,200}$/u.test(id))) throw Error('CONTACT_GOOGLE_SOURCE_INVALID');
+  } catch (failure) {
+    error ??= /^[A-Z_]{1,64}$/u.test(failure?.message) ? failure.message : 'CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE';
+    sent = {}; sentIds = [];
+  }
   const raw = (calendar.items ?? []).slice(0, 20), events = raw.map(attentionEvent).filter(Boolean);
   const omitted = raw.some(item => item?.status !== 'cancelled' && !item?.attendees?.some(a => a.self && a.responseStatus === 'declined') && !attentionEvent(item));
-  const truncated = omitted || !!mail.nextPageToken || !!calendar.nextPageToken || raw.length >= 20 || ids.length >= 20;
+  const truncated = omitted || !!mail.nextPageToken || !!sent.nextPageToken || !!calendar.nextPageToken || raw.length >= 20 || ids.length >= 20 || sentIds.length >= 20;
   guard();
-  return { fingerprint: digest([ids.sort(), raw.toSorted((a, b) => String(a?.id).localeCompare(String(b?.id)))]), events, truncated, error, account: snapshot.email, observed_at: now };
+  return { fingerprint: digest([ids.sort(), raw.toSorted((a, b) => String(a?.id).localeCompare(String(b?.id))),
+    ...(snapshot.related_mail_epoch ? [sentIds.sort()] : [])]), events, truncated, error, account: snapshot.email, observed_at: now };
 }
 export function validAttention(value) {
   const keys = ['version', 'epoch', 'google_epoch', 'observed_at', 'error', 'fingerprint', 'model_next_at', 'model_day', 'model_runs', 'notified'];
