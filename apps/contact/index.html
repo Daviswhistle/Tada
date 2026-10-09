@@ -38,13 +38,14 @@
           <p>대화, 문서, 맡긴 일과 처리 결과를 암호화한 파일로 내려받습니다. 연결된 계정의 로그인 토큰과 자동 실행 권한은 넣지 않아요.</p>
           <label class="backup-option"><input id="backup-portable" type="checkbox"> 다른 컴퓨터에서도 열 수 있는 복구 코드 만들기</label>
           <p class="muted">기본 백업은 지금 Windows 계정으로만 열 수 있어요. 컴퓨터 교체나 Windows 재설치에 대비하려면 복구 코드를 함께 보관해 주세요.</p>
+          <button id="records-restore" type="button" hidden>백업에서 기록 복원</button>
           <button id="backup-create" type="button">백업 파일 만들기</button><p id="backup-status" role="status"></p>
           <div id="backup-result" hidden><a id="backup-download">암호화한 백업 파일 다운로드</a>
             <div id="backup-recovery" hidden><label for="backup-code">이 백업의 복구 코드</label><input id="backup-code" type="text" readonly autocomplete="off" spellcheck="false">
               <p class="muted">백업 파일과 코드를 가진 사람은 기록을 열 수 있어요. 코드는 파일과 다른 안전한 곳에 보관해 주세요. 이 창을 닫으면 다시 표시하지 않습니다.</p>
               <button id="backup-code-saved" type="button">코드를 따로 보관했어요</button></div>
           </div>
-          <p class="settings-footnote">이 버전에서는 파일 보관까지 지원합니다. 앱에서 기록을 복원하는 화면은 아직 제공하지 않습니다. 백업 뒤에도 원래 기록을 유지해 주세요.</p>
+          <p class="settings-footnote">복원할 때 현재 기록은 따로 보관합니다. 계정은 다시 연결하며, 이전 알림이나 발송을 자동으로 반복하지 않습니다.</p>
         </section>
       </div>
       <div id="settings-mobile" hidden>

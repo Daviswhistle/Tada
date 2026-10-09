@@ -78,6 +78,25 @@ test('archive parser has an explicit larger bound without widening ordinary wire
   assert.throws(() => parseUniqueJson(text, 400000), /INVALID_JSON/u);
   for (const invalid of ['{"a":1,"a":2}', '{"a":"\\ud800"}', '{"a":1e999}']) assert.throws(() => parseUniqueArchiveJson(invalid), /INVALID_JSON/u);
 });
+test('v3 preserves the public subscription registration and rejects unbound or legacy reinterpretations', async () => {
+  const e=fixture();try {
+    turn(e);
+    const provider={kind:'chatgpt-subscription',subject:'synthetic-owner',label:'owner@example.test',model:'synthetic-model',client_id:'oaiapp_fixture'};
+    const snapshot=e.store.exportRecords(e.device.id,{provider,google_client:null}),protector=protection();
+    assert.equal(snapshot.version,3);assert.deepEqual(snapshot.recovered,[]);
+    assert.deepEqual(await openRecordBackup((await createRecordBackup(snapshot,{protector})).bytes,{protector}),snapshot);
+    for(const mutate of [s=>delete s.connection.provider.client_id,s=>s.connection.provider.client_id=null,
+      s=>s.connection.provider.client_id='dynamic_agent_client',s=>s.connection.provider.client_id='bad client',
+      s=>s.connection.provider.subject=null,s=>s.connection.provider.kind='ollama-local',s=>s.version=1,
+      s=>s.recovered=[structuredClone(snapshot)]]) {
+      const bad=structuredClone(snapshot);mutate(bad);await assert.rejects(createRecordBackup(bad,{protector}),/INVALID/u);
+    }
+    const local=e.store.exportRecords(e.device.id,{provider:{kind:'ollama-local',subject:null,label:null,model:'fixture-local',client_id:null},google_client:null});
+    assert.equal(local.version,3);await createRecordBackup(local,{protector});
+    const legacy=e.store.exportRecords(e.device.id,{provider:{kind:provider.kind,subject:provider.subject,label:provider.label,model:provider.model},google_client:null});
+    assert.equal(legacy.version,1);await createRecordBackup(legacy,{protector});
+  }finally{e.close();}
+});
 test('unknown archive fields, schema versions and broken references fail before protection', async () => {
   const e = fixture(); try {
     turn(e); const original = e.store.exportRecords(e.device.id); let protections = 0;

@@ -45,3 +45,14 @@ body:has(#settings[open]){overflow:hidden}
 #backup-download { display: inline-block; margin: .75rem 0; }
 #backup-code { font-family: monospace; font-size: .9rem; }
 @media(max-width:360px){.settings-nav{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.settings-nav button{min-width:0;white-space:normal}}
+
+.restore-panel { max-width: 38rem; margin-top: 1.5rem; }
+.restore-panel label { display: block; margin-top: 1rem; }
+.restore-panel input { width: 100%; max-width: 100%; box-sizing: border-box; }
+.restore-panel p { overflow-wrap: anywhere; }
+.restore-panel button { margin: .6rem .6rem .6rem 0; }
+
+.setup-main.setup-recovery { padding-top: 12px; }
+.setup-recovery .welcome-mark { display: none; }
+.setup-recovery h1 { font-size: clamp(26px, 4vw, 34px); }
+.setup-recovery .lead { margin-bottom: 24px; }

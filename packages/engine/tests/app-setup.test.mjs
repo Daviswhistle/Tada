@@ -139,3 +139,124 @@ test('provider read timeout retries before interaction but owner cancellation do
     assert.equal((await cancelled.until('error')).retry_at, undefined);
   } finally { await cancelled.host.close(); }
 });
+
+test('restore preview is authenticated and does not stop the running assistant; confirmation drains it before reconnecting',async()=>{
+ const { RESTORE_CONSENT }=await import('../src/app-records.mjs');
+ let running=0,maximum=0,starts=0,pending=false,confirmed=0,previews=0,cancels=0;
+ const records={available:true,clearPreview(){},canCancel:()=>pending,preview:async bytes=>{previews++;assert.equal(bytes.toString(),'synthetic-backup');return{id:'preview-only'};},confirm:async(id,consent)=>{assert.equal(id,'preview-only');assert.equal(consent,RESTORE_CONSENT);confirmed++;pending=true;},cancel(){pending=false;cancels++;}};
+ const c=await client(async ui=>{running++;starts++;maximum=Math.max(maximum,running);try{ui.recordRestore(pending);if(pending)await ui.consent();ui.ready('http://127.0.0.1:8787/#pair=fixture',pending);await ui.wait();await new Promise(resolve=>setTimeout(resolve,20));}finally{running--;}},{records});
+ const upload=extra=>fetch(c.origin+'/recovery/preview',{method:'POST',headers:{Origin:c.origin,Authorization:'Bearer '+c.token,'Content-Type':'application/octet-stream',...extra},body:'synthetic-backup'});
+ try{const original=await c.until('ready');assert.equal((await upload({Authorization:'Bearer invalid'})).status,401);assert.equal((await upload({Origin:'https://foreign.invalid'})).status,403);assert.equal(previews,0);assert.equal((await upload()).status,200);assert.equal(starts,1);assert.equal(running,1);
+  assert.equal((await c.action(original,'restore',{id:'preview-only',consent:'wrong'})).status,409);assert.equal(confirmed,0);
+  assert.equal((await c.action(original,'restore',{id:'preview-only',consent:RESTORE_CONSENT})).status,202);
+  const reconnect=await c.until('consent');assert.equal(reconnect.restoring,true);assert.equal(starts,2);assert.equal(maximum,1);assert.equal((await c.action(original,'restore',{id:'preview-only',consent:RESTORE_CONSENT})).status,409);
+  assert.equal((await c.action(reconnect,'cancel')).status,200);const resumed=await c.until('ready');assert.equal(resumed.restored,false);assert.equal(cancels,1);assert.equal(starts,3);assert.equal(maximum,1);
+ }finally{await c.host.close();}assert.equal(running,0);
+});
+test('failed restore confirmation leaves the old runtime reachable and never aborts its work',async()=>{
+ const { RESTORE_CONSENT }=await import('../src/app-records.mjs');let stopped=false;
+ const records={available:true,clearPreview(){},canCancel:()=>false,confirm:async()=>{throw Error('CONTACT_APP_RECOVERY_PREVIEW_EXPIRED');}};
+ const c=await client(async ui=>{ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();stopped=true;},{records});
+ try{await c.action(await c.until('ready'),'restore',{id:'expired',consent:RESTORE_CONSENT});const s=await c.until('ready');assert.match(s.url,/#pair=/u);assert.equal(stopped,false);assert.match(s.restore_error,/확인 시간이/u);}finally{await c.host.close();}
+});
+
+test('ready ends the restoration stage so later settings links can open another preview',async()=>{
+ const c=await client(async ui=>{ui.recordRestore(true,'fixture@example.invalid');ui.ready('http://127.0.0.1:8787/#pair=fixture',true);await ui.wait();},{records:{available:true,clearPreview(){}}});try{const s=await c.until('ready');assert.equal(s.restoring,false);assert.equal(s.restore_account,null);assert.equal(s.restored,true);}finally{await c.host.close();}
+});
+
+for(const site of ['same-site','cross-site'])test(`conversation-to-setup document navigation allows ${site} while APIs still require same origin`,async()=>{
+ const c=await client(async ui=>{ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();});try{const h={'Sec-Fetch-Site':site,'Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document'};const page=await new Promise((resolve,reject)=>{const req=request(c.origin,{headers:h},res=>{let text='';res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,text}));});req.on('error',reject);req.end();});assert.equal(page.status,200);assert.match(page.text,/Tada — 시작하기/u);
+ assert.equal((await fetch(c.origin+'/state',{headers:{...h,Authorization:'Bearer '+c.token}})).status,403);assert.equal((await c.action(await c.until('ready'),'retry',null,{'Sec-Fetch-Site':site})).status,403);
+ assert.equal((await fetch(c.origin,{headers:{...h,'Sec-Fetch-Mode':'cors'}})).status,403);
+ }finally{await c.host.close();}
+});
+test('corrupted recovery metadata does not turn an ordinary setup failure into an unhandled rejection',async()=>{
+ const c=await client(async ui=>{ui.recordRestore(true);throw Error('CONTACT_APP_RECOVERY_INVALID');},{records:{available:true,clearPreview(){},canCancel(){throw Error('BAD_PENDING_METADATA');}}});try{const s=await c.until('error');assert.equal(s.cancel_restore,false);assert.match(s.message,/복원 준비 정보/u);}finally{await c.host.close();}
+});
+
+test('failed runtime cleanup blocks generation activation and another runtime until the process restarts',async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');let starts=0,confirmations=0;
+ const c=await client(async ui=>{starts++;ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();const error=Error('CONTACT_APP_CLOSE_FAILED');error.retryable=false;throw error;},{records:{available:true,clearPreview(){},canCancel:()=>true,confirm:async()=>{confirmations++;}}});
+ try{await c.action(await c.until('ready'),'restore',{id:'fixture',consent:RESTORE_CONSENT});const s=await c.until('error');assert.equal(s.retryable,false);assert.equal(s.resume_url,undefined);assert.equal(starts,1);assert.match(s.message,/완전히 종료/u);assert.equal((await c.action(s,'retry')).status,409);assert.equal((await c.action(s,'restore',{id:'fixture',consent:RESTORE_CONSENT})).status,409);assert.equal(confirmations,1);}finally{await c.host.close();}
+});
+
+test('an unreadable staged archive still offers return to unchanged originals before any preservation move',async()=>{
+ let pending=true,cancelled=0;const c=await client(async ui=>{if(pending)throw Error('CONTACT_BACKUP_CANNOT_OPEN');ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();},{records:{available:true,clearPreview(){},canCancel:()=>pending,cancel(){cancelled++;pending=false;}}});try{const s=await c.until('error');assert.equal(s.cancel_restore,true);assert.equal((await c.action(s,'cancel_restore')).status,200);await c.until('ready');assert.equal(cancelled,1);}finally{await c.host.close();}
+});
+test('a failed confirmation never returns a closed real contact host, even when its entry getter still returns a URL',async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');
+ const {ContactStore,contactRoute}=await import('../src/contact-store.mjs');
+ const {ContactService}=await import('../src/contact-service.mjs');const {serveContact}=await import('../src/contact-http.mjs');
+ const root=mkdtempSync(join(tmpdir(),'tada-closed-recovery-'));
+ const store=new ContactStore({directory:join(root,'data'),passphrase:'SYNTHETIC_CLOSED_HOST_KEY',route:contactRoute({fixture:'closed-host'}),initialize:true});
+ const service=new ContactService(store,{}, {definitions:[],validate:()=>false,verify:async()=>false,execute:async()=>{throw Error('NO_SOURCE');}});
+ let stop,fail,contact,stopped=false;
+ const c=await client(async ui=>{
+  contact=await serveContact({store,service,origin:'http://127.0.0.1:0',port:0});
+  ui.ready(()=>contact.pair({replaceApp:true}));await new Promise(resolve=>{stop=resolve;});
+  await contact.close();stopped=true;
+ },{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:()=>new Promise((resolve,reject)=>{fail=reject;})}});
+ try{
+  await c.action(await c.until('ready'),'restore',{id:'fixture',consent:RESTORE_CONSENT});stop();
+  for(let i=0;i<100&&!stopped;i++)await turn();assert.equal(stopped,true);
+  assert.equal(typeof contact.pair({replaceApp:true}),'string'); // The real getter does not assert liveness.
+  fail(Error('CONTACT_APP_RECOVERY_PREVIEW_EXPIRED'));const s=await c.until('error');
+  assert.equal(s.resume_url,undefined);assert.equal(s.retryable,true);assert.match(s.message,/확인 시간이/u);
+ }finally{stop?.();await c.host.close();await contact?.close();await service.close();store.close();rmSync(root,{recursive:true,force:true});}
+});
+test('a paired device receives no setup authority and cannot regain access after revocation',async()=>{
+ const {ContactStore,contactRoute}=await import('../src/contact-store.mjs');const {ContactService}=await import('../src/contact-service.mjs');const {serveContact}=await import('../src/contact-http.mjs');
+ const root=mkdtempSync(join(tmpdir(),'tada-recovery-authority-')),store=new ContactStore({directory:join(root,'data'),passphrase:'SYNTHETIC_AUTHORITY_KEY',route:contactRoute({fixture:'authority'}),initialize:true}),device=store.addDevice('paired browser');
+ const service=new ContactService(store,{}, {definitions:[],validate:()=>false,verify:async()=>false,execute:async()=>{throw Error('NO_SOURCE');}});let contact,recovery,confirmed=0;
+ const c=await client(async ui=>{recovery=ui.recovery;ui.ready('http://127.0.0.1:9001/#pair=owner-only');await ui.wait();},{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:async()=>{confirmed++;}}});
+ const call=path=>new Promise((resolve,reject)=>{const req=request({hostname:'127.0.0.1',port:contact.address.port,path,method:path.endsWith('restore')?'POST':'GET',headers:{Host:'127.0.0.1:0',Origin:'http://127.0.0.1:0',Cookie:'tada_local='+device.token,'Content-Type':'application/json'}},res=>{let text='';res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(text)}));});req.on('error',reject);req.end(path.endsWith('restore')?'{}':undefined);});
+ try{
+  await c.until('ready');contact=await serveContact({store,service,origin:'http://127.0.0.1:0',port:0,recovery});
+  const result=await call('/api/records/restore');assert.equal(result.status,200);assert.equal(result.body.url,c.origin+'/#recover=1');assert.ok(!JSON.stringify(result).includes(c.token));
+  assert.equal((await fetch(c.origin+'/state')).status,401);service.revoke(device.id);assert.equal((await call('/api/state')).status,401);
+  assert.equal((await fetch(c.origin+'/state',{headers:{Authorization:'Bearer '+device.token}})).status,401);
+  assert.equal((await fetch(c.origin+'/action',{method:'POST',headers:{Origin:c.origin,Authorization:'Bearer '+device.token,'Content-Type':'application/json'},body:JSON.stringify({action:'restore',value:{id:'fixture',consent:'restore_records_with_fresh_connections_v1'},revision:'any'})})).status,401);
+  assert.equal(confirmed,0);assert.equal((await c.get()).stage,'ready');
+ }finally{await c.host.close();await contact?.close();await service.close();store.close();rmSync(root,{recursive:true,force:true});}
+});
+
+test('confirmation failure waits for aborted host cleanup before offering a usable retry',async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');
+ const {ContactStore,contactRoute}=await import('../src/contact-store.mjs');const {ContactService}=await import('../src/contact-service.mjs');const {serveContact}=await import('../src/contact-http.mjs');
+ const root=mkdtempSync(join(tmpdir(),'tada-draining-recovery-')),store=new ContactStore({directory:join(root,'data'),passphrase:'SYNTHETIC_DRAINING_HOST_KEY',route:contactRoute({fixture:'draining'}),initialize:true});
+ const service=new ContactService(store,{}, {definitions:[],validate:()=>false,verify:async()=>false,execute:async()=>{throw Error('NO_SOURCE');}});
+ let release,fail,abort,contact,closed=false,starts=0;const draining=new Promise(resolve=>{release=resolve;});
+ const c=await client(async ui=>{
+  starts++;abort=ui.fail;contact=await serveContact({store,service,origin:'http://127.0.0.1:0',port:0});ui.ready(()=>contact.pair({replaceApp:true}));
+  await ui.wait();await contact.close();closed=true;if(starts===1)await draining;
+ },{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:()=>new Promise((resolve,reject)=>{fail=reject;})}});
+ try{
+  await c.action(await c.until('ready'),'restore',{id:'fixture',consent:RESTORE_CONSENT});abort();
+  for(let i=0;i<100&&!closed;i++)await turn();assert.equal(closed,true);fail(Error('CONTACT_APP_RECOVERY_PREVIEW_EXPIRED'));await turn();
+  const waiting=await c.get();assert.equal(waiting.stage,'restoring');assert.equal(waiting.resume_url,undefined);
+  release();const error=await c.until('error');assert.equal(error.retryable,true);assert.equal(error.resume_url,undefined);
+  assert.equal((await c.action(error,'retry')).status,200);await c.until('ready');assert.equal(starts,2);
+ }finally{release();await c.host.close();await contact?.close();await service.close();store.close();rmSync(root,{recursive:true,force:true});}
+});
+
+for(const stage of ['consent','model'])test(`failed confirmation preserves the live ${stage} question and it can still be answered`,async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');let answered=0;
+ const c=await client(async ui=>{await(stage==='consent'?ui.consent():ui.selectModel([{name:'Fixture'}]));answered++;ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();},{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:async()=>{throw Error('CONTACT_APP_RECOVERY_PREVIEW_EXPIRED');}}});
+ try{await c.action(await c.until(stage),'restore',{id:'expired',consent:RESTORE_CONSENT});const s=await c.until(stage);assert.match(s.restore_error,/확인 시간이/u);assert.equal((await c.action(s,'answer',stage==='consent'?true:'1')).status,200);assert.match((await c.until('ready')).restore_error,/확인 시간이/u);assert.equal(answered,1);}finally{await c.host.close();}
+});
+test('late original readiness cannot overwrite the restoration transition',async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');let finishStart,confirm,starts=0,oldReady=false;
+ const c=await client(async ui=>{if(++starts===1){await new Promise(resolve=>{finishStart=resolve;});ui.ready('http://127.0.0.1:8787/#pair=old');oldReady=true;await ui.wait();}else{ui.recordRestore(true);await ui.consent();await ui.wait();}},{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:()=>new Promise(resolve=>{confirm=resolve;})}});
+ try{await c.action(await c.until('preparing'),'restore',{id:'valid',consent:RESTORE_CONSENT});finishStart();for(let i=0;i<100&&!oldReady;i++)await turn();assert.equal(oldReady,true);const s=await c.get();assert.equal(s.stage,'restoring');assert.equal(s.url,undefined);assert.equal(s.restore_request,'valid');confirm();const next=await c.until('consent');assert.equal(next.restoring,true);assert.equal(next.restore_request,'valid');assert.equal(starts,2);}finally{finishStart?.();confirm?.();await c.host.close();}
+});
+test('refreshing an original ready URL retains the failed-confirmation notice',async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');let version=0;
+ const c=await client(async ui=>{ui.ready(()=>`http://127.0.0.1:8787/#pair=fixture${++version}`);await ui.wait();},{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:async()=>{throw Error('CONTACT_APP_RECOVERY_PREVIEW_EXPIRED');}}});
+ try{await c.action(await c.until('ready'),'restore',{id:'expired',consent:RESTORE_CONSENT});const s=await c.until('ready');assert.match(s.restore_error,/확인 시간이/u);assert.match((await c.get()).restore_error,/확인 시간이/u);}finally{await c.host.close();}
+});
+
+test('restore outcome identifiers reject malformed values before confirmation or publication',async()=>{
+ const {RESTORE_CONSENT}=await import('../src/app-records.mjs');let confirmed=0;
+ const c=await client(async ui=>{ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();},{records:{available:true,clearPreview(){},confirm:async()=>{confirmed++;}}});
+ try{for(const id of [null,{},[],7,'','a'.repeat(129),'bad\nname'])assert.equal((await c.action(await c.until('ready'),'restore',{id,consent:RESTORE_CONSENT})).status,409);assert.equal(confirmed,0);assert.equal((await c.get()).restore_request,undefined);}finally{await c.host.close();}
+});

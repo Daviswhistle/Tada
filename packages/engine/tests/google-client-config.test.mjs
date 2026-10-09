@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, lstatSync, chmodSync, symlinkSync, linkSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync, lstatSync, chmodSync, symlinkSync, linkSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes, createCipheriv, createDecipheriv, createHash, randomUUID } from 'node:crypto';
@@ -203,7 +203,7 @@ for (const configured of [false, true]) test(`normal app startup and restart ${c
         process.env.TADA_GOOGLE_OAUTH_CLIENT_SECRET = configured ? (start === 1 ? '' : client.client_secret) : client.client_secret;
       }
       app = await startApp(['--data', f.data, '--chatgpt-profile', profile, '--port', String(port)], {
-        open: async () => {}, instance: async () => ({ existing: false, publish: async () => {}, close() {} }),
+        open: async () => {}, instance: async () => { mkdirSync(f.data + '.app-private', {recursive:true,mode:0o700});return { existing: false, publish: async () => {}, close() {} }; },
         run: (args, { ui }) => main(args, { ui, keyProvider: async () => passphrase, background: {
           status: async () => ({ available: true }),
           configure: async (_enabled, _consent, authorize, prepare) => { authorize(); prepare(); return { enabled: true, transfer: false }; },

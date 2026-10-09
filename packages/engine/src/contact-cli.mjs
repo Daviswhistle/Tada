@@ -13,7 +13,7 @@ import { serveContact, validateContactAddress } from './contact-http.mjs';
 import { followupTimezone } from './followup-contract.mjs';
 import { contactStorageKey } from './contact-key.mjs';
 import { GoogleConnection } from './google-connection.mjs';
-import { loadGoogleClientConfig } from './google-client-config.mjs';
+import { loadGoogleClientConfig, saveGoogleClientConfig } from './google-client-config.mjs';
 import { openSystemBrowser } from './system-browser.mjs';
 
 export const HELP = `Tada contact host — one continuing conversation across browsers and optional private messaging
@@ -146,13 +146,14 @@ export async function closeContactResources({ prompt, mobile, telegram, host, se
   }
   if (failure) throw failure;
 }
-export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey, ui, background } = {}) {
+export async function main(args = process.argv.slice(2), { keyProvider = contactStorageKey, ui, background, storageContext = null } = {}) {
   const options = contactOptions(args);
   if (options.help) { process.stdout.write(HELP); return; }
+  if (storageContext) { options.data=storageContext.data; options.initialize=storageContext.initialize; }
   if (!ui && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
   if (ui && (options.askPassphrase || options.telegram || options.logout)) throw Error('CONTACT_APP_ADVANCED_MODE');
   let accountStore, account, store, service, host, prompt, telegram, mobile, stopAdmission;
-  const profile = options.provider === 'chatgpt' ? resolve(options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`) : undefined;
+  const profile = options.provider === 'chatgpt' ? resolve(storageContext?.profile ?? options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`) : undefined;
   let passphrase;
   if (options.askPassphrase) {
     process.stdout.write('기존 암호 방식으로 기록을 엽니다. ChatGPT 비밀번호가 아닌 Tada 보관 암호이며, 입력은 화면에 표시되지 않습니다.\n');
@@ -163,7 +164,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       process.stdout.write('두 암호가 다릅니다. 처음부터 다시 입력해 주세요.\n');
     }
   } else {
-    passphrase = await keyProvider({ data: options.data, profile, initialize: options.initialize });
+    passphrase = await keyProvider({ data: options.data, profile: storageContext?.keyProfile ?? profile, initialize: options.initialize });
     process.stdout.write('이 Windows 계정으로 대화와 연결 정보를 암호화해 보관합니다. 별도 Tada 암호는 필요하지 않습니다.\n');
   }
   try {
@@ -177,6 +178,11 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       const { ChatGPTAccount } = await import('../../providers/src/chatgpt-account.mjs');
       const { ChatGPTSubscription } = await import('../../providers/src/chatgpt-subscription.mjs');
       accountStore = new ChatGPTStore({ directory: profile, passphrase });
+      if (storageContext?.expectedSubject) {
+        const saved=accountStore.read();
+        if (saved.subject && saved.subject!==storageContext.expectedSubject || storageContext.expectedClient && saved.client && saved.client!==storageContext.expectedClient) throw Error('CHATGPT_ACCOUNT_CHANGED');
+        if (!saved.subject || storageContext.expectedClient && !saved.client) accountStore.save({ ...saved, subject:storageContext.expectedSubject, ...(storageContext.expectedClient ? {client:storageContext.expectedClient} : {}) });
+      }
       account = new ChatGPTAccount(accountStore);
       if (options.logout) {
         const result = await account.logout();
@@ -193,12 +199,14 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       }
       const catalog = await account.models(requestSignal());
       const saved = accountStore.read();
-      let model = options.model ?? saved.model;
+      let model = storageContext?.modelChoice ?? options.model ?? saved.model ?? storageContext?.model;
+      if (storageContext?.restoring && model && !catalog.some(item=>item.slug===model)) model=null;
       if (!model) {
         for (const [i, item] of catalog.entries()) process.stdout.write(`${i + 1}. ${terminalText(item.display_name)}\n`);
         const choice = ui ? await ui.selectModel(catalog.map(item => ({ name: terminalText(item.display_name) }))) : await ownerQuestion('사용할 모델 번호 (Enter: 1): ');
         if (!/^(?:[1-9][0-9]*)?$/u.test(choice)) throw Error('CHATGPT_MODEL_UNAVAILABLE');
         model = catalog[Number(choice || 1) - 1]?.slug;
+        if(storageContext?.restoring && model){ui?.signal.throwIfAborted();storageContext.saveModelChoice?.(model);}
       }
       provider = new ChatGPTSubscription({ account, model });
       identity = await provider.inspect(requestSignal());
@@ -217,15 +225,27 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     ui?.signal.throwIfAborted();
     const route = contactRoute({ version: 1, provider: identity.provider, model: identity.model,
       digest: identity.model_digest, endpoint: options.endpoint, scopes });
-    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize, assistance: options.initialize, mail: options.initialize });
+    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize, assistance: options.initialize, mail: options.initialize, recovery: storageContext?.recovery ?? null });
     if (options.initialize) ui?.initialized?.();
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
-    const googleClient = loadGoogleClientConfig({ data: options.data, passphrase, store });
+    if (storageContext?.googleClient) {
+      const saved=loadGoogleClientConfig({ data:options.data,passphrase,store,env:{} });
+      if (!saved.clientId) {
+        store.close();store=null;
+        saveGoogleClientConfig({data:options.data,passphrase,route,client:storageContext.googleClient});
+        store=new ContactStore({directory:options.data,passphrase,route});
+      } else if (saved.clientId!==storageContext.googleClient.client_id || saved.clientSecret!==storageContext.googleClient.client_secret) throw Error('CONTACT_APP_RECOVERY_CLIENT_CHANGED');
+    }
+    const googleClient = loadGoogleClientConfig({ data: options.data, passphrase, store, ...(storageContext ? {env:{}} : {}) });
+    if (storageContext?.publishDirectory) {
+      store.close();store=null;options.data=storageContext.publishDirectory();
+      store=new ContactStore({directory:options.data,passphrase,route});
+    }
     const savedGoogleClient = background ? loadGoogleClientConfig({ data: options.data, passphrase, store, env: {} }) : null;
     const portableGoogle = !background || googleClient.clientId === savedGoogleClient.clientId && googleClient.clientSecret === savedGoogleClient.clientSecret;
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone, backup: { connection: {
-      provider: { kind: identity.provider, subject: account?.profile.subject ?? null, label: identity.account_label ?? null, model: identity.model },
+      provider: { kind: identity.provider, subject: account?.profile.subject ?? null, label: identity.account_label ?? null, model: identity.model, client_id: account?.profile.client ?? null },
       google_client: googleClient.clientId ? { client_id: googleClient.clientId, client_secret: googleClient.clientSecret ?? '' } : null,
     } } });
     stopAdmission = () => service.beginStop();
@@ -258,6 +278,9 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       telegram.on('pairing', ({ candidate, user }) => process.stdout.write(`텔레그램 연결 요청 · 사용자 ID ${user}. 본인이 방금 연 채팅인지 확인한 뒤 /telegram-approve ${candidate}\n`));
       telegram.on('status', code => process.stderr.write(`텔레그램 연락 상태: ${code}. 브라우저의 대화와 결과는 유지됩니다.\n`));
     }
+    ui?.signal.throwIfAborted();
+    await storageContext?.beforeReady?.();
+    ui?.signal.throwIfAborted();
     if (!options.telegram) {
       const { MobileContact } = await import('./mobile-contact.mjs');
       mobile = new MobileContact(store, service); await mobile.restore();
@@ -267,7 +290,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       if (!portableGoogle) throw Error('CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED');
     }),
       handoff: async () => { await service.stopWhenIdle(); await background.handoff(); } } : null;
-    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
+    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, recovery: ui?.recovery ?? null, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
     if (ui) {
       service.on('fault', () => ui.fail());
       ui.signal.throwIfAborted();
@@ -304,7 +327,11 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       } else if (/^\/revoke [a-f0-9-]{36}$/u.test(line)) service.revoke(line.slice(8));
       else process.stdout.write('대화는 연결한 브라우저에서 하세요. 호스트 명령: /pair, /devices, /revoke DEVICE_ID, /quit\n');
     }
-  } finally { passphrase = ''; if (stopAdmission) ui?.signal.removeEventListener('abort', stopAdmission); await closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }); }
+  } finally {
+    passphrase = ''; if (stopAdmission) ui?.signal.removeEventListener('abort', stopAdmission);
+    try { await closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }); }
+    catch { const error=Error('CONTACT_APP_CLOSE_FAILED');error.retryable=false;throw error; }
+  }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {

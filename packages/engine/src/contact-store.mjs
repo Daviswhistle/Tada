@@ -277,7 +277,9 @@ export class ContactStore {
     return this.#tx(() => {
       this.#device(device);
       const records = Object.fromEntries(Object.keys(BACKUP_COLUMNS).map(name => [name, []]));
-      const result = { version: this.#version >= 7 ? 2 : 1, ...(this.#version >= 7 ? { recovered: this.#recovered.groups() } : {}), created_at: Date.now(), source: { journal_id: this.#id, schema_version: this.#version,
+      const historical = this.#recovered?.groups() ?? [];
+      const archiveVersion = connection.provider && Object.hasOwn(connection.provider,'client_id') || historical.some(group => group.version === 3) ? 3 : this.#version >= 7 ? 2 : 1;
+      const result = { version: archiveVersion, ...(archiveVersion >= 2 ? { recovered: historical } : {}), created_at: Date.now(), source: { journal_id: this.#id, schema_version: this.#version,
         route: this.#db.prepare('SELECT route FROM identity WHERE singleton=1').get().route }, connection: structuredClone(connection), records };
       let bytes = Buffer.byteLength(JSON.stringify(result)), count = 0;
       const add = (name, row) => {

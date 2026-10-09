@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { main, contactOptions } from './contact-cli.mjs';
 import { acquireAppInstance } from './app-instance.mjs';
+import { AppRecords } from './app-records.mjs';
 import { serveSetup } from './app-setup.mjs';
 import { openSystemBrowser } from './system-browser.mjs';
 import { BackgroundApp } from './background-app.mjs';
@@ -23,7 +24,7 @@ export async function openAppBrowser(url) {
   if (!/^http:\/\/127\.0\.0\.1:[0-9]+\/#setup=[A-Za-z0-9_-]{43}$/u.test(url)) throw Error('INVALID_APP_URL');
   return openSystemBrowser(url);
 }
-export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance, signal, onReady = () => {}, platform = process.platform, backgroundFactory = (options, config) => platform === 'win32' ? new WindowsBackgroundApp(options, config) : new BackgroundApp(options, config) } = {}) {
+export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance, signal, onReady = () => {}, platform = process.platform, recordsFactory = options => new AppRecords(options), backgroundFactory = (options, config) => platform === 'win32' ? new WindowsBackgroundApp(options, config) : new BackgroundApp(options, config) } = {}) {
   if (args.includes('--help') || args.includes('-h')) return main(['--help']);
   if (args.filter(arg => arg === '--background').length > 1) throw Error('CONTACT_OPTIONS_INVALID');
   const backgroundMode = args.includes('--background'); args = args.filter(arg => arg !== '--background');
@@ -60,8 +61,13 @@ export async function startApp(args = process.argv.slice(2), { open = openAppBro
   let setup, initialized = false;
   try {
     const background = backgroundFactory(options, { background: backgroundMode, handoff: async () => { await close(); } });
-    setup = await serveSetup({ autoStart: false, autoRetry: backgroundMode, run: ui => run(launchArgs(initialized ? args.filter(arg => arg !== '--init') : args),
-      { ui: { ...ui, initialized: () => { initialized = true; }, ready: source => { ui.ready(source); onReady(); } }, background }) });
+    const records = recordsFactory(options);
+    setup = await serveSetup({ autoStart: false, autoRetry: backgroundMode, records, run: async ui => {
+      const storageContext = await records.context();
+      ui.recordRestore(storageContext?.restoring === true, storageContext?.expectedLabel ?? null);
+      return run(launchArgs(initialized ? args.filter(arg => arg !== '--init') : args),
+        { ui: { ...ui, initialized: () => { initialized = true; }, ready: source => { ui.ready(source, storageContext?.restoring === true); onReady(); } }, background, storageContext });
+    } });
     await slot.publish(setup.url);
   } catch (error) { await setup?.close(); slot.close(); return showFailure(error); }
   let closing;

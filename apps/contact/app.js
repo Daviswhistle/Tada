@@ -185,6 +185,11 @@ function clearBackup() {
   $('backup-status').textContent = '';
 }
 $('backup-code-saved').onclick = () => { backupCodePending = false; $('backup-code-saved').hidden = true; $('backup-create').disabled = false; };
+$('records-restore').onclick = async () => {
+  $('records-restore').disabled=true;
+  try { const result=await api('/api/records/restore',{});if(!/^http:\/\/127\.0\.0\.1:[0-9]+\/#recover=1$/u.test(result.url))throw Error('복원 화면을 열지 못했어요. Tada를 다시 열어 주세요.');location.assign(result.url); }
+  catch(error){notice(error.message);}finally{$('records-restore').disabled=false;}
+};
 $('backup-create').onclick = async () => {
   if (backupRequest || backupCodePending) return;
   clearBackup(); const portable = $('backup-portable').checked === true;
@@ -421,6 +426,7 @@ async function refresh(older = false, quiet = false) {
   try {
     const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`, undefined, { signal: controller.signal, handleAuthentication: false });
     if (generation !== requestGeneration) return;
+    $('records-restore').hidden = result.record_restore_available !== true;
     if (documentEditing !== (result.document_editing === true)) { documentEditing = result.document_editing === true; rendered = ''; }
     paired(true);
     if ($('notice').textContent === connectionLost) notice('');

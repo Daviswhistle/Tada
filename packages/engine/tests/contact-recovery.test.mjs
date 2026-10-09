@@ -22,6 +22,24 @@ function fixture() {
 }
 function start(s,d,text='현재 요청') { const seq=s.submit(d.id,randomUUID(),text).seq; assert.equal(s.claim()?.seq,seq); return seq; }
 function finish(s,seq,text='저장한 답변',document=null,proposals=[]) { s.finish(seq,{text,sources:[],verification:'not_applicable'},cp,proposals,document); }
+test('v3 registration and mixed legacy history survive repeated recovery, restart and encrypted rebackup',async()=>{
+ const e=fixture();try{
+  const first=start(e.old,e.owner,'처음 기록');finish(e.old,first);
+  const legacy=e.old.exportRecords(e.owner.id),one=e.open('registration-one',{initialize:true,recovery:legacy}),d=one.addDevice('new');
+  const next=start(one,d,'새 기록');finish(one,next);
+  const provider={kind:'chatgpt-subscription',subject:'synthetic-owner',label:'owner@example.test',model:'synthetic-model',client_id:'oaiapp_fixture'};
+  const snapshot=one.exportRecords(d.id,{provider,google_client:null});assert.equal(snapshot.version,3);assert.equal(snapshot.recovered[0].version,1);
+  const protector={kind:'windows-dpapi-v1',protect:async key=>Buffer.from(key),unprotect:async key=>Buffer.from(key)};
+  const decoded=await openRecordBackup((await createRecordBackup(snapshot,{protector})).bytes,{protector});
+  const two=e.open('registration-two',{initialize:true,recovery:decoded}),d2=two.addDevice('second');two.close();
+  const reopened=e.open('registration-two');assert.equal(reopened.claim(),null);assert.equal(reopened.readTurn(first).recovery.generation,legacy.source.journal_id);assert.equal(reopened.readTurn(next).recovery.generation,snapshot.source.journal_id);
+  const again=reopened.exportRecords(d2.id);assert.equal(again.version,3);assert.equal(again.recovered[1].connection.provider.client_id,'oaiapp_fixture');
+  const third=e.open('registration-three',{initialize:true,recovery:again});assert.equal(third.readTurn(next).text,'새 기록');third.close();
+  assert.equal(e.open('registration-three').readTurn(first).text,'처음 기록');
+  const nested=structuredClone(again);nested.recovered[1].recovered=[legacy];assert.throws(()=>validateRecoveryGroups([nested]),/INVALID/u);
+  const rewritten=structuredClone(again);rewritten.version=2;await assert.rejects(createRecordBackup(rewritten,{protector}),/INVALID/u);
+ }finally{e.close();}
+});
 function google(s,d) { s.saveGoogleCredential(d.id,{version:2,send_enabled:true,epoch:randomUUID(),device:d.id,scopes:[...GOOGLE_SEND_SCOPES],refresh_token:'SYNTHETIC_REFRESH_TOKEN_ONLY_123',email:'owner@example.test',connected_at:Date.now(),last_checked:null,last_error:null,reconnect_required:false},null); }
 function records(e) {
   const {old:s,owner:d}=e;

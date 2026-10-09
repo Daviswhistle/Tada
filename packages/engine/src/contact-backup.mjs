@@ -30,24 +30,27 @@ export const BACKUP_COLUMNS = Object.freeze({
   browser_actions: 'name,payload',
 });
 export function backupRecordGroups(value) {
-  return [...(value.recovered ?? []), value.version === 2 ? { ...value, recovered: [] } : value];
+  return [...(value.recovered ?? []), value.version >= 2 ? { ...value, recovered: [] } : value];
 }
 export function validateBackupSnapshot(value) {
-  if (!shape(value, value?.version === 2 ? 'version,created_at,source,connection,records,recovered' : 'version,created_at,source,connection,records') || ![1,2].includes(value.version) || !integer(value.created_at)
+  if (!shape(value, value?.version >= 2 ? 'version,created_at,source,connection,records,recovered' : 'version,created_at,source,connection,records') || ![1,2,3].includes(value.version) || !integer(value.created_at)
       || !shape(value.source, 'journal_id,schema_version,route') || !uuid(value.source.journal_id)
-      || !(value.version === 2 ? [7] : [1,2,3,4,5,6]).includes(value.source.schema_version) || !hex(value.source.route)
+      || !(value.version === 3 ? [1,2,3,4,5,6,7] : value.version === 2 ? [7] : [1,2,3,4,5,6]).includes(value.source.schema_version) || !hex(value.source.route)
       || !shape(value.connection, 'provider,google_client') || !shape(value.records, Object.keys(BACKUP_COLUMNS).join(','))) fail();
-  if (value.version === 2) {
-    if (!Array.isArray(value.recovered)) fail();
+  if (value.version >= 2) {
+    if (!Array.isArray(value.recovered) || value.source.schema_version < 7 && value.recovered.length) fail();
     for (const prior of value.recovered) {
-      if (!(prior?.version === 1 || prior?.version === 2 && Array.isArray(prior.recovered) && prior.recovered.length === 0)) fail();
+      if (!(prior?.version === 1 || (value.version === 3 ? [2,3] : [2]).includes(prior?.version) && Array.isArray(prior.recovered) && prior.recovered.length === 0)) fail();
       validateBackupSnapshot(prior);
     }
   }
   if (Buffer.byteLength(JSON.stringify(value)) > MAX_BACKUP_BYTES || Buffer.byteLength(JSON.stringify(backupRecordGroups(value))) > MAX_BACKUP_BYTES) throw Error('CONTACT_BACKUP_TOO_LARGE');
   const provider = value.connection.provider, client = value.connection.google_client;
-  if (provider !== null && (!shape(provider, 'kind,subject,label,model') || !['chatgpt-subscription', 'ollama-local'].includes(provider.kind)
+  if (provider !== null && (!shape(provider, value.version===3 ? 'kind,subject,label,model,client_id' : 'kind,subject,label,model') || !['chatgpt-subscription', 'ollama-local'].includes(provider.kind)
       || !(provider.subject === null || text(provider.subject, 512)) || !(provider.label === null || text(provider.label, 320)) || !text(provider.model, 256))) fail();
+  if(value.version===3 && provider!==null && (provider.kind==='chatgpt-subscription'
+    ? typeof provider.client_id!=='string' || !/^[A-Za-z0-9_-]{1,200}$/u.test(provider.client_id) || provider.client_id==='dynamic_agent_client' || typeof provider.subject!=='string' || !provider.subject.length
+    : provider.client_id!==null))fail();
   if (client !== null && (!shape(client, 'client_id,client_secret') || !text(client.client_id, 200)
       || !/^[A-Za-z0-9._-]{10,200}\.apps\.googleusercontent\.com$/u.test(client.client_id) || !text(client.client_secret, 4096))) fail();
   let count = (value.recovered ?? []).reduce((total, prior) => total + Object.values(prior.records).reduce((sum, rows) => sum + rows.length, 0), 0);

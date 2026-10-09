@@ -33,7 +33,7 @@ export function validateRecoveryGroups(groups) {
   let count = 0;
   for (const group of groups) {
     validateBackupSnapshot(group);
-    if (group.version === 2 && group.recovered.length || journals.has(group.source.journal_id)) fail();
+    if (group.version >= 2 && group.recovered.length || journals.has(group.source.journal_id)) fail();
     journals.add(group.source.journal_id);
     for (const [name, minimum] of Object.entries({telegram_outbox:2,followups:3,followup_proposals:3,followup_notices:3,followup_reviews:4,proactive_runs:5,browser_actions:5,mail_actions:6})) if (group.source.schema_version < minimum && group.records[name].length) fail();
     for (const [name, rows] of Object.entries(group.records)) for (const row of rows) {
