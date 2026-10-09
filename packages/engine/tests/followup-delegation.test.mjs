@@ -187,7 +187,9 @@ test('expired delegation owner cannot authorize a turn from a newer live device'
   } finally { e.close(); }
 });
 
-test('automatic care does not acquire personal-work mutation permission', () => {
+test('automatic care does not acquire personal-work mutation permission', t => {
+  // Exercise admission during care hours regardless of when the suite runs.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-09T12:00:00+09:00') });
   const e = env(); try {
     const grant = enable(e), seed = stage(e); finish(e, seed, grant);
     e.store.configureProactive(e.device, true, 'daily_conversation_suggestions_v1', 'Asia/Seoul');

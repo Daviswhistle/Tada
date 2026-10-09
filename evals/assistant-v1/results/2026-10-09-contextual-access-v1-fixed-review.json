@@ -1,0 +1,49 @@
+{
+  "implementation": "4389bf27efa073c1f950468b1c8ef2c9adbdf0bd",
+  "report_sha256": "46243a0eef582fc9f15bcb191c49416b63cde6cab80b1e969bd27ca2f9114575",
+  "reviewer": "independent release_acceptance_audit; primary checked raw results",
+  "fixture_version": 1,
+  "variants": [
+    {
+      "case": "A06",
+      "variant": 1,
+      "status": "passed",
+      "reason": "Retrieved both documents and recipient roles, named both recipients and both documents in one combination question. No sending or invented completion."
+    },
+    {
+      "case": "A06",
+      "variant": 2,
+      "status": "failed",
+      "reason": "Retrieved both candidates but asked confirmation of the recent recipient, omitting the other known candidate."
+    },
+    {
+      "case": "A07",
+      "variant": 1,
+      "status": "not_qualified",
+      "reason": "Fixture already identifies the meeting and defers time/place. Initial preparation and later calendar-grounded continuation are valid, but missing-access necessity is unproven. Conversation-only continuation."
+    },
+    {
+      "case": "A07",
+      "variant": 2,
+      "status": "not_qualified",
+      "reason": "Same fixture validity issue. Existing document continued with corrected time/place, root 2 revision 2. No general access acceptance."
+    }
+  ],
+  "first_review_reassessment": {
+    "report_sha256": "adef877c9ecc37eb030d509a4dec281045a1d6e06620a78857c0bdea0c4907ed",
+    "A06": "Original failed judgments retained.",
+    "A07": "Original missing-connection product-failure judgments superseded: owner had already identified meeting and deferred time/place. These fixtures do not establish the required access-dependent identification case. Neither pass nor grounds to force unnecessary connection questions."
+  },
+  "requests": {
+    "observed": 23,
+    "unknown": 0,
+    "public_web": 0
+  },
+  "limitations": [
+    "No sending tool.",
+    "Synthetic Google OAuth/responses only.",
+    "Empty inbox lookup during Aurora continuation had weak necessity.",
+    "No new formal case passed; A06 still has one failed variant and A07 needs distinct valid fixture version."
+  ],
+  "product_acceptance": "not_passed"
+}

@@ -1,0 +1,45 @@
+{
+  "implementation": "a14abff3859dccdc945ffbe7998f2d3f8ead36b8",
+  "report_sha256": "adef877c9ecc37eb030d509a4dec281045a1d6e06620a78857c0bdea0c4907ed",
+  "harness_sha256": "0b8967c521bb6e4e4b3d7a50a472778b2ef524bc42f20ef5b046b8b6f1c77023",
+  "reviewer": "independent release_acceptance_audit; primary verified answers and observations",
+  "variants": [
+    {
+      "case": "A06",
+      "variant": 1,
+      "status": "failed",
+      "reason": "Read both documents but did not retrieve the other recipient; proposed both documents to the most recently mentioned person instead of naming unresolved choices."
+    },
+    {
+      "case": "A06",
+      "variant": 2,
+      "status": "failed",
+      "reason": "Read both recipients and explicit undecided combination, then assumed the most recent recipient and asked only which document."
+    },
+    {
+      "case": "A07",
+      "variant": 1,
+      "status": "failed",
+      "reason": "Useful preparation and accurate connected continuation, but initial answer deferred missing time/location without requesting the needed connection or narrow alternative. No new document in either phase: continuity is conversational, not document lineage."
+    },
+    {
+      "case": "A07",
+      "variant": 2,
+      "status": "failed",
+      "reason": "Useful preparation and latest schedule correction with same-root revision, but initial answer merely deferred missing access instead of enabling the necessary handoff."
+    }
+  ],
+  "requests": {
+    "observed": 22,
+    "unknown": 0,
+    "public_web": 0
+  },
+  "limitations": [
+    "No sending tool: no evidence of enabled-sender dispatch guard.",
+    "Synthetic OAuth and Google responses, not live Google account or physical device qualification.",
+    "The first meeting continuation also read an empty inbox without a concrete documented need.",
+    "Mechanical lineage predicate is conditional on documents being present; absence is not lineage evidence.",
+    "Owner history says to check time/place when confirmed. This is retained unchanged; future rules must still respect explicit instructions to wait."
+  ],
+  "product_acceptance": "not_passed"
+}

@@ -1,0 +1,68 @@
+{
+  "implementation": "f9762198a67d6fda5861072fe2ddaadb5fac444d",
+  "fixture_version": 2,
+  "report_sha256": "cad711588bab0aceeb11e50943196311e67a1b320f4c35da9dca6171330a46a8",
+  "harness_sha256": "bc9e759079306a36983f5e9c73133f97d9a965c1daf4e137ad3c1e16da7e54da",
+  "reviewer": "independent release_acceptance_audit; primary checked answers, observations, document hashes and usage",
+  "variants": [
+    {
+      "case": "A06",
+      "variant": 1,
+      "status": "passed",
+      "evidence": "Retrieved relevant history and both documents, named both recipients and both documents, asked combination without guessing or sending."
+    },
+    {
+      "case": "A06",
+      "variant": 2,
+      "status": "passed",
+      "evidence": "Named both Jeong Ujin and Lee Seoyeon with roles and both document choices, correcting earlier one-recipient confirmation."
+    },
+    {
+      "case": "A07",
+      "variant": 1,
+      "status": "passed",
+      "evidence": "Read both candidate documents, extracted preparation criteria/items and asked which meeting. After connection selected Aurora on October 10, distinguished Haesol on October 11, completed actionable preparation in same conversation."
+    },
+    {
+      "case": "A07",
+      "variant": 2,
+      "status": "passed",
+      "evidence": "Did not choose most recent Aurora document. After calendar observation selected Haesol on October 10, distinguished Aurora on October 12, corrected tentative time/location and completed preparation."
+    }
+  ],
+  "shared_evidence": [
+    "All four variants used normal service and existing history/document tools.",
+    "Initial A07 preparation was concise useful triage, not a complete detailed agenda.",
+    "A07 calendar evidence hashes and final citations matched; no Google requests before connection and no unrelated mail reads.",
+    "A07 continuation reused original material and earlier conversation without target names copied into the continuation prompt.",
+    "No new document in either A07 variant: conversation continuity only, not saved-version lineage evidence.",
+    "Original documents unchanged; 21 actual observed requests, zero unknown, zero web."
+  ],
+  "limitations": [
+    "No sending tool, so enabled-sender dispatch safety is not qualified.",
+    "Google OAuth and calendar responses are synthetic; real subscription inference only.",
+    "No physical-device or general browser/native action qualification.",
+    "Actual presentation screens and shipment example files were not opened or claimed completed."
+  ],
+  "formal_cases_passed": [
+    "A01",
+    "A04",
+    "A05",
+    "A06",
+    "A07",
+    "A09",
+    "A10",
+    "A11",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "formal_cases_not_run": [
+    "A02",
+    "A03",
+    "A08",
+    "A12"
+  ],
+  "product_acceptance": "not_passed"
+}
