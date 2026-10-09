@@ -89,7 +89,7 @@ test('background setup recovers transient startup observations without restartin
   } finally { await c.host.close(); }
 });
 
-for (const code of ['CHATGPT_REFRESH_UNCERTAIN', 'CONTACT_OS_PROTECTION_FAILED', 'CONTACT_ASSISTANCE_UPGRADE_REQUIRED']) {
+for (const code of ['CHATGPT_REFRESH_UNCERTAIN', 'CONTACT_OS_PROTECTION_FAILED', 'CONTACT_ASSISTANCE_UPGRADE_REQUIRED', 'CONTACT_MAIL_UPGRADE_REQUIRED']) {
   test(`background setup leaves ${code} for owner recovery instead of retrying`, async () => {
     let attempts = 0;
     const c = await client(async () => { attempts++; throw Error(code); }, { autoRetry: true, retryDelays: [10] });

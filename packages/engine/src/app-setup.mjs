@@ -21,6 +21,7 @@ const messages = {
   CONTACT_GOOGLE_CLIENT_CONFIG_OWNER_REQUIRED: 'Google 연결 준비 정보를 저장하려면 같은 Tada 기록을 안전하게 열어야 해요. 실행 중인 Tada를 종료한 뒤 기존 보호 키로 설정을 복원해 주세요.',
   CONTACT_GOOGLE_CLIENT_CONFIG_GRANT_PRESENT: '이미 연결된 Google 계정의 앱 설정을 바꾸지 않았어요. 기존 설정을 사용하거나 Tada 설정에서 Google 연결을 해제한 뒤 다시 준비해 주세요.',
   CONTACT_GOOGLE_CLIENT_CONFIG_UPGRADE_REQUIRED: 'Google 연결 준비 정보를 저장하려면 기록 업데이트가 필요해요. Tada를 열고 원본을 백업한 뒤 기존 대화를 이어 쓸 수 있도록 업데이트해 주세요.',
+  CONTACT_MAIL_UPGRADE_REQUIRED: '메일 초안과 발송 결과를 보관하려면 기록 업데이트가 필요해요. 원본을 백업한 뒤 기존 대화와 연결을 그대로 이어갑니다. 업데이트 자체로 메일 발송 권한이 켜지지는 않아요.',
   CONTACT_ASSISTANCE_UPGRADE_REQUIRED: '먼저 챙겨보기와 휴대폰 연결을 추가하려면 기록 업데이트가 필요해요. 원본을 백업한 뒤 기존 대화를 그대로 이어갑니다.',
   CONTACT_REVIEW_UPGRADE_REQUIRED: '이전 버전에서 남긴 대화예요. 먼저 원본을 백업하고, 지금 버전에서 이어 쓸 수 있도록 기록을 업데이트할 수 있어요.',
   CONTACT_APP_ACTION_REQUIRES_RESTART: '다시 연결하거나 기록을 업데이트하려면 실행 중인 Tada를 종료한 뒤 다시 열어 주세요. 대화는 그대로 보관돼요.',
@@ -84,7 +85,7 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
       // Only transient startup observations are repeatable. Login exchanges,
       // uncertain refreshes, storage failures and admitted work are not retried.
       retry = autoRetry && error?.retryable !== false && !signal.aborted && !entry && !interactive && (['CHATGPT_NETWORK_FAILED', 'OLLAMA_UNAVAILABLE', 'EADDRINUSE', 'ASSISTANT_CANCELLED'].includes(error?.message) || error?.code === 'EADDRINUSE' || error?.status >= 500 && error?.status <= 599);
-      const needsUpgrade = !signal.aborted && ['CONTACT_REVIEW_UPGRADE_REQUIRED', 'CONTACT_ASSISTANCE_UPGRADE_REQUIRED'].includes(error?.message);
+      const needsUpgrade = !signal.aborted && ['CONTACT_REVIEW_UPGRADE_REQUIRED', 'CONTACT_ASSISTANCE_UPGRADE_REQUIRED', 'CONTACT_MAIL_UPGRADE_REQUIRED'].includes(error?.message);
       if (!closed) publish('error', { message: setupError(signal.aborted ? signal.reason : error), retryable: !needsUpgrade && error?.retryable !== false, upgrade: needsUpgrade, reauthorize: ['CHATGPT_SIGN_IN_REQUIRED', 'CHATGPT_REFRESH_UNCERTAIN', 'CHATGPT_PLAN_PERMISSION_REQUIRED'].includes(error?.message) });
     }).finally(() => {
       task = null; answer = null;

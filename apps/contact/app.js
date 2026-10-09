@@ -1,6 +1,7 @@
 // Browser receives visible turns, never private tool context, host secrets or an execution API.
 const connectionLost = '연결이 잠시 끊겼어요. 작성한 내용은 그대로 있어요.';
 const $ = id => document.getElementById(id);
+let mailSendUnknown = false, mailRecord = null, mailTarget = null, mailBusy = false, mailDirty = false, mailGoogle = null, mailDisableBusy = false, mailGeneration = 0, mailDiscardAction = null, mailRead = null, mailRefresh = null;
 const link = new URLSearchParams(location.hash.slice(1));
 let code = link.get('pair');
 const autoPair = link.get('auto') === '1';
@@ -120,6 +121,17 @@ const errors = {
   CONTACT_FOLLOWUP_EXPIRED: '제안의 유효시간이 지났습니다. 현재 의도와 시각을 확인해 새로 맡겨 주세요.',
   CONTACT_FOLLOWUP_TIME_INVALID: '확인 시각이 지났거나 날짜·시간대가 유효하지 않습니다. 새 시각으로 이야기해 주세요.',
   CONTACT_FOLLOWUP_DECISION_CONFLICT: '이미 처리되거나 다른 변경으로 대체된 제안입니다. 최신 업무 기록을 확인해 주세요.',
+  CONTACT_MAIL_INVALID: '메일 주소·제목·내용을 확인해 주세요. 받는 사람은 최대 20명, 내용은 16 KiB까지 보관할 수 있어요.',
+  CONTACT_MAIL_DRAFT_CHANGED: '다른 곳에서 초안이 바뀌었어요. 지금 입력은 유지했습니다. 최신 상태를 확인한 뒤 다시 수정해 주세요.',
+  CONTACT_MAIL_ALREADY_DISPATCHED: '이 초안은 이미 발송을 시작했거나 정리한 기록이에요. 최신 상태를 확인해 주세요. 자동 재발송하지 않습니다.',
+  CONTACT_MAIL_STATE_INVALID: '이 상태에서는 요청한 작업을 할 수 없어요. 최신 상태를 확인해 주세요.',
+  CONTACT_MAIL_BUSY: '이 메일의 발송 또는 결과 확인이 진행 중이에요. 잠시 뒤 최신 상태를 확인해 주세요.',
+  CONTACT_MAIL_SEND_PERMISSION_REQUIRED: 'Google에서 이 계정의 발송 권한을 먼저 연결해 주세요.',
+  CONTACT_MAIL_CONSENT_REQUIRED: '받는 사람과 내용을 확인한 뒤 이 내용으로 보내기를 눌러 주세요.',
+  CONTACT_MAIL_ACCOUNT_CHANGED: '초안을 만든 Google 계정과 현재 계정이 달라요. 초안의 계정을 다시 연결해 주세요.',
+  CONTACT_MAIL_REPLY_READ_REQUIRED: '답장할 원본 메일을 이번 대화에서 먼저 읽어야 해요. 원본을 확인해 답장 초안을 다시 요청해 주세요.',
+  CONTACT_MAIL_UPGRADE_REQUIRED: 'Tada를 다시 열고 기록 백업·업데이트를 마치면 메일 초안을 이어 쓸 수 있어요.',
+  CONTACT_MAIL_NOT_FOUND: '이 메일 기록을 찾지 못했어요. 대화에서 다시 확인해 주세요.',
   CONTACT_GOOGLE_NOT_CONFIGURED: '이 Tada에서는 아직 Google 연결을 준비하지 못했어요. 계정이나 연결 키를 직접 입력할 필요는 없습니다.',
   CONTACT_GOOGLE_CONSENT_REQUIRED: 'Google에서 읽을 항목과 선택한 모델로의 전송 안내를 확인해 주세요.',
   CONTACT_GOOGLE_RELATED_CONSENT_REQUIRED: '관련 메일을 검색하고 보낸 기록을 확인할 범위를 먼저 확인해 주세요.',
@@ -151,7 +163,7 @@ async function api(path, data, options = {}) {
 }
 function paired(yes, stopConnection = true) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings-open').hidden = !yes; if (!yes && $('settings').open) $('settings').close(); if (!yes) $('followups').hidden = true;
-  if (!yes) { editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
+  if (!yes) { mailGeneration++; if ($('mail-editor').open) $('mail-editor').close(); mailRecord = null; mailDirty = false; for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).value = ''; editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
@@ -256,6 +268,11 @@ function render() {
     const article = document.createElement('article'); article.className = 'turn';
     const user = document.createElement('div'); user.className = ['proactive', 'owner_edit'].includes(turn.origin) ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'owner_edit' ? '직접 수정했어요' : turn.origin === 'proactive' ? (turn.answer?.calendar_reminder ? '일정 알림' : '먼저 챙겨봤어요') : turn.text; article.append(user);
     if (turn.answer) {
+      if (turn.answer.mail_action_id) {
+        const card = document.createElement('div'); card.className = 'document-card';
+        const open = document.createElement('button'); open.type = 'button'; open.textContent = '메일 초안·발송 결과 확인';
+        open.onclick = () => openMail(turn.answer.mail_action_id); card.append(open); article.append(card);
+      }
       if (turn.answer.document) {
         const doc = turn.answer.document, card = document.createElement('div'); card.className = 'document-card';
         const title = document.createElement('strong'); title.textContent = `${doc.title} · 버전 ${doc.revision}`;
@@ -354,6 +371,7 @@ async function refresh(older = false, quiet = false) {
     render();
     renderFollowups(result.followups);
     renderAssistance(result);
+    void refreshOpenMail();
     $('provider-info').textContent = result.provider ? `${result.provider.provider === 'chatgpt-subscription' ? 'ChatGPT 구독' : '로컬 모델'} · ${result.provider.model}${result.provider.account ? ' · ' + result.provider.account : ''}` : '';
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
@@ -437,6 +455,13 @@ relatedMail.append(relatedDetails);
 const relatedStatus = element('p', '', 'muted'); relatedStatus.id = 'related-mail-status'; relatedStatus.setAttribute('role', 'status');
 const relatedToggle = element('button', '범위를 확인하고 켜기'); relatedToggle.id = 'related-mail-toggle'; relatedToggle.type = 'button';
 relatedMail.append(relatedStatus, relatedToggle); googleSection.append(relatedMail);
+const mailDisable = element('button', 'Tada에서 메일 발송 끄기'); mailDisable.type = 'button'; mailDisable.hidden = true; googleSection.append(mailDisable);
+mailDisable.onclick = async () => {
+  if (mailDisableBusy) return; mailDisableBusy = true; renderGoogle(mailGoogle);
+  try { await mailRequest('/api/google/disable-mail', {}); await refresh(); }
+  catch (error) { notice(error.message); }
+  finally { mailDisableBusy = false; renderGoogle(mailGoogle); }
+};
 $('google-settings-slot').append(googleSection);
 let relatedEnabled = false, relatedBusy = false;
 relatedToggle.onclick = async () => {
@@ -549,8 +574,12 @@ for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 �
 }
 let proactiveEnabled = false; let proactiveMode = 'daily';
 function renderGoogle(state) {
+  mailGoogle = state; updateMailControls();
   googleSection.hidden = state?.available !== true;
   if (!state?.available) return;
+  mailDisable.hidden = state.mail?.enabled !== true && state.mail?.connecting !== true;
+  mailDisable.disabled = mailDisableBusy;
+  mailDisable.textContent = state.mail?.connecting ? '발송 권한 연결 취소 · 읽기 연결 유지' : 'Tada에서 메일 발송 끄기';
   relatedEnabled = state.related_mail?.enabled === true;
   relatedMail.hidden = !state.has_credential;
   relatedToggle.disabled = relatedBusy || !state.connected || state.pending;
@@ -558,8 +587,8 @@ function renderGoogle(state) {
   relatedToggle.setAttribute('aria-pressed', String(relatedEnabled));
   relatedStatus.textContent = relatedEnabled ? '켜져 있어요. 관련 메일과 보낸 기록을 함께 확인합니다.' : '꺼져 있어요. 최근 7일 받은편지함만 확인합니다.';
   googleReplyScope.textContent = relatedEnabled
-    ? '아래의 관련 메일 탐색도 켜져 있어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다.'
-    : '보낸편지함과 전체 대화는 읽지 않아 답장 여부는 확인할 수 없어요. 메일 발송·일정 변경·첨부 다운로드는 하지 않습니다. Google 권한 화면에서도 읽기 범위를 확인할 수 있어요.';
+    ? '아래의 관련 메일 탐색도 켜져 있어요. 이 읽기 기능은 메일 발송·일정 변경·첨부 다운로드를 하지 않습니다.'
+    : '보낸편지함과 전체 대화는 읽지 않아 답장 여부는 확인할 수 없어요. 이 읽기 기능은 메일 발송·일정 변경·첨부 다운로드를 하지 않습니다. Google 권한 화면에서도 읽기 범위를 확인할 수 있어요.';
   googleConnect.disabled = !state.configured || state.pending || state.state === 'upgrade_required';
   googleConnect.textContent = state.connected || state.state === 'reconnect_required' ? 'Google 다시 연결' : '내용을 확인하고 Google 연결';
   googleDisconnect.hidden = !state.has_credential && !state.pending;
@@ -861,7 +890,7 @@ $('document-editor-form').onsubmit = async event => {
     editorLock(!!editorState?.pending);
   }
 };
-window.addEventListener('beforeunload', event => { if (editorUnsaved()) { event.preventDefault(); event.returnValue = ''; } });
+window.addEventListener('beforeunload', event => { if (editorUnsaved() || mailDirty) { event.preventDefault(); event.returnValue = ''; } });
 
 function renderBrowser(state) {
   browserView = state;
@@ -905,3 +934,117 @@ $('browser-refresh').onclick = () => browserTask(async () => {
 });
 const stopBrowser = () => browserTask(async () => renderBrowser(await api('/api/browser/stop', {})));
 $('browser-stop').onclick = stopBrowser; $('browser-sharing-stop').onclick = stopBrowser;
+
+const mailStates = { DRAFT: '초안 · 아직 보내지 않았어요.', DISCARDED: '정리한 초안 · 발송하지 않았어요.', DISPATCHING: '발송을 확인하고 있어요. 다시 보내지 마세요.', ACCEPTED: 'Gmail이 메일을 접수했어요. 받는 사람의 수신 여부는 아직 알 수 없어요.', VERIFIED: '보낸편지함에서 받는 사람과 내용이 일치하는 사본을 확인했어요. 수신·열람 확인은 아닙니다.', UNCERTAIN: '발송 결과를 확인하지 못했어요. 중복 발송을 막기 위해 다시 보내지 않습니다. 보낸편지함에서 결과를 확인해 주세요.', REJECTED: 'Gmail이 발송 요청을 거절했어요. 이 메일은 자동으로 다시 보내지 않습니다.', APPLIED_MISMATCH: '보낸편지함 사본이 승인한 내용과 달라요. Gmail에서 확인해 주세요. 자동 재발송하지 않습니다.' };
+function mailError(text = '') { $('mail-error').textContent = text; $('mail-error').hidden = !text; }
+function updateMailControls() {
+  $('mail-form').hidden = !mailRecord;
+  if (!mailRecord) {
+    for (const name of ['mail-save', 'mail-discard', 'mail-send', 'mail-reconcile', 'mail-connect']) { $(name).disabled = true; $(name).hidden = true; }
+    for (const name of ['mail-send-note', 'mail-permission', 'mail-unsaved', 'mail-reply']) $(name).hidden = true;
+    $('mail-reload').disabled = mailBusy || !mailTarget;
+    $('mail-status').textContent = mailBusy ? '메일 내용을 불러오고 있어요.' : '최신 상태 확인을 눌러 메일을 다시 불러와 주세요.';
+    return;
+  }
+  $('mail-connect').hidden = false;
+  const draft = mailRecord.state === 'DRAFT', connected = mailGoogle?.connected === true && mailGoogle?.account === mailRecord.draft.account;
+  const enabled = connected && mailGoogle?.mail?.enabled === true;
+  for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).readOnly = !draft || mailBusy || name === 'subject' && !!mailRecord.draft.reply;
+  $('mail-save').hidden = !draft; $('mail-save').disabled = mailBusy || !mailDirty;
+  $('mail-discard').hidden = !draft; $('mail-discard').disabled = mailBusy;
+  $('mail-send').hidden = !draft; $('mail-send-note').hidden = !draft;
+  $('mail-send').disabled = mailBusy || mailDirty || mailSendUnknown || !enabled || !draft;
+  $('mail-unsaved').hidden = !mailDirty;
+  $('mail-permission').hidden = !draft || enabled || !connected;
+  $('mail-connect').disabled = mailBusy || mailGoogle?.pending === true && mailGoogle?.mail?.connecting !== true;
+  $('mail-connect').textContent = mailGoogle?.mail?.connecting ? '발송 권한 연결 취소 · 읽기 연결 유지' : 'Google에서 발송 권한 연결';
+  $('mail-reconcile').hidden = !['ACCEPTED','UNCERTAIN'].includes(mailRecord.state);
+  $('mail-reconcile').disabled = mailBusy || !connected;
+  $('mail-reload').disabled = mailBusy;
+  $('mail-status').textContent = mailStates[mailRecord.state] + (draft && !connected ? ' 초안의 Google 계정을 설정에서 다시 연결해 주세요.' : '');
+}
+function paintMail(record) {
+  mailRecord = record; mailDirty = false; mailSendUnknown = false;
+  const d = record.draft;
+  for (const name of ['to','cc','bcc']) $(`mail-${name}`).value = d[name].join(', ');
+  $('mail-subject').value = d.subject; $('mail-body').value = d.body;
+  $('mail-account').textContent = `보내는 계정: ${d.account} · 수정 ${record.revision}`;
+  $('mail-reply').hidden = !d.reply; updateMailControls();
+}
+// Bound both response headers and JSON consumption. Aborting a write only stops
+// waiting in this window; it never claims that the host canceled the operation.
+async function mailRequest(path, data, controller = new AbortController()) {
+  let timer, onAbort;
+  const stopped = new Promise((_, reject) => {
+    onAbort = () => reject(Error(connectionLost));
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    if (controller.signal.aborted) onAbort();
+    else timer = setTimeout(() => controller.abort(), data === undefined ? 15000 : 30000);
+  });
+  try { return await Promise.race([api(path, data, { signal: controller.signal, handleAuthentication: false }), stopped]); }
+  catch (error) { if (error.authenticationRequired && !controller.signal.aborted) paired(false); throw error; }
+  finally { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); }
+}
+async function refreshOpenMail() {
+  if (!mailRecord || mailBusy || mailDirty || mailSendUnknown || mailRefresh) return;
+  const snapshot = mailRecord, generation = mailGeneration, controller = mailRefresh = new AbortController();
+  try {
+    const { mail } = await mailRequest(`/api/mail/${snapshot.id}`, undefined, controller);
+    if (generation === mailGeneration && mailRecord === snapshot && !mailBusy && !mailDirty) paintMail(mail);
+  } catch { /* Normal connection recovery owns errors; never replay a send. */ }
+  finally { if (mailRefresh === controller) mailRefresh = null; }
+}
+async function loadMail(id) {
+  mailRead?.abort(); mailRefresh?.abort();
+  const generation = ++mailGeneration, controller = mailRead = new AbortController();
+  mailBusy = true; updateMailControls(); mailError();
+  try { const result = await mailRequest(`/api/mail/${id}`, undefined, controller); if (generation === mailGeneration) paintMail(result.mail); }
+  catch (error) { if (generation === mailGeneration) mailError(error.message); }
+  finally { if (mailRead === controller) mailRead = null; if (generation === mailGeneration) { mailBusy = false; updateMailControls(); } }
+}
+async function openMail(id) { mailTarget = id; mailRecord = null; mailDirty = false; mailSendUnknown = false; $('mail-editor').showModal(); await loadMail(id); }
+function discardMailInput(text, action) {
+  mailDiscardAction = action; $('mail-discard-text').textContent = text; $('mail-discard-confirm').hidden = false;
+}
+function closeMail() {
+  if (mailBusy && !mailRead) { mailError('작업을 확인하고 있어요. 잠시 기다려 주세요. 응답이 지연되면 최신 상태를 확인할 수 있습니다.'); return; }
+  if (mailDirty) { discardMailInput('저장하지 않은 수정을 버리고 닫을까요? 저장된 초안은 남아 있어요.', () => { mailDirty = false; $('mail-editor').close(); }); return; }
+  $('mail-editor').close();
+}
+$('mail-close').onclick = closeMail;
+$('mail-editor').oncancel = event => { event.preventDefault(); closeMail(); };
+$('mail-editor').onclose = () => { mailGeneration++; mailRead?.abort(); mailRead = null; mailRefresh?.abort(); mailRefresh = null; mailBusy = false; mailRecord = null; mailTarget = null; mailDirty = false; mailDiscardAction = null; $('mail-discard-confirm').hidden = true; };
+$('mail-form').oninput = () => { mailDirty = true; updateMailControls(); };
+$('mail-keep').onclick = () => { mailDiscardAction = null; $('mail-discard-confirm').hidden = true; };
+$('mail-discard-yes').onclick = () => { const action = mailDiscardAction; mailDiscardAction = null; $('mail-discard-confirm').hidden = true; action?.(); };
+$('mail-reload').onclick = () => {
+  if (!mailTarget || mailBusy) return;
+  if (mailDirty) discardMailInput('저장하지 않은 수정을 버리고 최신 내용을 불러올까요?', () => loadMail(mailTarget));
+  else return loadMail(mailTarget);
+};
+async function changeMail(path, data) {
+  if (mailBusy) return;
+  const generation = ++mailGeneration; mailRefresh?.abort();
+  mailBusy = true; updateMailControls(); mailError();
+  try { const result = await mailRequest(path, data); if (generation === mailGeneration) paintMail(result.mail); }
+  catch (error) { if (generation !== mailGeneration) return; if (path === '/api/mail/send') mailSendUnknown = true; mailError(error.message + (path === '/api/mail/send' ? ' 응답을 놓쳤을 수 있어요. 최신 상태를 확인하세요. 다시 보내지 마세요.' : '')); }
+  finally { if (generation === mailGeneration) { mailBusy = false; updateMailControls(); await refresh(); } }
+}
+const mailIdentity = () => ({ id: mailRecord.id, revision: mailRecord.revision, sha256: mailRecord.sha256 });
+$('mail-form').onsubmit = event => {
+  event.preventDefault(); if (!mailRecord || !mailDirty) return;
+  const draft = { ...mailRecord.draft, subject: $('mail-subject').value, body: $('mail-body').value };
+  for (const name of ['to','cc','bcc']) draft[name] = $(`mail-${name}`).value.trim() ? $(`mail-${name}`).value.split(',').map(s => s.trim()) : [];
+  changeMail('/api/mail/edit', { ...mailIdentity(), draft });
+};
+$('mail-discard').onclick = () => { if (!mailRecord || mailBusy) return; discardMailInput('이 초안을 정리할까요? 발송하지 않고 기록으로 남깁니다.', () => changeMail('/api/mail/discard', mailIdentity())); };
+$('mail-send').onclick = () => { if (mailRecord && !mailBusy && !mailDirty) changeMail('/api/mail/send', { ...mailIdentity(), consent: 'send_exact_mail_once_v1' }); };
+$('mail-reconcile').onclick = () => { if (mailRecord && !mailBusy) return changeMail('/api/mail/reconcile', { id: mailRecord.id }); };
+$('mail-connect').onclick = async () => {
+  if (mailBusy) return; const generation = ++mailGeneration; mailRefresh?.abort();
+  mailBusy = true; updateMailControls(); mailError();
+  try { if (mailGoogle?.mail?.connecting) await mailRequest('/api/google/disable-mail', {});
+    else await mailRequest('/api/google/connect', { consent: 'google_read_and_send_v1' }); }
+  catch (error) { if (generation === mailGeneration) mailError(error.message); }
+  finally { if (generation === mailGeneration) { mailBusy = false; await refresh(); updateMailControls(); } }
+};

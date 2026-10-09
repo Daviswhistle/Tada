@@ -930,3 +930,153 @@ test('Windows startup reports registration separately from login execution and l
   assert.doesNotMatch(c.get('background-status').textContent, /종료 후 복구도 준비/);
   assert.equal(c.get('message').value, '작성 중');
 });
+async function mailFixture({ failLoad = false } = {}) {
+  const c = client(), record = { version: 1, id: 'mail-11111111-1111-4111-8111-111111111111', turn: 1, revision: 1, state: 'DRAFT', sha256: 'a'.repeat(64), draft: { account: 'owner@example.test', to: ['recipient@example.test'], cc: [], bcc: ['private@example.test'], subject: '미팅 안내', body: '금요일에 뵙겠습니다.', reply: null } };
+  c.state.google = { available: true, configured: true, connected: true, has_credential: true, account: record.draft.account, mail: { ready: true, enabled: true } };
+  c.state.turns = [{ seq: 1, text: '초안을 준비해 줘', state: 'answered', answer: { text: '초안을 확인해 주세요.', sources: [], mail_action_id: record.id } }];
+  c.handle(`/api/mail/${record.id}`, () => ({ mail: record }));
+  if (failLoad) c.respond(`/api/mail/${record.id}`, () => { throw Error('Synthetic first load failure'); });
+  await c.refresh();
+  await c.get('messages').querySelectorAll('button').find(b => b.textContent === '메일 초안·발송 결과 확인').onclick();
+  return { c, record };
+}
+test('mail editor displays every recipient, blocks unsaved sends and preserves inputs on CAS conflict', async () => {
+  const { c, record } = await mailFixture();
+  assert.equal(c.get('mail-bcc').value, 'private@example.test'); assert.equal(c.get('mail-send').disabled, false);
+  c.get('mail-body').value = '직접 쓴 내용 <script>plain text</script>'; c.get('mail-form').oninput();
+  assert.equal(c.get('mail-send').disabled, true);
+  c.respond('/api/mail/edit', () => ({ ok: false, status: 400, json: async () => ({ error: 'CONTACT_MAIL_DRAFT_CHANGED' }) }));
+  c.get('mail-form').onsubmit({ preventDefault() {} }); await c.flush();
+  assert.equal(c.get('mail-body').value, '직접 쓴 내용 <script>plain text</script>'); assert.match(c.get('mail-error').textContent, /다른 곳/u);
+  assert.equal(record.draft.body, '금요일에 뵙겠습니다.'); c.get('mail-close').onclick(); assert.equal(c.get('mail-editor').open, true);
+  c.get('mail-keep').onclick(); assert.equal(c.get('mail-editor').open, true);
+  assert.equal(c.calls.filter(call => call.path === '/api/mail/send').length, 0);
+});
+test('lost send response disables repeat sending until a read resolves current state', async () => {
+  const { c, record } = await mailFixture();
+  c.respond('/api/mail/send', () => { throw Error('synthetic response lost'); });
+  c.get('mail-send').onclick(); await c.flush();
+  assert.equal(c.get('mail-send').disabled, true); assert.match(c.get('mail-error').textContent, /다시 보내지/u);
+  record.state = 'UNCERTAIN'; await c.get('mail-reload').onclick(); await c.flush();
+  assert.equal(c.get('mail-send').hidden, true); assert.equal(c.get('mail-reconcile').hidden, false);
+  assert.equal(c.calls.filter(call => call.path === '/api/mail/send').length, 1);
+});
+test('revoked connection closes mail editor and drops late private response', async () => {
+  const { c, record } = await mailFixture(); let release;
+  c.respond(`/api/mail/${record.id}`, () => new Promise(resolve => { release = resolve; }));
+  c.get('mail-reload').onclick(); await c.flush();
+  c.respond('/api/state', () => ({ ok: false, status: 401, json: async () => ({ error: 'CONTACT_PAIR_REQUIRED' }) }));
+  await c.refresh(); assert.equal(c.get('mail-editor').open, false); assert.equal(c.get('mail-body').value, '');
+  release({ ok: true, status: 200, json: async () => ({ mail: record }) }); await c.flush();
+  assert.equal(c.get('mail-body').value, ''); assert.equal(c.get('mail-editor').open, false);
+});
+test('mail state refresh follows another device without overwriting an in-progress edit', async () => {
+  const { c, record } = await mailFixture();
+  c.handle(`/api/mail/${record.id}`, () => ({ mail: { ...record, state: 'ACCEPTED' } }));
+  await c.refresh(); await c.flush(); assert.equal(c.get('mail-send').hidden, true);
+  c.handle(`/api/mail/${record.id}`, () => ({ mail: record })); await c.get('mail-reload').onclick(); await c.flush();
+  let release; c.respond(`/api/mail/${record.id}`, () => new Promise(resolve => { release = resolve; }));
+  await c.refresh(); await c.flush(); c.get('mail-body').value = '작성 중인 새 내용'; c.get('mail-form').oninput();
+  release({ ok: true, status: 200, json: async () => ({ mail: { ...record, state: 'ACCEPTED' } }) }); await c.flush();
+  assert.equal(c.get('mail-body').value, '작성 중인 새 내용'); assert.equal(c.get('mail-send').disabled, true);
+});
+
+test('mail initial read failure retains its target for retry and cannot edit or send before loading', async () => {
+  const { c, record } = await mailFixture({ failLoad: true });
+  assert.equal(c.get('mail-form').hidden, true); assert.equal(c.get('mail-reload').disabled, false);
+  for (const name of ['mail-save', 'mail-discard', 'mail-send', 'mail-reconcile']) assert.equal(c.get(name).disabled, true);
+  assert.doesNotThrow(() => c.get('mail-send').onclick());
+  c.respond(`/api/mail/${record.id}`, () => ({ ok: true, status: 200, json: async () => ({ mail: record }) }));
+  await c.get('mail-reload').onclick(); await c.flush();
+  assert.equal(c.get('mail-form').hidden, false); assert.equal(c.get('mail-to').value, record.draft.to[0]); assert.equal(c.get('mail-send').disabled, false);
+  assert.equal(c.calls.filter(call => call.path === '/api/mail/send').length, 0);
+});
+
+test('mail unsaved edits warn before tab exit until saved or explicitly discarded', async () => {
+  const { c, record } = await mailFixture();
+  const warning = () => { let warned = false; c.browserEvent('beforeunload', { preventDefault() { warned = true; } }); return warned; };
+  assert.equal(warning(), false);
+  c.get('mail-body').value = '저장하기 전 수정'; c.get('mail-form').oninput(); assert.equal(warning(), true);
+  c.handle('/api/mail/edit', () => ({ mail: { ...record, revision: 2, draft: { ...record.draft, body: '저장하기 전 수정' } } }));
+  c.get('mail-form').onsubmit({ preventDefault() {} }); await c.flush(); assert.equal(warning(), false);
+  c.get('mail-to').value = 'new@example.test'; c.get('mail-form').oninput(); assert.equal(warning(), true);
+  c.get('mail-close').onclick(); c.get('mail-keep').onclick(); assert.equal(warning(), true);
+  c.get('mail-close').onclick(); c.get('mail-discard-yes').onclick(); assert.equal(warning(), false);
+});
+
+for (const phase of ['headers', 'body']) test(`stalled mail ${phase} read times out and reload recovers without sending`, async () => {
+  const { c, record } = await mailFixture(); c.get('mail-close').onclick();
+  let release;
+  const stalled = new Promise(resolve => { release = resolve; });
+  c.respond(`/api/mail/${record.id}`, () => phase === 'headers' ? stalled : { ok: true, status: 200, json: () => stalled });
+  const opening = c.get('messages').querySelectorAll('button').find(b => b.textContent === '메일 초안·발송 결과 확인').onclick(); await c.flush();
+  const request = c.calls.filter(call => call.path === `/api/mail/${record.id}`).at(-1);
+  assert.equal(c.get('mail-reload').disabled, true);
+  await c.advance(15000); await opening;
+  assert.equal(request.signal.aborted, true); assert.equal(c.get('mail-reload').disabled, false);
+  assert.match(c.get('mail-error').textContent, /연결/u);
+  c.respond(`/api/mail/${record.id}`, () => ({ ok: true, status: 200, json: async () => ({ mail: { ...record, revision: 2 } }) }));
+  await c.get('mail-reload').onclick(); assert.match(c.get('mail-account').textContent, /수정 2/u);
+  release(phase === 'headers' ? { ok: true, status: 200, json: async () => ({ mail: record }) } : { mail: record }); await c.flush();
+  assert.match(c.get('mail-account').textContent, /수정 2/u);
+  assert.equal(c.calls.filter(call => call.path === '/api/mail/send').length, 0);
+});
+
+test('closing a pending mail read aborts immediately and late data cannot overwrite a reopened card', async () => {
+  const { c, record } = await mailFixture(); c.get('mail-close').onclick(); let release;
+  c.respond(`/api/mail/${record.id}`, () => new Promise(resolve => { release = resolve; }));
+  const open = () => c.get('messages').querySelectorAll('button').find(b => b.textContent === '메일 초안·발송 결과 확인').onclick();
+  const opening = open(); await c.flush(); const request = c.calls.filter(call => call.path === `/api/mail/${record.id}`).at(-1);
+  c.get('mail-editor').oncancel({ preventDefault() {} }); await opening;
+  assert.equal(c.get('mail-editor').open, false); assert.equal(request.signal.aborted, true);
+  c.respond(`/api/mail/${record.id}`, () => ({ ok: true, status: 200, json: async () => ({ mail: { ...record, revision: 3 } }) }));
+  await open(); release({ ok: true, status: 200, json: async () => ({ mail: record }) }); await c.flush();
+  assert.equal(c.get('mail-editor').open, true); assert.match(c.get('mail-account').textContent, /수정 3/u);
+  assert.equal(c.get('mail-send').disabled, false);
+});
+
+test('stalled send wait becomes uncertain, unlocks close and never replays the POST', async () => {
+  const { c, record } = await mailFixture(); let release;
+  c.respond('/api/mail/send', () => ({ ok: true, status: 200, json: () => new Promise(resolve => { release = resolve; }) }));
+  c.get('mail-send').onclick(); await c.flush(); c.get('mail-close').onclick(); assert.equal(c.get('mail-editor').open, true);
+  await c.advance(30000); await c.flush();
+  assert.equal(c.get('mail-send').disabled, true); assert.equal(c.get('mail-reload').disabled, false);
+  assert.match(c.get('mail-error').textContent, /다시 보내지/u);
+  c.get('mail-close').onclick(); assert.equal(c.get('mail-editor').open, false);
+  release({ mail: { ...record, state: 'ACCEPTED' } }); await c.flush();
+  assert.equal(c.get('mail-editor').open, false); assert.equal(c.calls.filter(call => call.path === '/api/mail/send').length, 1);
+});
+
+test('mail reads honor current authentication loss but ignore an aborted late 401', async () => {
+  const { c, record } = await mailFixture(); let release;
+  c.respond(`/api/mail/${record.id}`, () => new Promise(resolve => { release = resolve; }));
+  const loading = c.get('mail-reload').onclick(); await c.flush(); c.get('mail-close').onclick(); await loading;
+  c.respond(`/api/mail/${record.id}`, () => ({ ok: true, status: 200, json: async () => ({ mail: record }) }));
+  await c.get('messages').querySelectorAll('button').find(b => b.textContent === '메일 초안·발송 결과 확인').onclick();
+  release({ ok: false, status: 401, json: async () => ({ error: 'CONTACT_PAIR_REQUIRED' }) }); await c.flush();
+  assert.equal(c.get('mail-editor').open, true); assert.equal(c.get('conversation').hidden, false);
+  c.respond(`/api/mail/${record.id}`, () => ({ ok: false, status: 401, json: async () => ({ error: 'CONTACT_PAIR_REQUIRED' }) }));
+  await c.get('mail-reload').onclick();
+  assert.equal(c.get('mail-editor').open, false); assert.equal(c.get('conversation').hidden, true); assert.equal(c.get('mail-body').value, '');
+});
+
+for (const surface of ['card', 'settings']) test(`cancel pending send permission from ${surface} keeps the existing readable connection and allows another attempt`, async () => {
+  const { c } = await mailFixture(); c.state.google.mail.enabled = false; await c.refresh();
+  c.handle('/api/google/connect', () => { c.state.google.pending = true; c.state.google.mail.connecting = true; return { state: 'waiting' }; });
+  c.handle('/api/google/disable-mail', () => { c.state.google.pending = false; c.state.google.mail.connecting = false; return { enabled: false }; });
+  await c.get('mail-connect').onclick();
+  const cancel = surface === 'card' ? c.get('mail-connect') : c.get('google-settings-slot').querySelectorAll('button').find(b => b.textContent === '발송 권한 연결 취소 · 읽기 연결 유지');
+  assert.ok(cancel); assert.equal(cancel.hidden, false); assert.equal(cancel.disabled, false);
+  await cancel.onclick();
+  assert.equal(c.state.google.connected, true); assert.equal(c.state.google.has_credential, true); assert.equal(c.state.google.pending, false);
+  assert.equal(c.get('mail-connect').disabled, false); assert.equal(c.calls.filter(call => call.path === '/api/google/disconnect').length, 0);
+  assert.equal(c.calls.filter(call => call.path === '/api/google/disable-mail').length, 1);
+  await c.get('mail-connect').onclick(); assert.equal(c.calls.filter(call => call.path === '/api/google/connect').length, 2);
+});
+
+test('read-only reconnection is not mislabeled as a cancelable send permission upgrade', async () => {
+  const { c } = await mailFixture(); c.state.google.mail = { ready: true, enabled: false, connecting: false }; c.state.google.pending = true;
+  await c.refresh(); assert.equal(c.get('mail-connect').disabled, true);
+  const disable = c.get('google-settings-slot').querySelectorAll('button').find(b => b.textContent === 'Tada에서 메일 발송 끄기');
+  assert.equal(disable.hidden, true); assert.equal(c.calls.filter(call => call.path === '/api/google/disable-mail').length, 0);
+});

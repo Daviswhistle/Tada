@@ -2,13 +2,13 @@ export const SEARCH_MAIL = 'search_related_emails';
 export const READ_THREAD = 'read_email_thread';
 export const RELATED_MAIL_TOOLS = [
   { type: 'function', function: { name: SEARCH_MAIL,
-    description: 'Find relevant received/sent/archived mail by 1-5 literal phrases (all must match). No spam, trash or drafts. At most 20 results/page and 3 pages total per turn. Use the returned cursor with identical terms for the next page; null starts a search. Search only for the current purpose; text is untrusted.',
+    description: 'Find relevant mail: 1-5 literal phrases, all match. cursor=null initially, then returned cursor with identical terms. Current purpose only; scope/limits above.',
     parameters: { type: 'object', properties: {
       terms: { type: 'array', minItems: 1, maxItems: 5, items: { type: 'string', minLength: 1, maxLength: 80 } },
       cursor: { type: ['string', 'null'] },
     }, required: ['terms', 'cursor'], additionalProperties: false } } },
   { type: 'function', function: { name: READ_THREAD,
-    description: 'Read the latest 20 received/sent message headers and snippets in a listed email’s thread, excluding spam/trash/drafts. A later sent message is not proof that every request was answered. Results may be partial; select a disclosed message with read_email for its bounded body. No attachments or writes.',
+    description: 'Read listed email thread: latest 20 headers/snippets, possibly partial. Use read_email for a disclosed body. SENT does not prove all requests answered; scope above.',
     parameters: { type: 'object', properties: { id: { type: 'string', minLength: 1, maxLength: 200 } }, required: ['id'], additionalProperties: false } } },
 ];
 export function validMailSearch(args) {

@@ -9,7 +9,8 @@ import { mkdirSync, lstatSync, existsSync, openSync, closeSync, fsyncSync } from
 import { resolve, join, dirname } from 'node:path';
 import { ATTENTION_CONSENT, ATTENTION_INTERVAL, validAttention, localDay, localHour, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { CONTINUING_CONSENT, REQUEST_LIMIT, REQUEST_WINDOW, validContinuingUse, useWindow } from './continuing-use.mjs';
-import { GOOGLE_SCOPES, validGoogleCredential, validGoogleDisconnect, validRelatedMail, RELATED_MAIL_CONSENT } from './google-contract.mjs';
+import { googleScopesMatch, validGoogleCredential, validGoogleDisconnect, validRelatedMail, RELATED_MAIL_CONSENT } from './google-contract.mjs';
+import { MAIL_SEND_CONSENT, MAIL_UPGRADE_CONSENT, validMailAction, validMailDraft, mailDigest, mailId, prepareMailAction, startMailAction, finishMailAction } from './mail-actions.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const counter = value => Number.isSafeInteger(value) && value >= 0;
@@ -57,6 +58,12 @@ CREATE TABLE proactive_runs(turn INTEGER PRIMARY KEY REFERENCES turns(seq),epoch
 PRAGMA user_version=5;
 `;
 const SCHEMA_V5 = SCHEMA_V4 + ASSISTANCE_SCHEMA;
+const MAIL_SCHEMA = `
+CREATE TABLE mail_actions(id TEXT PRIMARY KEY,turn INTEGER UNIQUE NOT NULL REFERENCES turns(seq),state TEXT NOT NULL,payload TEXT NOT NULL) STRICT;
+CREATE INDEX mail_actions_state ON mail_actions(state,turn);
+PRAGMA user_version=6;
+`;
+const SCHEMA_V6 = SCHEMA_V5 + MAIL_SCHEMA;
 
 
 const telegramId = value => typeof value === 'string' && /^[1-9][0-9]{0,15}$/u.test(value)
@@ -111,7 +118,7 @@ function prepare(root, initialize) {
 
 export class ContactStore {
   #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0;
-  constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false }) {
+  constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false, mail = false }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
         || passphrase.length > 1024 || typeof route !== 'string' || !/^[a-f0-9]{64}$/u.test(route)) {
       throw new Error('CONTACT_SETUP_REQUIRED');
@@ -133,17 +140,17 @@ export class ContactStore {
         this.#key = scryptSync(passphrase, salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
         this.#db.exec('BEGIN IMMEDIATE');
         try {
-          const schema = assistance ? SCHEMA_V5 : reviews ? SCHEMA_V4 : followups ? SCHEMA_V3 : SCHEMA_V2;
-          this.#db.exec(schema); this.#version = assistance ? 5 : reviews ? 4 : followups ? 3 : 2;
+          const schema = mail ? SCHEMA_V6 : assistance ? SCHEMA_V5 : reviews ? SCHEMA_V4 : followups ? SCHEMA_V3 : SCHEMA_V2;
+          this.#db.exec(schema); this.#version = mail ? 6 : assistance ? 5 : reviews ? 4 : followups ? 3 : 2;
           this.#db.prepare('INSERT INTO identity VALUES(1,?,?,?,?,?)').run(this.#id, salt,
             this.#seal('identity', { id: this.#id, route }), route, hash(schema));
           this.#db.exec('COMMIT');
         } catch (error) { this.#db.exec('ROLLBACK'); throw error; }
       } else {
         this.#version = this.#db.prepare('PRAGMA user_version').get().user_version;
-        if (![1, 2, 3, 4, 5].includes(this.#version)) throw new Error('CONTACT_SCHEMA_UNSUPPORTED');
+        if (![1, 2, 3, 4, 5, 6].includes(this.#version)) throw new Error('CONTACT_SCHEMA_UNSUPPORTED');
         const identity = this.#db.prepare('SELECT * FROM identity WHERE singleton=1').get();
-        if (!identity || identity.route !== route || identity.schema_hash !== hash(this.#version === 1 ? SCHEMA : this.#version === 2 ? SCHEMA_V2 : this.#version === 3 ? SCHEMA_V3 : this.#version === 4 ? SCHEMA_V4 : SCHEMA_V5)) throw new Error('CONTACT_ROUTE_CHANGED');
+        if (!identity || identity.route !== route || identity.schema_hash !== hash(this.#version === 1 ? SCHEMA : this.#version === 2 ? SCHEMA_V2 : this.#version === 3 ? SCHEMA_V3 : this.#version === 4 ? SCHEMA_V4 : this.#version === 5 ? SCHEMA_V5 : SCHEMA_V6)) throw new Error('CONTACT_ROUTE_CHANGED');
         this.#id = identity.id;
         this.#key = scryptSync(passphrase, identity.salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
         const proof = this.#open('identity', identity.proof);
@@ -173,10 +180,16 @@ export class ContactStore {
         for (const row of this.#db.prepare('SELECT * FROM assistance_settings').all()) this.#setting(row.name);
         this.#sweepProactive();
       }
+      if (this.#version >= 6) for (const row of this.#db.prepare('SELECT * FROM mail_actions').iterate()) this.#mailRow(row);
       this.#tx(() => {
         this.#synchronizeUse();
         if (this.#version >= 5) {
           for (const record of this.browserActions(true)) if (record.action.state === 'DISPATCHING') this.#saveBrowserAction(browserUncertain(record));
+        }
+        if (this.#version >= 6) {
+          for (const row of this.#db.prepare("SELECT * FROM mail_actions WHERE state='DISPATCHING'").all()) {
+            this.#saveMail(finishMailAction(this.#mailRow(row), 'UNCERTAIN', 'outcome_unknown'));
+          }
         }
         this.#db.exec("UPDATE requests SET state='unknown' WHERE state='reserved'; UPDATE turns SET state='interrupted',error='HOST_RESTARTED' WHERE state='running';");
         if (this.#version >= 2) this.#db.exec("UPDATE telegram_outbox SET state='unknown',error='HOST_RESTARTED' WHERE state='sending';");
@@ -289,6 +302,11 @@ export class ContactStore {
   }
   #turn(row) {
     const answer = row.answer ? this.#open(`answer:${row.request_id}`, row.answer) : null;
+    if (answer && Object.hasOwn(answer, 'mail_action_id')) {
+      if (this.#version < 6 || row.state !== 'answered' || answer.document || !mailId(answer.mail_action_id)) throw Error('CONTACT_MAIL_INVALID');
+      const mail = this.#db.prepare('SELECT id,turn FROM mail_actions WHERE id=?').get(answer.mail_action_id);
+      if (!mail || mail.turn !== row.seq) throw Error('CONTACT_MAIL_INVALID');
+    }
     if (answer?.document) {
       const d = answer.document;
       if (![1, 2].includes(d.version) || d.id !== row.seq || !Number.isSafeInteger(d.root) || d.root < 1 || d.root > d.id
@@ -547,7 +565,7 @@ export class ContactStore {
     return Math.min(room, Math.max(0, (run ? 4 : 8) - used));
   }
 
-  finish(seq, answer, checkpoint, proposals = [], document = null, delegation = null) {
+  finish(seq, answer, checkpoint, proposals = [], document = null, delegation = null, mail = null) {
     return this.#tx(() => {
       const row = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(seq);
       if (row?.state !== 'running') return false;
@@ -557,7 +575,13 @@ export class ContactStore {
           || !checkpoint || ![1, 2].includes(checkpoint.version)) throw new Error('CONTACT_ANSWER_INVALID');
       if (this.#version >= 4 && this.reviewForTurn(seq) && proposals.length) throw new Error('CONTACT_REVIEW_READ_ONLY');
       if (this.proactiveForTurn(seq) && (proposals.length || document)) throw Error('CONTACT_PROACTIVE_READ_ONLY');
-      if (Object.hasOwn(answer, 'document')) throw Error('CONTACT_DOCUMENT_INVALID');
+      if (Object.hasOwn(answer, 'document') || Object.hasOwn(answer, 'mail_action_id')) throw Error('CONTACT_DOCUMENT_INVALID');
+      if (mail) {
+        this.assertPreparedMail(seq, mail);
+        if (document) throw Error('CONTACT_MAIL_INVALID');
+        this.#db.prepare('INSERT INTO mail_actions VALUES(?,?,?,?)').run(mail.id, seq, mail.state, this.#seal(`mail:${mail.id}`, mail));
+        answer = { ...answer, mail_action_id: mail.id };
+      }
       if (document) {
         const checked = this.prepareDocument(seq, document);
         if (Object.keys(checked).some(k => checked[k] !== document[k]) || Buffer.byteLength(answer.text) > 4096) throw Error('CONTACT_DOCUMENT_INVALID');
@@ -1180,14 +1204,92 @@ export class ContactStore {
     } finally { this.#upgrading = false; }
   }
 
-  // v5 settings are encrypted in the same journal, never model-owned authority.
+  // Mail effects retain their own encrypted durable receipts.
+  #mailRow(row) {
+    if (!row) throw Error('CONTACT_MAIL_NOT_FOUND');
+    const record = this.#open(`mail:${row.id}`, row.payload);
+    if (!validMailAction(record) || record.id !== row.id || record.turn !== row.turn || record.state !== row.state) throw Error('CONTACT_MAIL_INTEGRITY_FAILED');
+    const turn = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(record.turn);
+    if (turn?.state !== 'answered' || this.#open(`answer:${turn.request_id}`, turn.answer)?.mail_action_id !== record.id) throw Error('CONTACT_MAIL_INTEGRITY_FAILED');
+    return record;
+  }
+  #saveMail(record) {
+    if (!validMailAction(record)) throw Error('CONTACT_MAIL_INVALID');
+    const changed = this.#db.prepare('UPDATE mail_actions SET state=?,payload=? WHERE id=? AND turn=?')
+      .run(record.state, this.#seal(`mail:${record.id}`, record), record.id, record.turn).changes;
+    if (changed !== 1) throw Error('CONTACT_MAIL_NOT_FOUND');
+    return structuredClone(record);
+  }
+  mailAction(id) {
+    this.#check(); if (this.#version < 6) throw Error('CONTACT_MAIL_UPGRADE_REQUIRED');
+    if (!mailId(id)) throw Error('CONTACT_MAIL_INVALID');
+    return this.#mailRow(this.#db.prepare('SELECT * FROM mail_actions WHERE id=?').get(id));
+  }
+  mailActions(before = null) {
+    this.#check(); if (this.#version < 6) return { records: [], next_before: null };
+    if (!(before === null || Number.isSafeInteger(before) && before > 0)) throw Error('CONTACT_MAIL_INVALID');
+    const rows = this.#db.prepare('SELECT * FROM mail_actions WHERE turn<? ORDER BY turn DESC LIMIT 21').all(before ?? Number.MAX_SAFE_INTEGER);
+    const records = rows.slice(0, 20).map(row => this.#mailRow(row));
+    return { records, next_before: rows.length > 20 ? records.at(-1).turn : null };
+  }
+  prepareMail(seq, draft) {
+    this.assertTurnAuthority(seq);
+    const record = prepareMailAction(seq, this.turn(seq).device, draft);
+    this.assertPreparedMail(seq, record); return record;
+  }
+  assertPreparedMail(seq, record) {
+    this.#check(); if (this.#version < 6) throw Error('CONTACT_MAIL_UPGRADE_REQUIRED');
+    this.assertTurnAuthority(seq);
+    if (!validMailAction(record) || record.turn !== seq || record.device !== this.turn(seq).device
+        || record.state !== 'DRAFT' || record.revision !== 1 || this.proactiveForTurn(seq) || this.reviewForTurn(seq)) throw Error('CONTACT_MAIL_INVALID');
+    const account = this.assertGoogleAuthority(record.device, this.googleEpoch());
+    if (account.email !== record.draft.account) throw Error('CONTACT_MAIL_ACCOUNT_CHANGED');
+  }
+  #currentMailDraft(id, revision, digest) {
+    const record = this.mailAction(id);
+    if (record.state !== 'DRAFT') throw Error('CONTACT_MAIL_ALREADY_DISPATCHED');
+    if (record.revision !== revision || record.sha256 !== digest) throw Error('CONTACT_MAIL_DRAFT_CHANGED');
+    return record;
+  }
+  editMail(device, id, revision, digest, draft) {
+    return this.#tx(() => {
+      this.assertDevice(device); const record = this.#currentMailDraft(id, revision, digest);
+      if (!validMailDraft(draft) || draft.account !== record.draft.account
+          || JSON.stringify(draft.reply) !== JSON.stringify(record.draft.reply)) throw Error('CONTACT_MAIL_INVALID');
+      return this.#saveMail({ ...record, revision: record.revision + 1, updated: Math.max(record.updated, Date.now()),
+        draft: structuredClone(draft), sha256: mailDigest(draft) });
+    });
+  }
+  discardMail(device, id, revision, digest) {
+    return this.#tx(() => {
+      this.assertDevice(device); const record = this.#currentMailDraft(id, revision, digest);
+      return this.#saveMail({ ...record, state: 'DISCARDED', updated: Math.max(record.updated, Date.now()) });
+    });
+  }
+  assertMailSend(device, id, revision, digest, epoch, consent) {
+    this.assertDevice(device);
+    if (consent !== MAIL_SEND_CONSENT) throw Error('CONTACT_MAIL_CONSENT_REQUIRED');
+    const record = this.#currentMailDraft(id, revision, digest), account = this.assertGoogleAuthority(device, epoch);
+    if (account.version !== 2 || account.send_enabled !== true) throw Error('CONTACT_MAIL_SEND_PERMISSION_REQUIRED');
+    if (account.email !== record.draft.account) throw Error('CONTACT_MAIL_ACCOUNT_CHANGED');
+    return record;
+  }
+  beginMailSend(device, id, revision, digest, epoch, consent) {
+    return this.#tx(() => this.#saveMail(startMailAction(this.assertMailSend(device, id, revision, digest, epoch, consent), device, epoch)));
+  }
+  finishMailSend(id, state, basis, details = {}) {
+    // Receipt persistence is independent of current authority. Revocation cannot
+    // erase an observed external effect or turn an ambiguous send into a retry.
+    return this.#tx(() => this.#saveMail(finishMailAction(this.mailAction(id), state, basis, details)));
+  }
+  // Settings remain owner-controlled, never model-owned authority.
   #setting(name) {
     this.#check(); if (this.#version < 5) return null;
     const row = this.#db.prepare('SELECT payload FROM assistance_settings WHERE name=?').get(name);
     const value = row ? this.#open(`setting:${name}`, row.payload) : null;
     if (value !== null) {
       const valid = /^browser_action:(?:DISPATCHING|VERIFIED|UNCERTAIN|ACKNOWLEDGED|FAILED):browser-[a-f0-9-]{36}$/u.test(name) ? validBrowserActions(value) && value.records.length === 1 && name === `browser_action:${value.records[0].action.state}:${value.records[0].action.action_id}` : name === 'mobile' ? Object.keys(value).join(',') === 'token' && typeof value.token === 'string' && /^[1-9][0-9]{4,15}:[A-Za-z0-9_-]{20,128}$/u.test(value.token)
-        : name === 'google' ? validGoogleCredential(value)
+        : name === 'google' ? validGoogleCredential(value) && (value.version === 1 || this.#version >= 6)
         : name === 'google_disconnect' ? validGoogleDisconnect(value)
         : name === 'related_mail' ? validRelatedMail(value)
         : name === 'followup_delegation' ? validFollowupDelegation(value)
@@ -1297,7 +1399,7 @@ export class ContactStore {
   }
   googleConnected() {
     const value = this.#setting('google');
-    if (!value || value.reconnect_required || value.scopes.length !== GOOGLE_SCOPES.length) return false;
+    if (!value || value.reconnect_required || !googleScopesMatch(value.scopes, value.version === 2)) return false;
     try { this.#device(value.device); return true; } catch { return false; }
   }
   assertGoogleAuthority(device, epoch) {
@@ -1306,10 +1408,11 @@ export class ContactStore {
     if (!value || value.epoch !== epoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     this.#device(value.device);
     if (value.reconnect_required) throw Error('CONTACT_GOOGLE_RECONNECT_REQUIRED');
-    if (value.scopes.length !== GOOGLE_SCOPES.length || [...value.scopes].sort().join('\n') !== [...GOOGLE_SCOPES].sort().join('\n')) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
+    if (!googleScopesMatch(value.scopes, value.version === 2)) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
     return structuredClone(value);
   }
   saveGoogleCredential(device, value, expectedEpoch) {
+    if (value?.version === 2 && this.#version < 6) throw Error('CONTACT_MAIL_UPGRADE_REQUIRED');
     if (!validGoogleCredential(value) || value.device !== device || (expectedEpoch !== null && typeof expectedEpoch !== 'string')) throw Error('CONTACT_GOOGLE_CREDENTIAL_INVALID');
     return this.#tx(() => {
       this.#device(device);
@@ -1318,6 +1421,20 @@ export class ContactStore {
       this.#saveSetting('google', structuredClone(value));
       this.#saveSetting('google_disconnect', null);
       return { connected: true, account: value.email };
+    });
+  }
+  disableMail(device) {
+    return this.#tx(() => {
+      this.#device(device);
+      const old = this.#setting('google');
+      if (!old || old.version !== 2 || !old.send_enabled) return;
+      const epoch = randomUUID(), related = this.#setting('related_mail');
+      this.#saveSetting('google', { ...old, epoch, send_enabled: false });
+      // This only reduces send authority on the SAME account/credential. Keep
+      // an existing read grant bound to it; never revive a stale/disabled grant.
+      if (related?.enabled && related.google_epoch === old.epoch) {
+        this.#saveSetting('related_mail', { ...related, google_epoch: epoch });
+      }
     });
   }
   clearGoogleCredential(device) {
@@ -1592,6 +1709,24 @@ export class ContactStore {
       this.#upgrading = false;
       this.#tx(() => { this.#db.exec(ASSISTANCE_SCHEMA); this.#db.prepare('UPDATE identity SET schema_hash=? WHERE singleton=1').run(hash(SCHEMA_V5)); });
       this.#version = 5; return path;
+    } finally { this.#upgrading = false; }
+  }
+
+  async upgradeMail(consent) {
+    if (consent !== MAIL_UPGRADE_CONSENT) throw Error('CONTACT_MAIL_UPGRADE_CONSENT_REQUIRED');
+    this.#check(); if (this.#version >= 6) return null;
+    if (this.#version !== 5) throw Error('CONTACT_ASSISTANCE_UPGRADE_REQUIRED');
+    if (this.#db.prepare("SELECT seq FROM turns WHERE state='running'").get()
+        || this.#db.prepare("SELECT id FROM telegram_outbox WHERE state='sending'").get()) throw Error('CONTACT_UPGRADE_BUSY');
+    const path = join(this.#root, `before-mail-${randomUUID()}.sqlite`);
+    this.#upgrading = true;
+    try {
+      closeSync(openSync(path, 'wx', 0o600)); await backup(this.#db, path);
+      const fd = openSync(path, 'r+'); try { fsyncSync(fd); } finally { closeSync(fd); }
+      if (process.platform !== 'win32') { const dir = openSync(this.#root, 'r'); try { fsyncSync(dir); } finally { closeSync(dir); } }
+      this.#upgrading = false;
+      this.#tx(() => { this.#db.exec(MAIL_SCHEMA); this.#db.prepare('UPDATE identity SET schema_hash=? WHERE singleton=1').run(hash(SCHEMA_V6)); });
+      this.#version = 6; return path;
     } finally { this.#upgrading = false; }
   }
 

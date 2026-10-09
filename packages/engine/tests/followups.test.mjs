@@ -528,7 +528,7 @@ test('same-model conversation, actual HTTP Bot serializer, cross-device state an
   } finally { await net?.host.close(); await telegram.close(); await service.close(); env.close(); wire.closeAllConnections(); wire.close(); await once(wire, 'close'); }
 });
 
-test('actual CLI startup and reopen accept contact v5 with Telegram instead of retaining obsolete version guards', async () => {
+test('actual CLI startup and reopen accept contact v6 with Telegram instead of retaining obsolete version guards', async () => {
   const root = mkdtempSync(join(tmpdir(), 'tada-followup-entry-'));
   const code = join(root, 'runtime');
   mkdirSync(join(code, 'packages/providers/src'), { recursive: true });
@@ -592,7 +592,7 @@ test('actual CLI startup and reopen accept contact v5 with Telegram instead of r
       assert.match(stdout, /CONTACT_V5_CLI_STARTED_AND_STOPPED/u);
       assert.match(stdout, /Tada 연락 호스트가 열렸습니다/u);
       const db = new DatabaseSync(join(directory, 'contact.sqlite'), { readOnly: true });
-      assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5); db.close();
+      assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6); db.close();
     }
   } finally { upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close'); rmSync(root, { recursive: true, force: true }); }
 });

@@ -158,7 +158,7 @@ async function googleServer({ holdInbox = false, holdAuthorization = false, hold
         if (url.searchParams.get('format') === 'metadata') return json(res, 200, { id, threadId: `t${id.slice(1)}`, labelIds: metadataLabels, snippet: largeContent ? '회의 준비😀'.repeat(150) : 'Please review the plan before the meeting.', internalDate: received, payload: { headers } });
         if (url.searchParams.get('format') === 'full' && mailContent?.payload) return json(res, 200, { id, threadId: `t${id.slice(1)}`, labelIds: fullLabels, internalDate: fullDate, payload: mailContent.payload });
         if (url.searchParams.get('format') === 'full') return json(res, 200, { id, threadId: `t${id.slice(1)}`, labelIds: fullLabels, internalDate: fullDate,
-          payload: { mimeType: 'multipart/alternative', parts: [
+          payload: { headers, mimeType: 'multipart/alternative', parts: [
             { mimeType: 'text/plain', body: { data: Buffer.from(largeContent ? '함께 준비해요🙂\n'.repeat(800) : 'CONFIDENTIAL_EMAIL_BODY: please review the renewal dates.').toString('base64url') }, parts: [] },
             { mimeType: 'text/html', body: { data: Buffer.from('<p>HTML_FALLBACK_SHOULD_NOT_RUN</p>').toString('base64url') }, parts: [] },
             { filename: 'agenda.pdf', mimeType: 'application/pdf', body: { attachmentId: 'att1' } },
@@ -1492,7 +1492,7 @@ test('MIME B/Q headers decode case-insensitive and adjacent words before UTF-8 t
     const inbox = JSON.parse((await sources.execute('list_recent_emails', {}, signal)).content);
     assert.equal(inbox.emails[0].from, '김비서 <sender@example.test>'); assert.equal(inbox.emails[0].subject, '미팅 준비');
     const email = await sources.execute('read_email', { id: 'm1' }, signal);
-    assert.match(email.content, /From: 김비서 <sender@example.test>\nSubject: 미팅 준비/u);
+    assert.match(email.content, /From: 김비서 <sender@example.test>\nFrom addresses \(available\): sender@example.test\nReply-To \(absent\): \nSubject: 미팅 준비/u);
     assert.doesNotMatch(email.content, /=\?|\uFFFD/u); assert.equal(await sources.verify(evidenceOf(email), signal), true);
   });
   mailContent.headers[1].value = Array.from({ length: 30 }, () => b('안녕하세요')).join(' ');

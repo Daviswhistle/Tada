@@ -362,7 +362,7 @@ test('a saved token rejected by the server recovers through explicit browser log
   } finally { await browser?.host.close(); globalThis.fetch = nativeFetch; env.close(); }
 });
 
-for (const version of [2, 3, 4]) test(`browser recovery upgrades v${version} only after explicit backup consent and keeps the same history`, async () => {
+for (const version of [2, 3, 4, 5]) test(`browser recovery upgrades v${version} only after explicit backup consent and keeps the same history`, async () => {
   const { ContactStore, contactRoute } = await import('../../engine/src/contact-store.mjs');
   const { main } = await import('../../engine/src/contact-cli.mjs');
   const { randomUUID } = await import('node:crypto');
@@ -375,7 +375,7 @@ for (const version of [2, 3, 4]) test(`browser recovery upgrades v${version} onl
     const data = join(env.root, 'contact');
     const route = contactRoute({ version: 1, provider: 'chatgpt-subscription', model: 'fixture-model',
       digest: createHash('sha256').update('oaiapp_fixture:fixture-subject:fixture-model').digest('hex'), endpoint: 'https://api.openai.com/v1', scopes: [] });
-    journal = new ContactStore({ directory: data, passphrase, route, initialize: true, followups: version >= 3, reviews: version === 4 });
+    journal = new ContactStore({ directory: data, passphrase, route, initialize: true, followups: version >= 3, reviews: version >= 4, assistance: version >= 5 });
     const id = journal.id, device = journal.addDevice('Fixture');
     const accepted = journal.submit(device.id, randomUUID(), 'Keep my original history'); journal.cancel(accepted.seq); journal.close();
     globalThis.fetch = env.fetcher;
@@ -389,10 +389,10 @@ for (const version of [2, 3, 4]) test(`browser recovery upgrades v${version} onl
     assert.equal((await browser.action(failed, 'upgrade', true)).status, 200);
     await browser.until('ready'); await browser.host.close();
     journal = new ContactStore({ directory: data, passphrase, route });
-    assert.equal(journal.contactVersion, 5); assert.equal(journal.id, id);
+    assert.equal(journal.contactVersion, 6); assert.equal(journal.id, id);
     assert.equal(journal.turn(accepted.seq).text, 'Keep my original history');
     assert.equal(journal.turn(accepted.seq).state, 'cancelled');
-    assert.equal(readdirSync(data).filter(name => name.startsWith('before-')).length, 5 - version);
+    assert.equal(readdirSync(data).filter(name => name.startsWith('before-')).length, 6 - version);
     assert.equal(journal.usage().requests, 0);
   } finally { journal?.close(); await browser?.host.close(); globalThis.fetch = nativeFetch; env.close(); }
 });

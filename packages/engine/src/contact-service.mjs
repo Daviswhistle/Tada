@@ -1,3 +1,4 @@
+import { MailSources } from './mail-sources.mjs';
 import { BrowserSources } from './browser-sources.mjs';
 import { observeAttention, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { createHash } from 'node:crypto';
@@ -28,7 +29,7 @@ function failureDetails(error) {
 }
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
-  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false;
+  #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false; #mailOperations = new Map();
   constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone } = {}) {
     super();
     this.#store = store; this.#model = model; this.#sources = sources; this.#timezone = followupTimezone(timezone);
@@ -121,9 +122,11 @@ export class ContactService extends EventEmitter {
         const ownerContext = !review && !proactive ? new OwnerContext(this.#store, job) : null;
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
         const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserSources(google ?? this.#sources, this.#store, this.#browser, job)) : google ?? this.#sources;
+        const mailSources = !review && !proactive && this.#store.contactVersion >= 6 ? new MailSources(interactive, this.#store, job, google) : null;
+        const interactiveTools = mailSources ?? interactive;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
-          ? new FollowupSources(interactive, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal, ownerContext })) : interactive;
+          ? new FollowupSources(interactiveTools, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal, ownerContext })) : interactiveTools;
         const continuing = this.#store.continuingUseEnabled();
         const research = !proactive && !review && typeof this.#model.researchPublicWeb === 'function' ? async signal => {
           const admit = () => { signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal); };
@@ -167,13 +170,14 @@ export class ContactService extends EventEmitter {
         abort.signal.throwIfAborted(); sources.assertCurrent?.(abort.signal);
         const proposals = !answer.refused && !proactive && base instanceof FollowupSources ? base.proposals() : [];
         const document = !answer.refused && sources instanceof DocumentSources ? sources.prepared() : null;
+        const mail = !answer.refused ? mailSources?.prepared() ?? null : null;
         const checkpoint = assistant.checkpoint();
         // Isolated personal-work intake uses this same durable meter. Include
         // its requests in both visible usage and the continuing checkpoint.
         answer.usage = this.#store.usage(); checkpoint.usage = { ...answer.usage };
         // The full document stays in the encrypted answer. Persist a compact
         // receipt in model context; read_document retrieves it when needed.
-        const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events', 'search_related_emails', 'read_email_thread']);
+        const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events', 'search_related_emails', 'read_email_thread', 'read_mail_action', 'prepare_mail', 'list_mail_actions']);
         for (const message of checkpoint.history) {
           if (message.role === 'tool' && message.tool_name === 'observe_shared_browser') message.content = JSON.stringify({ note: 'Shared browser observations expire. Observe the currently shared page again.' });
           if (message.role === 'tool' && message.tool_name === 'read_document') {
@@ -206,6 +210,11 @@ export class ContactService extends EventEmitter {
             else last.content = answer.text;
           }
         }
+        if (mail) {
+          const notice = '메일 초안을 저장했어요. 아직 보내지 않았습니다. 컴퓨터의 Tada 대화에서 메일 초안·발송 결과 확인을 열어 검토하고 보내 주세요.';
+          answer.notice = [answer.notice, notice].filter(Boolean).join('\n\n');
+          checkpoint.history.push({ role: 'assistant', content: `Local mail draft ${mail.id} saved for owner review; not sent. Use read_mail_action for its current state.` });
+        }
         const browserActions = this.#store.browserActions().filter(r => r.turn === job.seq);
         if (browserActions.length) {
           const verified = browserActions.filter(r => r.action.state === 'VERIFIED').length;
@@ -215,7 +224,7 @@ export class ContactService extends EventEmitter {
           checkpoint.history.push({ role: 'assistant', content: notice });
         }
         sources.assertCurrent?.(abort.signal);
-        this.#store.finish(job.seq, answer, checkpoint, proposals, document, directIds.length ? { epoch: delegation, proposal_ids: directIds } : null);
+        this.#store.finish(job.seq, answer, checkpoint, proposals, document, directIds.length ? { epoch: delegation, proposal_ids: directIds } : null, mail);
       } catch (error) {
         this.#store.fail(job.seq, safeCode(error), this.#stopped ? 'interrupted' : 'failed');
         const details = failureDetails(error);
@@ -242,6 +251,35 @@ export class ContactService extends EventEmitter {
       this.emit('change');
     });
   }
+  async mailOperation(device, id, operation) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    this.#store.assertDevice(device);
+    if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
+    if (this.#mailOperations.has(id)) throw Error('CONTACT_MAIL_BUSY');
+    const pending = Promise.resolve().then(() => { if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); return operation(); });
+    this.#mailOperations.set(id, pending); this.emit('change');
+    try { return await pending; }
+    finally { this.#mailOperations.delete(id); this.emit('change'); }
+  }
+  sendMail(device, input) {
+    return this.mailOperation(device, input.id, async () => {
+      const receipt = await this.#google.sendMail(device, input.id, input.revision, input.sha256, input.consent);
+      this.emit('change');
+      if (this.#stopped || !['ACCEPTED', 'UNCERTAIN'].includes(receipt.state)) return receipt;
+      try { return await this.#google.reconcileMail(device, input.id, new AbortController().signal); }
+      catch { return receipt; }
+    });
+  }
+  reconcileMail(device, id) { return this.mailOperation(device, id, () => this.#google.reconcileMail(device, id)); }
+  editMail(device, input) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    const result = this.#store.editMail(device, input.id, input.revision, input.sha256, input.draft); this.emit('change'); return result;
+  }
+  discardMail(device, input) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
+    const result = this.#store.discardMail(device, input.id, input.revision, input.sha256); this.emit('change'); return result;
+  }
+  disableMail(device) { if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED'); return this.#google.disableMail(device); }
   googleStatus() { return this.#google?.status() ?? { available: false, configured: false, connected: false, pending: false, state: 'unavailable', account: null, last_checked: null, error: null, last_disconnect: null }; }
   connectGoogle(device, consent) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
@@ -325,7 +363,9 @@ export class ContactService extends EventEmitter {
   get stopped() { return this.#stopped; }
   async idle() { while (this.#drain) await this.#drain; }
   async stopWhenIdle() {
-    while (this.#drain) await this.#drain;
+    while (this.#drain || this.#mailOperations.size) {
+      await Promise.allSettled([...(this.#drain ? [this.#drain] : []), ...this.#mailOperations.values()]);
+    }
     // No asynchronous gap between draining admitted work and closing admission.
     this.#stopped = true; clearInterval(this.#timer); this.#attentionAbort?.abort();
     this.emit('change');
@@ -343,6 +383,7 @@ export class ContactService extends EventEmitter {
     await this.#attention;
     this.#active?.abort.abort();
     await this.#drain;
+    await Promise.allSettled([...this.#mailOperations.values()]);
     await this.#browser?.close();
   }
 }

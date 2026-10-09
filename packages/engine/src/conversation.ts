@@ -295,7 +295,11 @@ export class ConversationAssistant {
         abort.signal.throwIfAborted();
         this.sources.assertCurrent?.(abort.signal);
         const message = response.message;
-        if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 16384
+        // Bound actionable output independently from the provider's opaque
+        // continuation, which duplicates tool arguments. The whole envelope
+        // retains the same 64 KiB ceiling used for restored checkpoints.
+        if (!message || message.role !== 'assistant' || typeof message.content !== 'string' || size(message) > 65536
+            || size({ ...message, provider_state: undefined }) > 16384
             || (message.provider_state !== undefined && !validProviderState(message.provider_state))) {
           throw new Error('ASSISTANT_MODEL_RESPONSE_INVALID');
         }

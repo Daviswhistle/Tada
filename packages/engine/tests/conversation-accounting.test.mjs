@@ -53,3 +53,13 @@ test('overflow preserves the previous lower bound instead of partial credit or a
     requests: 3, input_tokens: Number.MAX_SAFE_INTEGER, output_tokens: 1, unknown_requests: 1,
   });
 });
+
+for (const kind of ['actionable', 'continuation']) test(`oversized ${kind} output is rejected before any tool is run`, async () => {
+  const port = sources();
+  const model = { contextLimitBytes: 65536, chat: async () => ({ ...completed(), message: {
+    role: 'assistant', content: kind === 'actionable' ? 'x'.repeat(17000) : 'Short answer.',
+    ...(kind === 'continuation' ? { provider_state: { version: 1, provider: 'chatgpt-subscription', items: [{ type: 'reasoning', encrypted_content: 'x'.repeat(65536) }] } } : {}),
+  } }) };
+  await assert.rejects(new ConversationAssistant(model, port).ask('Hello.'), /ASSISTANT_MODEL_RESPONSE_INVALID/u);
+  assert.equal(port.calls, 0);
+});

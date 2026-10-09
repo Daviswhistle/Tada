@@ -1,8 +1,10 @@
+import { mailMime, gmailId } from './mail-actions.mjs';
+import { compareSentMail } from './mail-reconcile.mjs';
 import { EventEmitter } from 'node:events';
 import { createServer as httpServer } from 'node:http';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { parseUniqueJson } from './json.mjs';
-import { GOOGLE_SCOPES } from './google-contract.mjs';
+import { GOOGLE_SCOPES, GOOGLE_SEND_SCOPES, GOOGLE_SEND_CONSENT, googleScopesMatch } from './google-contract.mjs';
 import { openSystemBrowser } from './system-browser.mjs';
 const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
@@ -17,8 +19,7 @@ const bytes = value => Buffer.byteLength(value, 'utf8');
 const safeAccount = value => typeof value === 'string' && value.length <= 254
   && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/u.test(value) && !/[\u0000-\u001f\u007f]/u.test(value);
 const safeToken = value => typeof value === 'string' && value.length >= 16 && value.length <= 8192 && /^[\x21-\x7e]+$/u.test(value);
-const scopesMatch = value => Array.isArray(value) && value.length === GOOGLE_SCOPES.length
-  && [...value].sort().join('\n') === [...GOOGLE_SCOPES].sort().join('\n');
+const scopesMatch = value => googleScopesMatch(value.scopes, value.version === 2);
 const jsonHeaders = { 'Accept': 'application/json', 'Cache-Control': 'no-store' };
 
 function assertResponseShape(value, required) {
@@ -71,7 +72,7 @@ function loopbackTestEndpoints(value) {
 }
 
 export class GoogleConnection extends EventEmitter {
-  #store; #clientId; #clientSecret; #openBrowser; #fetch; #clock; #endpoints;
+  #closed = false; #store; #clientId; #clientSecret; #openBrowser; #fetch; #clock; #endpoints;
   #attempt = null; #revocation = null; #access = new Map(); #refreshes = new Map(); #epochAborts = new Map(); #expiredEpoch = null; #lastError = null; #lastDisconnect = null;
   constructor({ store, clientId = '', clientSecret = '', openBrowser = openSystemBrowser,
     fetchImpl = globalThis.fetch, clock = Date.now, testEndpoints } = {}) {
@@ -112,7 +113,7 @@ export class GoogleConnection extends EventEmitter {
     let ownerLive = true;
     try { this.#assertDevice(credential.device); } catch { ownerLive = false; }
     return { epoch: credential.epoch, email: credential.email, related_mail_epoch: this.#store.relatedMailEpoch(),
-      connected: this.#configured() && ownerLive && !credential.reconnect_required && scopesMatch(credential.scopes) };
+      connected: this.#configured() && ownerLive && !credential.reconnect_required && scopesMatch(credential) };
   }
   assertSnapshot(device, snapshot, calendarOnly = false) {
     this.#assertDevice(device);
@@ -120,7 +121,7 @@ export class GoogleConnection extends EventEmitter {
     if ((snapshot?.epoch ?? null) !== (current?.epoch ?? null)) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     if (!calendarOnly && (snapshot?.related_mail_epoch ?? null) !== this.#store.relatedMailEpoch()) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     if (current) {
-      if (!scopesMatch(current.scopes)) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
+      if (!scopesMatch(current)) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
       if (snapshot?.connected) this.#assertDevice(current.device);
       if (snapshot?.connected && current.reconnect_required) throw Error('CONTACT_GOOGLE_RECONNECT_REQUIRED');
     }
@@ -131,10 +132,10 @@ export class GoogleConnection extends EventEmitter {
     let ownerLive = false;
     if (credential) { try { this.#assertDevice(credential.device); ownerLive = true; } catch { /* expired/revoked grant is not usable */ } }
     const configured = this.#configured(), ready = this.#store.contactVersion >= 5;
-    const reconnect = !!credential && (!ownerLive || credential.reconnect_required || !scopesMatch(credential.scopes));
+    const reconnect = !!credential && (!ownerLive || credential.reconnect_required || !scopesMatch(credential));
     const pending = !!this.#attempt && !this.#attempt.completed;
-    return { available: true, configured, connected: ready && configured && !!credential && ownerLive && !credential.reconnect_required && scopesMatch(credential.scopes),
-      has_credential: !!credential, related_mail: { enabled: this.#store.relatedMailEpoch() !== null },
+    return { available: true, configured, connected: ready && configured && !!credential && ownerLive && !credential.reconnect_required && scopesMatch(credential),
+      has_credential: !!credential, mail: { ready: this.#store.contactVersion >= 6, connecting: pending && this.#attempt.send === true, enabled: credential?.version === 2 && credential.send_enabled === true }, related_mail: { enabled: this.#store.relatedMailEpoch() !== null },
       pending, state: !ready ? 'upgrade_required' : !configured ? 'not_configured' : pending ? 'connecting'
         : !credential ? 'disconnected' : reconnect ? 'reconnect_required' : 'connected',
       account: credential?.email ?? null, last_checked: credential?.last_checked ?? null,
@@ -148,13 +149,17 @@ export class GoogleConnection extends EventEmitter {
     return result;
   }
   async connect(device, consent) {
+    if (this.#closed) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     if (!this.#configured()) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
-    if (consent !== 'google_readonly_v1') throw Error('CONTACT_GOOGLE_CONSENT_REQUIRED');
+    const send = consent === GOOGLE_SEND_CONSENT;
+    if (send && this.#store.contactVersion < 6) throw Error('CONTACT_MAIL_UPGRADE_REQUIRED');
+    if (!send && consent !== 'google_readonly_v1') throw Error('CONTACT_GOOGLE_CONSENT_REQUIRED');
     this.#assertDevice(device);
     if (this.#store.contactVersion < 5) throw Error('CONTACT_ASSISTANCE_UPGRADE_REQUIRED');
     if (this.#attempt) throw Error('CONTACT_GOOGLE_BUSY');
     const previous = this.#store.googleCredential();
-    const attempt = { device, previousEpoch: previous?.epoch ?? null, epoch: randomBytes(32).toString('base64url'),
+    if (send && !previous) throw Error('CONTACT_GOOGLE_READ_CONNECTION_REQUIRED');
+    const attempt = { device, send, scopes: [...(send ? GOOGLE_SEND_SCOPES : GOOGLE_SCOPES)], expectedAccount: send ? previous.email : null, previousEpoch: previous?.epoch ?? null, epoch: randomBytes(32).toString('base64url'),
       verifier: randomBytes(48).toString('base64url'), controller: new AbortController(), server: null,
       timer: null, redirectUri: null, processing: false, closed: false, completed: false };
     const revocation = this.#revocation;
@@ -193,7 +198,7 @@ export class GoogleConnection extends EventEmitter {
       const challenge = createHash('sha256').update(attempt.verifier).digest('base64url');
       const url = new URL(AUTHORIZATION_ENDPOINT);
       for (const [key, value] of Object.entries({ client_id: this.#clientId, redirect_uri: attempt.redirectUri,
-        response_type: 'code', scope: GOOGLE_SCOPES.join(' '), access_type: 'offline', include_granted_scopes: 'false',
+        response_type: 'code', scope: attempt.scopes.join(' '), access_type: 'offline', include_granted_scopes: 'false',
         code_challenge: challenge, code_challenge_method: 'S256', state: attempt.epoch, prompt: 'consent' })) url.searchParams.set(key, value);
       const opened = await this.#openBrowser(url.href);
       this.#assertAttempt(attempt);
@@ -263,8 +268,9 @@ export class GoogleConnection extends EventEmitter {
       this.#assertAttempt(attempt);
       const current = this.#store.googleCredential();
       if ((current?.epoch ?? null) !== attempt.previousEpoch) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
-      const grant = { version: 1, epoch: randomUUID(), device: attempt.device,
-        scopes: [...GOOGLE_SCOPES], refresh_token: tokens.refresh_token, email: profile.emailAddress,
+      if (attempt.expectedAccount && profile.emailAddress !== attempt.expectedAccount) throw Error('CONTACT_MAIL_ACCOUNT_CHANGED');
+      const grant = { version: attempt.send ? 2 : 1, ...(attempt.send ? { send_enabled: true } : {}), epoch: randomUUID(), device: attempt.device,
+        scopes: [...attempt.scopes], refresh_token: tokens.refresh_token, email: profile.emailAddress,
         connected_at: this.#clock(), last_checked: this.#clock(), last_error: null, reconnect_required: false };
       this.#store.saveGoogleCredential(attempt.device, grant, attempt.previousEpoch);
       successful = true; this.#lastError = null; this.#lastDisconnect = null;
@@ -280,7 +286,7 @@ export class GoogleConnection extends EventEmitter {
       // exchange. A late callback must not update removed credentials or status.
       if (!attempt.closed && this.#attempt === attempt) {
         this.#lastError = code;
-        if (code && attempt.previousEpoch && this.#store.googleCredential()?.epoch === attempt.previousEpoch) {
+        if (code && !attempt.send && attempt.previousEpoch && this.#store.googleCredential()?.epoch === attempt.previousEpoch) {
           this.#store.noteGoogleError(attempt.previousEpoch, code, this.#clock());
         }
         this.#changed();
@@ -312,7 +318,7 @@ export class GoogleConnection extends EventEmitter {
     const granted = typeof result.scope === 'string' ? result.scope.split(' ').filter(Boolean).sort() : [];
     if (!safeToken(result.access_token) || !safeToken(result.refresh_token) || result.token_type !== 'Bearer'
         || !Number.isSafeInteger(result.expires_in) || result.expires_in < 60 || result.expires_in > 86400
-        || granted.join('\n') !== [...GOOGLE_SCOPES].sort().join('\n')) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
+        || granted.join('\n') !== [...attempt.scopes].sort().join('\n')) throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
     return result;
   }
   async #profile(attempt, accessToken) {
@@ -335,6 +341,7 @@ export class GoogleConnection extends EventEmitter {
     this.#changed();
   }
   #assertAuthority(device, epoch, signal) {
+    if (this.#closed) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     if (signal?.aborted) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
     const grant = this.#store.assertGoogleAuthority(device, epoch);
     if (signal?.aborted) throw Error('CONTACT_GOOGLE_AUTHORITY_CHANGED');
@@ -380,7 +387,7 @@ export class GoogleConnection extends EventEmitter {
           if (!safeToken(result?.access_token) || result.token_type !== 'Bearer'
               || !Number.isSafeInteger(result.expires_in) || result.expires_in < 60 || result.expires_in > 86400) throw Error('CONTACT_GOOGLE_RESPONSE_INVALID');
           if (result.scope !== undefined && (typeof result.scope !== 'string'
-              || result.scope.split(' ').filter(Boolean).sort().join('\n') !== [...GOOGLE_SCOPES].sort().join('\n'))) {
+              || result.scope.split(' ').filter(Boolean).sort().join('\n') !== [...current.scopes].sort().join('\n'))) {
             this.#store.noteGoogleError(epoch, 'permission_denied', this.#clock(), true);
             this.#access.delete(epoch); this.#changed(); throw Error('CONTACT_GOOGLE_SCOPE_DENIED');
           }
@@ -459,6 +466,82 @@ export class GoogleConnection extends EventEmitter {
     }
     throw Error('CONTACT_GOOGLE_TEMPORARILY_UNAVAILABLE');
   }
+  disableMail(device) {
+    const prior = this.#store.googleEpoch();
+    this.#store.disableMail(device);
+    if (this.#attempt?.send) this.#finishAttempt(this.#attempt, null);
+    this.#stopEpoch(prior); this.#changed(true);
+    return this.status();
+  }
+  async sendMail(device, id, revision, digest, consent, signal) {
+    const epoch = this.#store.googleEpoch();
+    this.#store.assertMailSend(device, id, revision, digest, epoch, consent);
+    const token = await this.#refresh(device, epoch, signal);
+    this.#assertAuthority(device, epoch, signal);
+    const requestSignal = AbortSignal.any([...(signal ? [signal] : []), this.#epochSignal(epoch), AbortSignal.timeout(12000)]);
+    // No await between the final authority/CAS check, durable admission and POST.
+    // A lost response leaves an attempt; neither this method nor startup retries it.
+    const record = this.#store.beginMailSend(device, id, revision, digest, epoch, consent);
+    let status = null;
+    try {
+      requestSignal.throwIfAborted();
+      const response = await this.#fetch(this.#apiEndpoint('gmail', GMAIL_BASE, '/users/me/messages/send'), {
+        method: 'POST', redirect: 'error', signal: requestSignal,
+        headers: { ...jsonHeaders, 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ raw: mailMime(record), ...(record.draft.reply ? { threadId: record.draft.reply.thread_id } : {}) }),
+      });
+      status = response.status;
+      if ([400, 401, 403, 404, 413, 422, 429].includes(status)) {
+        const receipt = this.#store.finishMailSend(id, 'REJECTED', 'gmail_rejected', { http_status: status });
+        try { await response.body?.cancel(); } catch { /* The explicit rejection is already durable. */ }
+        if (status === 401) {
+          this.#access.delete(epoch);
+          // Repair credentials only. Never replay the rejected POST, even when
+          // refresh succeeds; failures retain their existing recovery status.
+          try { await this.#refresh(device, epoch, signal); } catch { /* Preserve the send receipt. */ }
+        }
+        return receipt;
+      }
+      const result = await responseJson(response, 65536);
+      if (response.ok && gmailId(result.id) && gmailId(result.threadId)) {
+        return this.#store.finishMailSend(id, 'ACCEPTED', 'gmail_accepted_not_delivery', {
+          gmail_id: result.id, thread_id: result.threadId, http_status: status,
+        });
+      }
+    } catch { /* Preserve possible external effects even after authority is revoked. */ }
+    return this.#store.finishMailSend(id, 'UNCERTAIN', 'outcome_unknown', { http_status: status });
+  }
+  async reconcileMail(device, id, signal = new AbortController().signal) {
+    this.#assertDevice(device);
+    const record = this.#store.mailAction(id);
+    if (!['ACCEPTED', 'UNCERTAIN'].includes(record.state)) throw Error('CONTACT_MAIL_STATE_INVALID');
+    const epoch = this.#store.googleEpoch();
+    const grant = this.#assertAuthority(device, epoch, signal);
+    if (grant.email !== record.draft.account) throw Error('CONTACT_MAIL_ACCOUNT_CHANGED');
+    const url = new URL(`${GMAIL_BASE}/users/me/messages`);
+    url.searchParams.set('q', `in:sent rfc822msgid:${record.attempt.message_id}`); url.searchParams.set('maxResults', '2');
+    let state = 'UNCERTAIN', basis = 'read_unavailable', details = {};
+    try {
+      const list = await this.apiJson(device, epoch, url, signal);
+      const messages = list.messages ?? [];
+      if (!Array.isArray(messages) || messages.some(m => !gmailId(m?.id))) throw Error('CONTACT_MAIL_RECEIPT_INVALID');
+      if (!messages.length && !list.nextPageToken) basis = 'not_found_is_not_unsent';
+      else if (messages.length !== 1 || list.nextPageToken) basis = 'multiple_matches';
+      else {
+        const get = new URL(`${GMAIL_BASE}/users/me/messages/${messages[0].id}`); get.searchParams.set('format', 'full');
+        const message = await this.apiJson(device, epoch, get, signal);
+        if (message.id !== messages[0].id) throw Error('CONTACT_MAIL_RECEIPT_INVALID');
+        const matches = compareSentMail(record, message);
+        if (matches !== null) {
+          state = matches ? 'VERIFIED' : 'APPLIED_MISMATCH';
+          basis = matches ? 'sent_copy_matches_not_delivery' : 'sent_copy_mismatch';
+          details = { gmail_id: message.id, thread_id: message.threadId };
+        }
+      }
+      this.#assertAuthority(device, epoch, signal);
+    } catch { state = 'UNCERTAIN'; basis = 'read_unavailable'; details = {}; }
+    return this.#store.finishMailSend(id, state, basis, details);
+  }
   async disconnect(device) {
     this.#assertDevice(device);
     // Remove local authority before attempting Google's best-effort revoke.
@@ -519,6 +602,7 @@ export class GoogleConnection extends EventEmitter {
     }
   }
   close() {
+    this.#closed = true;
     if (this.#attempt) this.#finishAttempt(this.#attempt, 'authorization_denied');
     for (const controller of this.#epochAborts.values()) controller.abort();
     this.#epochAborts.clear(); this.#access.clear(); this.#refreshes.clear();

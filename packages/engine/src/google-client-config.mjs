@@ -118,7 +118,7 @@ export function saveGoogleClientConfig({ data, passphrase, client, route }) {
     if (!location) fail('PRIVATE_PATH_REQUIRED');
     try { store = new ContactStore({ directory: location.root, passphrase, route }); }
     catch { fail('OWNER_REQUIRED'); }
-    if (store.contactVersion !== 5) fail('UPGRADE_REQUIRED');
+    if (![5, 6].includes(store.contactVersion)) fail('UPGRADE_REQUIRED');
     if (store.googleCredential() !== null) fail('GRANT_PRESENT');
     const salt = randomBytes(32), nonce = randomBytes(12);
     key = keyFor(passphrase, salt); plain = Buffer.from(JSON.stringify(client));

@@ -217,7 +217,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     ui?.signal.throwIfAborted();
     const route = contactRoute({ version: 1, provider: identity.provider, model: identity.model,
       digest: identity.model_digest, endpoint: options.endpoint, scopes });
-    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize, assistance: options.initialize });
+    store = new ContactStore({ directory: options.data, passphrase, route, initialize: options.initialize, followups: options.initialize, reviews: options.initialize, assistance: options.initialize, mail: options.initialize });
     if (options.initialize) ui?.initialized?.();
     if (accountStore) accountStore.save({ ...accountStore.read(), model: provider.model });
     const googleClient = loadGoogleClientConfig({ data: options.data, passphrase, store });
@@ -237,10 +237,11 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       const followupBackup = await store.upgradeFollowups();
       const reviewBackup = await store.upgradeReviews();
       const assistanceBackup = await store.upgradeAssistance();
-      for (const path of [messagingBackup, followupBackup, reviewBackup, assistanceBackup].filter(Boolean)) process.stdout.write(`이전 연락 기록 백업: ${path}\n`);
-      process.stdout.write('연락 기록 v5 · 먼저 챙겨보기와 휴대폰 연결을 설정할 수 있습니다.\n');
+      const mailBackup = await store.upgradeMail('backup_mail_records_v1');
+      for (const path of [messagingBackup, followupBackup, reviewBackup, assistanceBackup, mailBackup].filter(Boolean)) process.stdout.write(`이전 연락 기록 백업: ${path}\n`);
+      process.stdout.write('연락 기록 v6 · 대화와 메일 초안·발송 결과를 이어서 보관합니다.\n');
     }
-    if (store.contactVersion < 5) throw new Error('CONTACT_ASSISTANCE_UPGRADE_REQUIRED');
+    if (store.contactVersion < 6) throw new Error('CONTACT_MAIL_UPGRADE_REQUIRED');
     if (options.telegram) {
       if (store.contactVersion < 2) throw new Error('CONTACT_MESSAGING_UPGRADE_REQUIRED');
       if (!await telegramConsent(process.stdin, process.stdout)) throw new Error('CONTACT_TELEGRAM_CONSENT_REQUIRED');

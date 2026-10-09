@@ -120,7 +120,8 @@ for (const revoke of ['disable', 'regrant', 'owner_device']) test(`a pending fin
     if (++calls === 1) return reply('', [call(spec())]); waiting(); return response;
   }), sources);
   try {
-    const { seq } = service.submit(e.device, randomUUID(), text); await reached;
+    const { seq } = service.submit(e.device, randomUUID(), text);
+    await Promise.race([reached, service.idle().then(() => { throw Error('Expected pending final response'); })]);
     if (revoke === 'owner_device') e.store.revoke(e.device);
     else { e.store.configureFollowupDelegation(e.device, false, null); if (revoke === 'regrant') enable(e); }
     release(reply('저장했어요.')); await service.idle();

@@ -185,6 +185,7 @@ for (const configured of [false, true]) test(`normal app startup and restart ${c
     tokens: { access_token: 'SYNTHETIC_SUBSCRIPTION_ACCESS_ONLY', refresh_token: 'SYNTHETIC_SUBSCRIPTION_REFRESH_ONLY', expires_at: Date.now() + 3600000, scopes: ['chatgpt.tokens.use.direct'] } });
   account.close();
   if (configured) f.save();
+  await f.store.upgradeMail('backup_mail_records_v1');
   const sealed = configured ? readFileSync(f.path) : null; f.store.close();
   const portServer = createServer(); portServer.listen(0, '127.0.0.1'); await once(portServer, 'listening');
   const port = portServer.address().port; await new Promise(resolve => portServer.close(resolve));

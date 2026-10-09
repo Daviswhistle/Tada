@@ -9,18 +9,18 @@ export const FOLLOWUP_TOOLS = [
   tool('list_followups', 'Read current commitments/proposals before reporting or revising work.', {
     status: { type: 'string', enum: ['active', 'all'] }, offset: { type: 'integer', minimum: 0 },
   }, ['status', 'offset']),
-  tool('propose_followup', 'Stage user-requested work; owner confirmation of summary/time activates it. List first for updates. No source-file authorization, repeats, third-party sending or mailbox watching. Scheduled inference needs separate owner approval.', {
+  tool('propose_followup', 'Stage work for owner confirmation of summary/time. List before updates. No file grants, repeats, third-party sending or mailbox watching; inference needs separate approval.', {
     operation_id: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$',
-      description: 'Stable within this turn; reuse only for identical fields.' },
-    target: { ...nullableString, description: 'New: null. Update: exact id from list_followups.' },
-    expected_version: { type: 'integer', minimum: 0, description: 'New: 0. Update: current version from list_followups.' },
-    title: { ...string, description: 'Nonempty user-requested title; max 240 UTF-8 bytes.' },
-    details: { ...string, description: 'Preserve scope/result/authority; max 2400 UTF-8 bytes.' },
+      description: 'Turn-stable; reuse only identical fields.' },
+    target: { ...nullableString, description: 'New=null; update=list_followups id.' },
+    expected_version: { type: 'integer', minimum: 0, description: 'New=0; update=current listed version.' },
+    title: { ...string, description: 'Requested title, 1-240 UTF-8 bytes.' },
+    details: { ...string, description: 'Scope/result/authority; max 2400 UTF-8 bytes.' },
     state: { type: 'string', enum: ['open', 'waiting', 'done', 'cancelled'],
-      description: 'New: open/waiting. Waiting needs an external dependency. done/cancelled need an existing target.' },
-    waiting_for: { ...nullableString, description: 'Nonempty dependency for waiting; null otherwise.' },
-    notify_at: { ...nullableString, description: 'Authorized future ISO time: YYYY-MM-DDTHH:mm:ssZ or offset; no fractions. null: no alert.' },
-    user_quote: { ...string, description: 'Exact nonempty request substring from CURRENT human message; max 1500 UTF-8 bytes.' },
+      description: 'New=open/waiting; waiting needs dependency; done/cancelled need target.' },
+    waiting_for: { ...nullableString, description: 'Waiting dependency; else null.' },
+    notify_at: { ...nullableString, description: 'Authorized future YYYY-MM-DDTHH:mm:ssZ/offset; no fractions. null=no alert.' },
+    user_quote: { ...string, description: 'Exact CURRENT owner request substring; 1-1500 UTF-8 bytes.' },
   }, ['operation_id', 'target', 'expected_version', 'title', 'details', 'state', 'waiting_for', 'notify_at', 'user_quote']),
 ];
 
@@ -35,7 +35,7 @@ export class FollowupSources {
   get definitions() {
     const tools = structuredClone(FOLLOWUP_TOOLS);
     if (this.#delegation !== null) tools.push(tool('apply_personal_request',
-      'Carry out an explicit personal-work or one-time reminder request from the CURRENT owner message. Takes no proposed fields: the host independently interprets the owner request and saved work without external sources or this conversation output. Resolve references to older owner messages with read_history first. Use propose_followup for suggestions needing confirmation. No external actions.', {}, []));
+      'Apply explicit personal-work/one-time reminder from CURRENT owner message. Host interprets owner messages/saved work, never sources/assistant output. read_history resolves old references first. No external actions; suggestions→propose_followup.', {}, []));
     return [...this.#base.definitions, ...tools];
   }
   get delegation() { return this.#delegation; }
@@ -43,10 +43,10 @@ export class FollowupSources {
     const proactive = this.#store.proactiveStatus();
     const connectedGoogle = ['list_recent_emails', 'list_upcoming_events'].every(name => this.#base.definitions.some(tool => tool.function.name === name));
     const standing = !proactive.available ? '' : !proactive.enabled
-      ? ' Proactive care is DISABLED; armed reminders/reviews are unchanged. Current host settings supersede past capability claims.'
-      : ` Proactive care is ENABLED; mode ${proactive.mode}; Google mail/calendar ${connectedGoogle ? 'available within the scope above' : 'unavailable'}. The host checks ${connectedGoogle ? 'permitted mail/calendar changes and saved work' : 'saved conversation/work'} ${proactive.mode === 'continuous' ? 'every 15 minutes; AI suggestions at most four times daily, 09:00-21:00' : 'once daily, 09:00-21:00'}.${connectedGoogle && proactive.mode === 'continuous' ? ' Calendar reminders: 30 minutes before timed events, all-day mornings.' : ''} This active standing schedule needs no per-check user message, while the host is awake and running. Conversation preferences inform subsequent checks. Acknowledgement does not create/change schedules or source access. Current host settings supersede past capability claims.`;
+      ? ' Proactive care is DISABLED; armed reminders/reviews are unchanged; current settings override past claims.'
+      : ` Proactive care is ENABLED; mode ${proactive.mode}; checks ${connectedGoogle ? 'permitted mail/calendar changes and saved work' : 'saved conversation/work; Google mail/calendar unavailable'} ${proactive.mode === 'continuous' ? 'every 15 minutes, AI at most four times daily 09:00-21:00' : 'once daily 09:00-21:00'}.${connectedGoogle && proactive.mode === 'continuous' ? ' Event alerts: 30 minutes before timed events, all-day mornings.' : ''} Runs while host awake/running without user messages. Preferences inform checks; acknowledgement changes no schedules/access. Current settings override past claims.`;
     const base = this.#base.hostContext ? `${this.#base.hostContext}\n` : '';
-    return `${base}Host time: ${new Date(this.#clock()).toISOString()}; timezone: ${this.#timezone}. Retrieve saved work before changes. ${this.#delegation === null ? 'Proposals need owner confirmation' : 'Personal-work delegation is enabled: use apply_personal_request for the current explicit owner request. It independently interprets that request without source content. propose_followup ALWAYS needs individual confirmation, including source-derived suggestions'}; do not investigate deferred work early.${this.#store.contactVersion >= 4 && this.#localReviews ? ' After saving, the owner may separately approve one local read-only review on its card or via /review COMMITMENT_ID VERSION in Telegram. Only an armed review runs later; a reminder alone does not. Review results do not prove completion.' : ' Per-task LOCAL FILE reviews are unavailable; enabled proactive care is separate. Reminders alone never run a model.'}${standing}`; }
+    return `${base}Host time: ${new Date(this.#clock()).toISOString()}; timezone: ${this.#timezone}. Retrieve saved work before changes. ${this.#delegation === null ? 'Proposals need owner confirmation' : 'Personal-work delegation is enabled; propose_followup ALWAYS needs confirmation, including source suggestions'}; do not investigate deferred work early.${this.#store.contactVersion >= 4 && this.#localReviews ? ' Owner may arm one local read-only review on its card or Telegram /review COMMITMENT_ID VERSION. Reminders alone never run a model; review results do not prove completion.' : ' Per-task LOCAL FILE reviews are unavailable; enabled proactive care is separate. Reminders alone never run a model.'}${standing}`; }
   get verificationKind() { return this.#base.verificationKind; }
   isEvidenceRead(name) { return this.#base.isEvidenceRead?.(name) === true; }
   assertCurrent(signal) { signal?.throwIfAborted(); this.#base.assertCurrent?.(signal); if (this.#directIds.size && this.#delegation !== null) this.#store.assertFollowupDelegation(this.#delegation); signal?.throwIfAborted(); }

@@ -108,6 +108,20 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       // Preserve an existing connection only after this journal authenticates
       // its legacy token. Other still-running versions may need that cookie.
       if (cookie.legacy) res.setHeader('Set-Cookie', setCookie(cookie.token));
+      if (req.method === 'GET' && /^\/api\/mail\/mail-[a-f0-9-]{36}$/u.test(target.pathname) && !target.search) {
+        return send(res, 200, { mail: store.mailAction(target.pathname.split('/').at(-1)) });
+      }
+      if (req.method === 'POST' && ['/api/mail/edit', '/api/mail/discard', '/api/mail/send', '/api/mail/reconcile'].includes(target.pathname) && !target.search) {
+        const data = await readBody(req, 49152);
+        const action = target.pathname.split('/').at(-1);
+        object(data, action === 'reconcile' ? ['id'] : action === 'edit' ? ['id', 'revision', 'sha256', 'draft'] : action === 'send' ? ['id', 'revision', 'sha256', 'consent'] : ['id', 'revision', 'sha256']);
+        const mail = action === 'edit' ? service.editMail(device, data) : action === 'discard' ? service.discardMail(device, data)
+          : action === 'send' ? await service.sendMail(device, data) : await service.reconcileMail(device, data.id);
+        store.assertDevice(device); return send(res, 200, { mail });
+      }
+      if (req.method === 'POST' && target.pathname === '/api/google/disable-mail' && !target.search) {
+        const data = await readBody(req); object(data, []); return send(res, 200, service.disableMail(device));
+      }
       if (req.method === 'GET' && /^\/api\/documents\/[1-9][0-9]*\/edit$/u.test(target.pathname) && !target.search) {
         const document = store.latestDocument(Number(target.pathname.split('/').at(-2)));
         if (!document) return send(res, 404, { error: 'CONTACT_DOCUMENT_NOT_FOUND' });
