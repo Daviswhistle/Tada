@@ -1,0 +1,25 @@
+{
+  "implementation": "e15cb872fa9220b97dcf3b32da6b0942c29ac7c2",
+  "source_report": "2026-10-09-public-research-recall.json",
+  "source_sha256": "a014eb0ac3f44d9b83ff5074d892c3d04f31aa1e4cd561c7186ec64574847f97",
+  "harness_sha256": "3b1678d54d9f8720fa1409959e7757895cb3845123c7acc2089682257eade9d3",
+  "independent_evaluator": "Existing read-only release acceptance auditor, same semantic review role.",
+  "variants": {
+    "Microsoft": "passed",
+    "Costco": "passed"
+  },
+  "evidence": [
+    "Initial model input contains only the follow-up, no company or earlier answer.",
+    "Both search_history then read_history(2) retrieve the exact previously recorded actual answer; truncated=false.",
+    "Original id/path/sha256/observed_at remain identical in retrieval and accepted final answer.",
+    "Three lines preserve each conclusion and conditions; historical prices are not new observations.",
+    "Six observed requests, zero unknown, zero web attempts, no citation correction or new owner question."
+  ],
+  "formal_16_case_credit": 0,
+  "release_qualified": false,
+  "limitations": [
+    "Previously observed real answers were inserted into a fresh synthetic journal with empty recent context and the original evidence counter.",
+    "This is an actual model recall proof, not natural long-running compaction or a new public research run.",
+    "No additional formal A01 credit."
+  ]
+}

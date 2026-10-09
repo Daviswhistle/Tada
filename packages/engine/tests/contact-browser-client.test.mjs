@@ -52,7 +52,7 @@ function client({ parser = true } = {}) {
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
-    URLSearchParams, atob, crypto: { randomUUID },
+    URL, URLSearchParams, atob, crypto: { randomUUID },
     location: { hash: '#pair=fixture', pathname: '/' }, history: { replaceState() {} },
     document: { getElementById: get, hidden: false, body,
       createElement: tag => new Element(tag), createTextNode: text => Object.assign(new Element('#text'), { textContent: text }), createDocumentFragment: () => new Element() },
@@ -528,7 +528,7 @@ test('planning tables retain headers, emphasis, escaped pipes and citations with
   assert.equal(c.state.turns[0].answer.text, text);
 });
 
-test('table contents cannot create active HTML, remote resources or event attributes', async () => {
+test('table contents allow owner-clicked web links but never active HTML, automatic remote resources or event attributes', async () => {
   const c = client();
   const text = '| 자료 | 내용 |\n| --- | --- |\n| [메일](https://example.invalid/private) | <img src=x onerror=bad()> |\n| ![그림](https://example.invalid/track) | [실행](javascript:bad()) |';
   c.state.turns = [{ seq: 1, state: 'answered', text: '정리', answer: { text, sources: [] } }];
@@ -536,9 +536,11 @@ test('table contents cannot create active HTML, remote resources or event attrib
   const answer = c.get('messages').querySelectorAll('div.answer')[0];
   const contents = element => element.textContent + element.children.map(contents).join('');
   assert.equal(answer.querySelectorAll('table').length, 1);
-  for (const tag of ['a', 'img', 'script', 'iframe', 'style', 'input']) assert.equal(answer.querySelectorAll(tag).length, 0);
-  for (const value of ['메일 (https://example.invalid/private)', '<img src=x onerror=bad()>', '그림 (https://example.invalid/track)', '[실행](javascript:bad())']) assert.ok(contents(answer).includes(value));
-  const visit = node => { for (const [key] of node.attributes) assert.ok(!/^on|^(?:href|src|style|id)$/u.test(key)); for (const child of node.children) visit(child); };
+  for (const tag of ['img', 'script', 'iframe', 'style', 'input']) assert.equal(answer.querySelectorAll(tag).length, 0);
+  const links = answer.querySelectorAll('a'); assert.equal(links.length, 1); assert.equal(links[0].getAttribute('href'), 'https://example.invalid/private');
+  assert.equal(links[0].getAttribute('target'), '_blank'); assert.equal(links[0].getAttribute('rel'), 'noopener noreferrer');
+  for (const value of ['메일', '<img src=x onerror=bad()>', '그림 (https://example.invalid/track)', '[실행](javascript:bad())']) assert.ok(contents(answer).includes(value));
+  const visit = node => { for (const [key] of node.attributes) assert.ok(!/^on|^(?:src|style|id)$/u.test(key) && (key !== 'href' || node.tagName === 'A')); for (const child of node.children) visit(child); };
   visit(answer);
 });
 
@@ -552,4 +554,21 @@ test('table-like code stays code and malformed separators do not lose text', asy
   assert.equal(answer.querySelectorAll('table').length, 0);
   assert.equal(contents(answer.querySelectorAll('pre')[0]), '| a | b |\n| --- | --- |\n| 1 | 2 |\n');
   assert.ok(contents(answer).includes('| 원문 | 유지 |'));
+});
+
+test('citations open HTTP(S) only without referrers; credential, relative and executable links stay inert', async () => {
+  const c = client();
+  c.state.turns = [{ seq: 1, state: 'answered', text: '자료 조사', answer: { verification: 'provider_web_report_checked', sources: [{ id: 'S1', source: 'ChatGPT public web research', path: 'report-1' }], text: '[공식](https://example.org/source) [자료](http://example.org/info) [비밀](https://user:password@example.org/) [상대](/api/logout) [메일](mailto:someone@example.org) [코드](javascript:bad()) ![원격](https://example.org/track)' } }];
+  await c.refresh(); const answer = c.get('messages').querySelectorAll('div.answer')[0], links = answer.querySelectorAll('a');
+  assert.deepEqual(links.map(e => e.getAttribute('href')), ['https://example.org/source', 'http://example.org/info']);
+  assert.ok(links.every(e => e.getAttribute('rel') === 'noopener noreferrer' && e.getAttribute('target') === '_blank'));
+  assert.equal(answer.querySelectorAll('img').length, 0);
+  const contents = e => e.textContent + e.children.map(contents).join('');
+  assert.match(contents(c.get('messages')), /각 웹페이지를 별도로 다시 검증한 것은 아닙니다/);
+});
+
+test('persisted public citations remain clickable when the model answer contains only a source ID',async()=>{
+ const c=client();c.state.turns=[{seq:1,state:'answered',text:'자료 조사',answer:{text:'확인한 결과입니다. [S1]',verification:'provider_web_report_checked',sources:[{id:'S1',source:'ChatGPT public web research',path:'report-1',citations:[{url:'https://example.org/primary',title:'공식 원문'},{url:'javascript:bad()',title:'실행 금지'},{url:'https://user:secret@example.org',title:'인증 포함 금지'}]}]}}];
+ await c.refresh();const links=c.get('messages').querySelectorAll('a');
+ assert.deepEqual(links.map(a=>a.getAttribute('href')),['https://example.org/primary']);assert.equal(links[0].textContent,'공식 원문');assert.equal(links[0].getAttribute('rel'),'noopener noreferrer');
 });

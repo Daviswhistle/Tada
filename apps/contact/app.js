@@ -102,9 +102,15 @@ function paired(yes) {
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
   cancelled: '이 요청은 취소했어요.', interrupted: 'Tada가 멈춰 답변을 끝내지 못했어요. 요청은 남아 있어요.',
   failed: '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.' };
+function safeWebHref(raw) {
+  if (typeof raw !== 'string' || /[\u0000-\u0020\u007f-\u009f]/u.test(raw)) return null;
+  try { const url = new URL(raw); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; }
+  catch { return null; }
+}
 function renderAnswer(parent, text) {
   // The parser supplies tokens, never executable HTML. Only this allowlist
-  // creates elements; model links/images remain inert, selectable text.
+  // creates elements. Public HTTP(S) links open only on an owner click;
+  // images and unsafe/relative URLs remain inert, selectable text.
   const fragment = document.createDocumentFragment();
   try {
     const parser = globalThis.markdownit({ html: false, linkify: false, typographer: false });
@@ -128,7 +134,9 @@ function renderAnswer(parent, text) {
           const tag = kind === 'heading' && /^h[1-6]$/u.test(token.tag)
             ? `h${Math.min(6, Number(token.tag.slice(1)) + 2)}` : tags[kind];
           if (!tag) throw Error('Unsupported answer structure');
-          const element = document.createElement(tag);
+          const href = kind === 'link' ? safeWebHref(token.attrGet('href')) : null;
+          const element = document.createElement(href ? 'a' : tag);
+          if (href) { element.setAttribute('href', href); element.setAttribute('target', '_blank'); element.setAttribute('rel', 'noopener noreferrer'); }
           if (tag === 'ol') {
             const start = token.attrGet('start');
             if (start !== null && /^\d{1,9}$/u.test(start)) element.setAttribute('start', start);
@@ -144,7 +152,7 @@ function renderAnswer(parent, text) {
             wrapper.append(element);
             const hint = document.createElement('p'); hint.className = 'table-scroll-hint'; hint.textContent = '표를 좌우로 넘겨 나머지 내용을 볼 수 있어요.'; target.append(hint, wrapper);
           } else target.append(element);
-          stack.push({ node: element, suffix: kind === 'link' ? ` (${token.attrGet('href') ?? ''})` : '' });
+          stack.push({ node: element, suffix: kind === 'link' && !href ? ` (${token.attrGet('href') ?? ''})` : '' });
           continue;
         }
         if (['text', 'html_inline', 'html_block'].includes(token.type)) {
@@ -205,7 +213,27 @@ function render() {
       if (turn.answer.sources.length) {
         const details = document.createElement('details'); details.className = 'source-list';
         const summary = document.createElement('summary'); summary.textContent = turn.answer.verification === 'saved_document_sources_checked' ? '저장된 문서의 당시 참고 자료' : '참고한 자료'; details.append(summary);
-        for (const source of turn.answer.sources) { const item = document.createElement('div'); item.textContent = `[${source.id}] ${source.source}/${source.path}${turn.answer.verification === 'saved_document_sources_checked' ? ' · 당시 확인 시각 ' + source.observed_at : ''}`; details.append(item); }
+        if (turn.answer.verification === 'provider_web_report_checked') { const note = document.createElement('p'); note.textContent = '웹 출처는 연결된 AI의 검색 결과입니다. Tada가 각 웹페이지를 별도로 다시 검증한 것은 아닙니다.'; details.append(note); }
+        for (const source of turn.answer.sources) {
+          const item = document.createElement('div');
+          if (source.source === 'ChatGPT public web research') {
+            const date = new Date(source.observed_at);
+            const time = Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(date) : '';
+            item.textContent = `[${source.id}] 공개 웹 조사${time ? ' · ' + time : ''}`;
+            if (Array.isArray(source.citations)) {
+              const list = document.createElement('ul');
+              for (const citation of source.citations) {
+                const href = safeWebHref(citation?.url); if (!href) continue;
+                const row = document.createElement('li'), link = document.createElement('a');
+                link.textContent = citation.title || href; link.setAttribute('href', href);
+                link.setAttribute('target', '_blank'); link.setAttribute('rel', 'noopener noreferrer');
+                row.append(link); list.append(row);
+              }
+              item.append(list);
+            }
+          } else item.textContent = `[${source.id}] ${source.source}/${source.path}${['saved_document_sources_checked', 'provider_web_report_checked'].includes(turn.answer.verification) ? ' · 당시 확인 시각 ' + source.observed_at : ''}`;
+          details.append(item);
+        }
         article.append(details);
       }
     } else {
@@ -264,7 +292,7 @@ async function refresh(older = false, quiet = false) {
     $('provider-info').hidden = !result.provider;
     $('plan-usage').hidden = !result.provider?.usage_url;
     $('capability-info').textContent = result.provider?.provider === 'chatgpt-subscription'
-      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 켜면 같은 범위를 자동으로 살펴봅니다. 수시 확인을 켜면 15분마다 변화를 확인하고 일정 시각도 챙깁니다.'
+      ? '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·공개 웹 조사·허용된 자료 조사·맡긴 일 기록·일회성 알림을 지원합니다. 웹 조사는 현재 부탁과 최근에 하신 말씀을 바탕으로 기존 구독에서 처리하며, 계정의 검색 지원 여부와 사용량 한도가 적용됩니다. Google 계정을 연결하면 현재 대화에서 최근 메일과 다가오는 일정을 읽을 수 있고, 먼저 챙겨보기를 켜면 같은 범위를 자동으로 살펴봅니다. 수시 확인을 켜면 15분마다 변화를 확인하고 일정 시각도 챙깁니다.'
       : '창을 닫아도 접수한 요청은 호스트에서 이어집니다. 문서 작성·수정·내려받기·허용된 자료 조사·맡긴 일 기록·일회성 알림·별도 승인한 로컬 자료 재확인을 지원합니다.';
     if (result.messaging?.suspended) notice('텔레그램 연락이 중지됐어요. 이 화면의 대화와 결과는 유지돼요. 호스트에서 연락 상태를 확인해 주세요.');
     else if (result.messaging?.paired && result.messaging?.enabled === false) notice('이번 호스트 실행에서는 텔레그램 연락이 꺼져 있어요. 이 화면에서 계속 이야기할 수 있어요.');

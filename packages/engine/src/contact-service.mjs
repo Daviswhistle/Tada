@@ -99,13 +99,30 @@ export class ContactService extends EventEmitter {
           : this.#store.contactVersion >= 3
           ? new FollowupSources(google ?? this.#sources, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal })) : (google ?? this.#sources);
         const continuing = this.#store.continuingUseEnabled();
-        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job, { history: continuing });
+        const research = !proactive && !review && typeof this.#model.researchPublicWeb === 'function' ? async signal => {
+          signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
+          if (this.#store.requestAllowance(job.seq) < 2) throw Error('CONTACT_REQUEST_LIMIT');
+          const previous = []; let bytes = 0;
+          for (const turn of this.#store.page(job.seq).turns.reverse()) {
+            if (turn.origin === 'proactive' || this.#store.reviewForTurn(turn.seq)) continue;
+            const size = Buffer.byteLength(JSON.stringify(turn.text)) + 1;
+            if (previous.length === 4 || bytes + size > 8190) break;
+            previous.unshift(turn.text); bytes += size;
+          }
+          const id = this.#store.reserve(job.seq); let response;
+          try { response = await this.#model.researchPublicWeb(job.text, previous, signal); }
+          catch (error) { this.#store.observe(id, error?.observedUsage ?? null); providerFailure = failureDetails(error); throw error; }
+          this.#store.observe(id, response);
+          signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
+          return response.report;
+        } : null;
+        const sources = proactive ? new ProactiveSources(this.#store, job, google) : review ? base : new DocumentSources(base, this.#store, job, { history: continuing, research });
         const metered = { chat: async (messages, tools, signal) => {
           signal.throwIfAborted(); this.#store.assertTurnAuthority(job.seq); sources.assertCurrent?.(signal);
           const id = this.#store.reserve(job.seq);
           let response;
           try { response = await this.#model.chat(messages, tools, signal); }
-          catch (error) { this.#store.observe(id, null); providerFailure = failureDetails(error); throw error; }
+          catch (error) { this.#store.observe(id, error?.observedUsage ?? null); providerFailure = failureDetails(error); throw error; }
           this.#store.observe(id, response); // before discarding any late result
           signal.throwIfAborted(); sources.assertCurrent?.(signal);
           return response;
@@ -162,7 +179,7 @@ export class ContactService extends EventEmitter {
           } else {
             answer.text += notice;
             const last = checkpoint.history[checkpoint.history.length - 1];
-            if (last.provider_state) checkpoint.history.push({ role: 'assistant', content: notice.trim() });
+            if (!last || last.provider_state) checkpoint.history.push({ role: 'assistant', content: notice.trim() });
             else last.content = answer.text;
           }
         }

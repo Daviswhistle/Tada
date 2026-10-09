@@ -18,6 +18,7 @@ export interface ResearchAnswer {
   kind: 'answer' | 'refusal';
   parts: ResearchPart[];
   sources: { url: string; title: string }[];
+  dataFeeds: string[];
   searches: number;
   usage: ResearchUsage | null;
   // These opaque provider items are private continuation, never a UI/log field.
@@ -86,7 +87,8 @@ export function researchRequest(model: string, instructions: string, input: read
   return body;
 }
 
-export function decodeResearchResponse(raw: string, model: string): ResearchAnswer {
+export function decodeResearchResponse(raw: string, model: string, toolCalls = RESEARCH_LIMITS.toolCalls): ResearchAnswer {
+  if (!Number.isSafeInteger(toolCalls) || toolCalls < 1 || toolCalls > 24) fail('RESEARCH_INVALID_CONFIG');
   let response: JsonObject;
   try { response = object(parseUniqueJson(raw, RESEARCH_LIMITS.responseBytes)); }
   catch { return fail('RESEARCH_INVALID_RESPONSE'); }
@@ -102,6 +104,7 @@ export function decodeResearchResponse(raw: string, model: string): ResearchAnsw
     const output = response.output as unknown[];
     const parts: ResearchPart[] = [];
     const sources = new Map<string, { url: string; title: string }>();
+    const dataFeeds = new Set<string>();
     let searches = 0;
     let refused = false;
     const itemIds = new Set<string>();
@@ -123,6 +126,14 @@ export function decodeResearchResponse(raw: string, model: string): ResearchAnsw
           if (!Array.isArray(action.sources) || action.sources.length > 128) fail('RESEARCH_INVALID_RESPONSE');
           for (const candidateSource of action.sources as unknown[]) {
             const source = object(candidateSource);
+            // The web-search guide includes named third-party data feeds in
+            // this list. They are attribution, never URLs or client tool calls.
+            if (source.type === 'api') {
+              if (typeof source.name !== 'string' || !['oai-finance', 'oai-weather', 'oai-sports'].includes(source.name)
+                || Object.keys(source).some(key => !['type', 'name'].includes(key))) fail('RESEARCH_UNSUPPORTED_OUTPUT');
+              dataFeeds.add(source.name as string); continue;
+            }
+            if (source.type !== undefined && source.type !== 'url') fail('RESEARCH_UNSUPPORTED_OUTPUT');
             const url = citationUrl(source.url);
             const title = source.title === undefined ? url : string(source.title, 4096);
             sources.set(url, { url, title });
@@ -160,11 +171,11 @@ export function decodeResearchResponse(raw: string, model: string): ResearchAnsw
         fail('RESEARCH_UNSUPPORTED_OUTPUT');
       }
     }
-    if (!parts.length || searches > RESEARCH_LIMITS.toolCalls) fail('RESEARCH_INVALID_RESPONSE');
+    if (!parts.length || searches > toolCalls) fail('RESEARCH_INVALID_RESPONSE');
     if (searches > 0 && !refused && !parts.some(part => part.citations.length > 0)) fail('RESEARCH_SOURCE_MISSING');
     return {
       responseId, requestedModel: model, returnedModel,
-      kind: refused ? 'refusal' : 'answer', parts, sources: [...sources.values()],
+      kind: refused ? 'refusal' : 'answer', parts, sources: [...sources.values()], dataFeeds: [...dataFeeds],
       searches, usage: observed, continuation: output as JsonObject[],
     };
   } catch (error) {

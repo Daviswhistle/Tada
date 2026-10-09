@@ -204,3 +204,14 @@ test('disposing a provider aborts its active HTTP body instead of silently leavi
   await tick(); provider.dispose();
   await assert.rejects(pending, code('RESEARCH_CANCELLED')); assert.equal(cancelled, true);
 });
+
+test('documented web data feeds coexist with URL citations and never become executable tools or invented URLs',()=>{
+ const value=responseFixture();value.output[1].action.sources.push({type:'api',name:'oai-finance'},{type:'api',name:'oai-weather'},{type:'api',name:'oai-sports'});
+ const answer=decodeResearchResponse(JSON.stringify(value),MODEL);
+ assert.deepEqual(answer.dataFeeds,['oai-finance','oai-weather','oai-sports']);assert.equal(answer.sources.length,1);assert.equal(answer.parts[0].citations.length,1);
+ for(const source of [{type:'api',name:['oai-finance']},{type:'api',name:null},{type:'api',name:42},{type:'api',name:{}},{type:'api',name:'unknown-feed'},{type:'api',name:'oai-finance',url:'https://injected.example'},{type:'unknown',url:'https://example.org/'},{type:'url',url:'javascript:bad()'}]){
+  const bad=responseFixture();bad.output[1].action.sources.push(source);assert.throws(()=>decodeResearchResponse(JSON.stringify(bad),MODEL),ResearchFault);
+ }
+ const missing=responseFixture();missing.output[1].action.sources=[{type:'api',name:'oai-finance'}];missing.output[2].content[0].annotations=[];
+ assert.throws(()=>decodeResearchResponse(JSON.stringify(missing),MODEL),code('RESEARCH_SOURCE_MISSING'));
+});

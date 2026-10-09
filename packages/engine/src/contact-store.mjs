@@ -60,17 +60,24 @@ const SCHEMA_V5 = SCHEMA_V4 + ASSISTANCE_SCHEMA;
 
 const telegramId = value => typeof value === 'string' && /^[1-9][0-9]{0,15}$/u.test(value)
   && Number.isSafeInteger(Number(value)) && Number(value) < 2 ** 52;
-function messageParts(text) {
+function messageParts(text, keepLines = true) {
   // Count UTF-16 units conservatively and do not cut surrogate pairs. Plain text,
   // no markdown parser or embedded media, and no silent shortening of an answer.
   if (typeof text !== 'string' || !text.trim() || !text.isWellFormed() || Buffer.byteLength(text) > 65536) throw new Error('CONTACT_NOTICE_INVALID');
   const result = []; let part = '';
-  for (const scalar of text) {
-    if (part.length + scalar.length > 3400) { result.push(part); part = ''; }
-    part += scalar;
+  for (const line of keepLines ? text.split(/(?<=\n)/u) : [text]) {
+    // Citation lines fit in one part. Move the whole line before splitting a
+    // long paragraph so an otherwise valid URL cannot straddle two messages.
+    if (part && line.length <= 3400 && part.length + line.length > 3400) { result.push(part); part = ''; }
+    for (const scalar of line) {
+      if (part.length + scalar.length > 3400) { result.push(part); part = ''; }
+      part += scalar;
+    }
   }
   if (part) result.push(part);
-  if (result.length > 20) throw new Error('CONTACT_NOTICE_LIMIT');
+  // Preserve the prior capacity for unusually large plain-text notes. Research
+  // replies are capped at 30 KiB, so line-aware packing stays within 20 parts.
+  if (result.length > 20) { if (keepLines) return messageParts(text, false); throw new Error('CONTACT_NOTICE_LIMIT'); }
   return result.map((body, i) => result.length > 1 ? `[${i + 1}/${result.length}]\n${body}` : body);
 }
 
@@ -637,6 +644,16 @@ export class ContactStore {
           const turn = this.#turn(row);
           text = `Tada · 요청 ${row.seq}\n${turn.answer.text}`;
           if (turn.answer.notice) text += '\n\n' + turn.answer.notice;
+          const citations = [...new Map(turn.answer.sources.flatMap(source => (source.citations ?? []).map(citation =>
+            [citation.url, `[${source.id}] ${citation.title} · ${citation.url}`]))).values()];
+          const included = []; let bytes = Buffer.byteLength(text), omitted = 0;
+          for (const citation of citations) {
+            const length = Buffer.byteLength(citation) + 1;
+            if (bytes + length > 30000 || citation.length > 3000) { omitted++; continue; }
+            included.push(citation); bytes += length;
+          }
+          if (included.length) text += '\n\n참고 자료\n' + included.join('\n');
+          if (omitted) text += `\n\n출처 ${omitted}건은 길이 때문에 이 알림에 담지 못했어요. 같은 대화 화면의 참고 자료에서 전체 링크를 확인할 수 있어요.`;
           if (turn.answer.sources.length) text += '\n\n자료 식별자·관측 시각은 같은 연락 화면의 참고 자료에서 확인할 수 있어요.';
         } else {
           let failure = '이번 답변을 완료하지 못했어요. 앞선 대화는 보존했어요. 새 메시지로 이어서 이야기할 수 있어요.';

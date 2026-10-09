@@ -109,7 +109,13 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         if (!document) return send(res, 404, { error: 'CONTACT_DOCUMENT_NOT_FOUND' });
         const extension = document.format === 'markdown' ? 'md' : 'txt';
         const content = document.content + (document.sources.length ? '\n\n---\n참고 자료\n' + document.sources.map(source =>
-          `[${source.id}] ${source.source}/${source.path} · 확인 시각 ${source.observed_at}`).join('\n') + '\n' : '');
+          `[${source.id}] ${source.source}/${source.path} · 확인 시각 ${source.observed_at}`
+          + (source.citations?.length ? '\n' + source.citations.map(citation => {
+            // Titles are untrusted provider text, even inside a downloaded Markdown file.
+            const title = document.format === 'markdown' ? citation.title.replace(/[\\`*_{}\[\]()#+.!<>|~-]/gu, '\\$&') : citation.title;
+            const url = new URL(citation.url).href;
+            return document.format === 'markdown' ? `  ${title} · <${url}>` : `  ${title} · ${url}`;
+          }).join('\n') : '')).join('\n') + '\n' : '');
         res.writeHead(200, { ...headers, 'Content-Type': 'text/plain; charset=utf-8',
           'Content-Disposition': `attachment; filename="tada-document-${document.id}-v${document.revision}.${extension}"`,
           'Content-Length': Buffer.byteLength(content), 'X-Content-SHA256': sha(content) });

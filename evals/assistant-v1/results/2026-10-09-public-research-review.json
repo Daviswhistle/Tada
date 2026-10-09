@@ -1,0 +1,30 @@
+{
+  "implementation": "935044b5af3387d7a7f5d60a755d6326382a8df9",
+  "source_report": "2026-10-09-public-research.json",
+  "source_sha256": "70a12d3c8d64acddbd2cd04156c832b17a1eec9c0041832bddd0db15ad7d1709",
+  "harness_sha256": "016a8ef7804c1f3edbaccca90da2973c811f8b463c24070cb345528503528591",
+  "independent_evaluator": "Existing read-only release acceptance auditor; primary checked recorded inputs, source receipts and usage.",
+  "research_variants": {
+    "Microsoft": "passed_scoped",
+    "Costco": "passed_scoped"
+  },
+  "followups": {
+    "Microsoft": "passed; three lines, no new search, original receipt retained",
+    "Costco": "semantic request passed; citation continuity failed after compaction and truncated history recall"
+  },
+  "request_receipts": {
+    "observed": 11,
+    "unknown": 0,
+    "Microsoft": 4,
+    "Costco": 7
+  },
+  "formal_16_case_credit": 0,
+  "release_qualified": false,
+  "limitations": [
+    "A01 setup lacks searchable prior analysis and irrelevant alternatives; no formal case credit.",
+    "Provider report receipt admission is not independent webpage validation by the product.",
+    "Independent source checks found no conclusion-changing error in key figures and scenario calculations.",
+    "Costco final summary lost citations; follow-up repair and verification recorded separately.",
+    "Separate interrupted finance diagnostic exited 143 with one unknown reserved request; it is not part of these 11 observed requests."
+  ]
+}

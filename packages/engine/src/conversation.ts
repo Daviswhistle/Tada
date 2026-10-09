@@ -17,7 +17,7 @@ export interface ModelPort {
 }
 export interface SourcePort {
   readonly hostContext?: string;
-  readonly verificationKind?: 'cited_sources_rechecked' | 'saved_document_sources_checked';
+  readonly verificationKind?: 'cited_sources_rechecked' | 'saved_document_sources_checked' | 'provider_web_report_checked';
   readonly quietAnswer?: 'NO_NEW_SUGGESTION';
   definitions: unknown[];
   validate(name: string, args: Record<string, unknown>): boolean;
@@ -31,9 +31,19 @@ export interface SourcePort {
 // Trusted in-process admission only; this callback is never model input or a
 // wire field. Sources may shorten an observation before evidence is issued.
 export type SourceResultBudget = { readonly contextLimitBytes?: number; fits(result: Record<string, unknown>): boolean };
-export type Evidence = { id: string; source: string; path: string; sha256: string; observed_at: string };
+type WebCitation = { url: string; title: string };
+function validWebCitations(value: unknown): value is WebCitation[] {
+  return Array.isArray(value) && value.length <= 128 && value.every(citation => {
+    if (!citation || Object.keys(citation).sort().join(',') !== 'title,url'
+      || typeof citation.title !== 'string' || citation.title.length > 4096
+      || typeof citation.url !== 'string' || citation.url.length > 8192
+      || /[\u0000-\u0020\u007f-\u009f]/u.test(citation.url)) return false;
+    try { const url = new URL(citation.url); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password; } catch { return false; }
+  });
+}
+export type Evidence = { id: string; source: string; path: string; sha256: string; observed_at: string; citations?: WebCitation[] };
 export type Trace = { kind: string; name?: string; evidence?: Evidence; request?: number };
-export type Answer = { refused?: boolean; quiet?: boolean; text: string; sources: Evidence[]; verification: 'cited_sources_rechecked' | 'saved_document_sources_checked' | 'not_applicable';
+export type Answer = { refused?: boolean; quiet?: boolean; text: string; sources: Evidence[]; verification: 'cited_sources_rechecked' | 'saved_document_sources_checked' | 'provider_web_report_checked' | 'not_applicable';
   usage: { requests: number; input_tokens: number; output_tokens: number; unknown_requests: number } };
 
 const SYSTEM = `You are Tada, a personal assistant. Use the user's language. Do available work and verify results. Plans never schedule work; only owner-enabled host schedules run later. Avoid needless investigation.
@@ -43,6 +53,11 @@ Cite source-dependent facts, including revisions, with observed [S1]-style IDs. 
 
 const size = (value: unknown): number => new TextEncoder().encode(JSON.stringify(value)).length;
 const MAX_TOOL_ERROR_CODE_LENGTH = 64;
+// Persisted receipt metadata is not part of the provider's context measurement.
+// Leave room for a final answer, provider continuation and host follow-up notes.
+const CHECKPOINT_LIMIT = 262144;
+const CHECKPOINT_ADMISSION = 196608;
+const CHECKPOINT_COMPACTION = 131072;
 const codeOf = (error: unknown): string => error instanceof Error && error.message.length <= MAX_TOOL_ERROR_CODE_LENGTH && /^[A-Z_]+$/u.test(error.message)
   ? error.message : 'ASSISTANT_OPERATION_FAILED';
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -121,13 +136,19 @@ export class ConversationAssistant {
   checkpoint(): { version: 1 | 2; history: Message[]; evidence: Evidence[]; nextEvidence: number; usage: Answer['usage'] } {
     if (this.busy || this.blocked) throw new Error('ASSISTANT_CHECKPOINT_UNSAFE');
     this.compact();
-    return copy({ version: this.history.some(message => message.provider_state) ? 2 : 1, history: this.history.filter(message => message.role !== 'system'),
-      evidence: [...this.evidence.values()], nextEvidence: this.nextEvidence, usage: this.used });
+    const checkpoint = { version: this.history.some(message => message.provider_state) ? 2 as const : 1 as const, history: this.history.filter(message => message.role !== 'system'),
+      evidence: [...this.evidence.values()], nextEvidence: this.nextEvidence, usage: this.used };
+    if (size(checkpoint) > CHECKPOINT_LIMIT) throw new Error('ASSISTANT_CONTEXT_LIMIT');
+    return copy(checkpoint);
+  }
+  private checkpointSize(history = this.history, evidence = [...this.evidence.values()]): number {
+    return size({ version: 2, history: history.filter(message => message.role !== 'system'), evidence,
+      nextEvidence: this.nextEvidence, usage: this.used });
   }
   restore(checkpoint: ReturnType<ConversationAssistant['checkpoint']>, usage: Answer['usage'] = checkpoint.usage): void {
     if (this.busy || this.history.length !== 1 || this.used.requests !== 0) throw new Error('ASSISTANT_RESTORE_NOT_EMPTY');
     const invalid = (): never => { throw new Error('ASSISTANT_CHECKPOINT_INVALID'); };
-    if (!checkpoint || ![1, 2].includes(checkpoint.version) || size(checkpoint) > 262144
+    if (!checkpoint || ![1, 2].includes(checkpoint.version) || size(checkpoint) > CHECKPOINT_LIMIT
         || Object.keys(checkpoint).sort().join(',') !== 'evidence,history,nextEvidence,usage,version'
         || !Array.isArray(checkpoint.history) || checkpoint.history.length > 512
         || !Array.isArray(checkpoint.evidence) || checkpoint.evidence.length > 256
@@ -147,6 +168,7 @@ export class ConversationAssistant {
       if (!item || typeof item.id !== 'string' || !/^S[1-9][0-9]*$/u.test(item.id) || seen.has(item.id)
           || Number(item.id.slice(1)) >= checkpoint.nextEvidence || !/^[a-f0-9]{64}$/u.test(item.sha256)
           || ![item.source, item.path, item.observed_at].every(value => typeof value === 'string' && value.length > 0)) invalid();
+      if (item.citations !== undefined && (item.source !== 'ChatGPT public web research' || !validWebCitations(item.citations))) invalid();
       seen.add(item.id);
     }
     const keys = ['input_tokens', 'output_tokens', 'requests', 'unknown_requests'] as const;
@@ -172,10 +194,16 @@ export class ConversationAssistant {
     const measure = (): number => this.model.contextBytes
       ? this.model.contextBytes(copy(this.history), copy(this.sources.definitions))
       : size({ messages: this.history, tools: this.sources.definitions });
-    while (this.history.length > 160 || this.evidence.size > 192 || measure() > this.contextLimitBytes * 0.5) {
+    while (this.history.length > 160 || this.evidence.size > 192 || measure() > this.contextLimitBytes * 0.5 || this.checkpointSize() > CHECKPOINT_COMPACTION) {
       const first = this.history.findIndex(m => m.role === 'user');
-      const next = this.history.findIndex((m, i) => i > first && m.role === 'user');
-      if (first < 0 || next < 0) break;
+      let next = this.history.findIndex((m, i) => i > first && m.role === 'user');
+      if (first < 0) break;
+      if (next < 0) {
+        // Only a completed turn may leave recent context. Its complete answer
+        // and receipts stay in the journal, retrievable through read_history.
+        if (this.busy || this.checkpointSize() <= CHECKPOINT_COMPACTION) break;
+        next = this.history.length;
+      }
       const notes = this.history.slice(first, next).filter(m => m.role === 'system');
       this.history.splice(first, next - first, ...notes);
       const retained = new Set([...JSON.stringify(this.history.filter(m => m.role !== 'system')).matchAll(/\bS[1-9][0-9]*\b/gu)].map(m => m[0]));
@@ -323,7 +351,16 @@ export class ConversationAssistant {
                 const measured = this.model.contextBytes
                   ? this.model.contextBytes(copy(projected), copy(definitions))
                   : size({ messages: projected, tools: definitions });
-                return Number.isSafeInteger(measured) && measured >= 2 && measured <= this.contextLimitBytes;
+                const receipts = [...this.evidence.values()];
+                if (name === 'read_file' || this.sources.isEvidenceRead?.(name) === true) {
+                  receipts.push({ id: `S${this.nextEvidence}`, source: candidate.source, path: candidate.path,
+                    sha256: candidate.sha256, observed_at: candidate.observed_at,
+                    ...(candidate.citations === undefined ? {} : { citations: candidate.citations }) } as Evidence);
+                } else if (['read_document', 'read_history'].includes(name) && Array.isArray(candidate.sources)) {
+                  for (const source of candidate.sources as Evidence[]) if (!receipts.some(item => item.id === source.id)) receipts.push(source);
+                }
+                return Number.isSafeInteger(measured) && measured >= 2 && measured <= this.contextLimitBytes
+                  && this.checkpointSize(projected, receipts) <= CHECKPOINT_ADMISSION;
               } };
               result = await this.sources.execute(name, args, abort.signal, budget);
               abort.signal.throwIfAborted();
@@ -336,8 +373,10 @@ export class ConversationAssistant {
                     || !/^[a-f0-9]{64}$/u.test(result.sha256) || typeof result.observed_at !== 'string') {
                   throw new Error('ASSISTANT_SOURCE_INVALID');
                 }
+                if (result.citations !== undefined && (name !== 'research_public_web' || !validWebCitations(result.citations))) throw new Error('ASSISTANT_SOURCE_INVALID');
                 const evidence: Evidence = { id: `S${this.nextEvidence++}`, source: result.source,
-                  path: result.path, sha256: result.sha256, observed_at: result.observed_at };
+                  path: result.path, sha256: result.sha256, observed_at: result.observed_at,
+                  ...(result.citations === undefined ? {} : { citations: copy(result.citations as WebCitation[]) }) };
                 this.evidence.set(evidence.id, evidence);
                 result = { ...result, evidence_id: evidence.id };
                 freshReads++;
@@ -353,7 +392,8 @@ export class ConversationAssistant {
               if (repeated >= 2) throw new Error('ASSISTANT_REPEATED_TOOL_FAILURE');
               result = { error: code, performed: false };
             }
-            if (name === 'read_document' && typeof result.content === 'string') {
+            if (name === 'read_document' && typeof result.content === 'string'
+                || name === 'read_history' && typeof result.answer === 'string' && Array.isArray(result.sources)) {
               // Saved source IDs belong to this same journal/checkpoint. Reading
               // them again must enter the same citation/revalidation path.
               if (!Array.isArray(result.sources)) throw new Error('ASSISTANT_SOURCE_INVALID');

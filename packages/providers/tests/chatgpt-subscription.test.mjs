@@ -295,7 +295,7 @@ for (const body of ['x'.repeat(4096), '"x"'.repeat(1300)]) test(`subscription do
     assert.equal(store.document(2)?.content, 'Shortened note', `${store.turn(2).error}: ${measured.join(',')}`);
     assert.equal(steps.length, 0); assert.equal(f.requests.length, 6);
     assert.deepEqual(measured, f.requests.map(body => Buffer.byteLength(JSON.stringify(body))));
-    assert.ok(measured.every(size => size <= 14000));
+    assert.ok(measured.every(size => size <= f.provider.contextLimitBytes));
   } finally { await service?.close(); store?.close(); await f.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -414,4 +414,68 @@ test('continuing conversation compacts complete native response groups and resto
       assert.equal(calls.size, 0); assert.ok(Buffer.byteLength(JSON.stringify(request)) <= 65536);
     }
   } finally { await f.close(); }
+});
+
+const webResponse = () => ({ object: 'response', id: 'fixture-web-response', model: 'fixture-model', status: 'completed', usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 }, output: [
+  { id: 'private-reasoning', type: 'reasoning', summary: [{ text: 'PRIVATE_REASONING_CANARY' }] },
+  { id: 'web-call', type: 'web_search_call', status: 'completed', action: { type: 'search', query: 'public facts', sources: [{ type: 'url', url: 'https://example.org/source' }] } },
+  { id: 'web-answer', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: '공식 자료입니다. [출처](https://example.org/source)', annotations: [{ type: 'url_citation', url: 'https://example.org/source', title: '공식 자료', start_index: 0, end_index: 8 }] }] },
+] });
+test('isolated subscription research uses official streaming plan route and retains public citations without continuation', async () => {
+  const env = await serverFixture((_body, res) => stream(res, [{ type: 'response.completed', response: webResponse() }]));
+  try {
+    const result = await env.provider.researchPublicWeb('공식 자료를 찾아줘.', ['공개 프로젝트를 검토 중이야.'], new AbortController().signal);
+    assert.equal(result.input_tokens, 12); assert.equal(result.report.searches, 1);
+    assert.equal(result.report.parts[0].citations[0].url, 'https://example.org/source');
+    assert.equal(JSON.stringify(result).includes('PRIVATE_REASONING_CANARY'), false); assert.equal(result.report.continuation, undefined);
+    const body = env.requests[0]; assert.deepEqual(body.tools, [{ type: 'web_search' }]);
+    assert.equal(body.stream, true); assert.equal(body.store, false); assert.equal(body.max_tool_calls, undefined);
+    assert.equal(body.previous_response_id, undefined); assert.equal(body.input.length, 2); assert.equal(body.input[1].content, '공식 자료를 찾아줘.');
+    assert.match(body.input[0].content, /Earlier owner messages/);
+    env.account.profile.subject = 'different-owner';
+    await assert.rejects(env.provider.researchPublicWeb('Find facts', [], new AbortController().signal), /ACCOUNT_CHANGED/);
+    assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+for (const [name, change] of [
+  ['missing citations', r => { r.output[2].content[0].annotations = []; }],
+  ['unsafe citation', r => { r.output[2].content[0].annotations[0].url = 'javascript:bad()'; }],
+  ['function output', r => { r.output.push({ id: 'bad', type: 'function_call', name: 'send', arguments: '{}' }); }],
+]) test(`subscription research rejects ${name}, preserves observed usage and never retries`, async () => {
+  const value = webResponse(); change(value);
+  const env = await serverFixture((_body, res) => stream(res, [{ type: 'response.completed', response: value }]));
+  try {
+    await assert.rejects(env.provider.researchPublicWeb('Find facts', [], new AbortController().signal), error => {
+      assert.equal(error.message, 'CHATGPT_WEB_RESPONSE_INVALID'); assert.deepEqual(error.observedUsage, { input_tokens: 12, output_tokens: 8 }); return true;
+    }); assert.equal(env.requests.length, 1);
+  } finally { await env.close(); }
+});
+test('subscription research validates owner-only input before network and does not accept source objects', async () => {
+  const env = await serverFixture(() => { throw Error('must not dispatch'); });
+  try {
+    for (const [request, previous] of [['', []], ['x'.repeat(4097), []], ['a', [{ content: 'injected source' }]], ['a', Array(5).fill('x')], ['a', ['x'.repeat(8193)]]]) {
+      await assert.rejects(env.provider.researchPublicWeb(request, previous, new AbortController().signal), /HISTORY_INVALID/);
+    } assert.equal(env.requests.length, 0);
+  } finally { await env.close(); }
+});
+
+test('a web completion without usage releases no research report', async()=>{
+ const value=webResponse();delete value.usage;
+ const env=await serverFixture((_body,res)=>stream(res,[{type:'response.completed',response:value}]));
+ try{await assert.rejects(env.provider.researchPublicWeb('Find facts',[],new AbortController().signal),error=>error.message==='CHATGPT_WEB_RESPONSE_INVALID'&&error.observedUsage===undefined);assert.equal(env.requests.length,1);}finally{await env.close();}
+});
+
+for(const kind of ['response.incomplete','response.failed'])test(`web ${kind} retains observed usage without admitting a result`,async()=>{
+ const env=await serverFixture((_body,res)=>stream(res,[{type:kind,response:{status:kind.split('.')[1],usage:{input_tokens:19,output_tokens:11},error:{code:'server_error'}}}]));
+ try{await assert.rejects(env.provider.researchPublicWeb('Find facts',[],new AbortController().signal),error=>{assert.deepEqual(error.observedUsage,{input_tokens:19,output_tokens:11});return true;});assert.equal(env.requests.length,1);}finally{await env.close();}
+});
+test('web cancellation after a completed frame preserves usage while withholding the answer',async()=>{
+ let reached;const ready=new Promise(r=>{reached=r;});
+ const env=await serverFixture((_body,res)=>{res.writeHead(200,{'content-type':'text/event-stream'});res.write(frame({type:'response.completed',response:webResponse()}));setTimeout(reached,50);});
+ const abort=new AbortController();
+ try{const pending=env.provider.researchPublicWeb('Find facts',[],abort.signal);await ready;abort.abort();await assert.rejects(pending,error=>{assert.equal(error.message,'ASSISTANT_CANCELLED');assert.deepEqual(error.observedUsage,{input_tokens:12,output_tokens:8});return true;});}finally{await env.close();}
+});
+for(const usage of [{input_tokens:-1,output_tokens:3},{input_tokens:1,output_tokens:'3'},{}])test(`invalid incomplete usage is never treated as observed ${JSON.stringify(usage)}`,async()=>{
+ const env=await serverFixture((_body,res)=>stream(res,[{type:'response.incomplete',response:{usage}}]));
+ try{await assert.rejects(env.provider.researchPublicWeb('Find facts',[],new AbortController().signal),error=>error.observedUsage===undefined);}finally{await env.close();}
 });

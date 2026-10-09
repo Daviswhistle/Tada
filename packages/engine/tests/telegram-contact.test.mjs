@@ -710,3 +710,59 @@ test('a cancelled review result is suppressed after a definite Telegram 429 reje
     assert.equal(env.store.reviewState(w.commitment, 1).state, 'answered', 'cancellation never falsifies the saved completed result');
   } finally { await bridge.close(); await service.close(); env.close(); await f.close(); }
 });
+
+for (const fromTelegram of [true, false]) test(`research citations reach only the requesting channel after restart; Telegram=${fromTelegram}`, async () => {
+  const env = setup(); let service;
+  try {
+    const telegram = directBind(env.store); deliverAll(env.store);
+    const device = fromTelegram ? telegram : env.store.addDevice('Browser').id;
+    const steps = [{ ...response(''), message: { role: 'assistant', content: '', tool_calls: [{ function: { name: 'research_public_web', arguments: {} } }] } }, response('조사 결과 [S1]')];
+    const url = 'https://example.org/source';
+    service = new ContactService(env.store, { identity: { provider: 'chatgpt-subscription' }, chat: async () => steps.shift(),
+      researchPublicWeb: async () => ({ report: { kind: 'answer', searches: 1, parts: [{ text: 'Facts', citations: [{ url, title: 'Official source', start: 0, end: 5 }] }] }, input_tokens: 1, output_tokens: 1 }) }, noSources);
+    service.submit(device, randomUUID(), '공개 자료를 조사해줘.'); await service.idle();
+    assert.equal(env.store.turn(1).state, 'answered', env.store.turn(1).error);
+    await service.close(); env.reopen();
+    const delivered = deliverAll(env.store).map(item => item.text).join('');
+    assert.equal(delivered.includes(url), fromTelegram); assert.equal(delivered.includes('Official source'), fromTelegram);
+    assert.equal(delivered.includes('조사 결과'), fromTelegram);
+    if (fromTelegram) assert.match(delivered, /참고 자료\n\[S1\]/u);
+    assert.equal(deliverAll(env.store).length, 0);
+  } finally { await service?.close(); env.close(); }
+});
+
+test('large and repeated research references never stop delivery or truncate the answer', async () => {
+ const env=setup();
+ try{
+  const device=directBind(env.store);deliverAll(env.store);
+  const text='This answer must remain complete. '+ '한글😀'.repeat(1500);
+  const sources=Array.from({length:30},(_,i)=>({id:`S${i+1}`,source:'ChatGPT public web research',path:`report-${i+1}`,sha256:'a'.repeat(64),observed_at:new Date().toISOString(),
+   citations:[{title:'Public source '.repeat(170),url:`https://example.org/report/${i}`},{title:'Alias of first source',url:'https://example.org/report/0'},{title:'Long URL',url:'https://example.org/'+ 'x'.repeat(4000)}]}));
+  const pending=env.store.submit(device,randomUUID(),'Compare sources');env.store.claim();
+  const checkpoint=new ConversationAssistant({},noSources).checkpoint();
+  env.store.finish(pending.seq,{text,sources},checkpoint);
+  const parts=deliverAll(env.store),delivered=parts.map(item=>item.text.replace(/^\[\d+\/\d+\]\n/u,'')).join('');
+  assert.ok(delivered.includes(text));assert.match(delivered,/길이 때문에.*전체 링크/u);
+  assert.equal(delivered.split('https://example.org/report/0').length-1,1);
+  assert.ok(parts.length<=20);assert.ok(parts.every(part=>part.text.length<4096));
+  assert.equal(env.store.turn(pending.seq).answer.sources.length,30);
+  assert.equal(env.store.turn(pending.seq).answer.sources[0].citations.length,3);
+  env.store.telegramNote('after-large-answer','Following notification still arrives');
+  assert.match(deliverAll(env.store).map(item=>item.text).join(''),/Following notification still arrives/u);
+ }finally{env.close();}
+});
+
+test('research citation URLs remain complete in an individual Telegram part at a message boundary', () => {
+ const env=setup();
+ try{
+  const device=directBind(env.store);deliverAll(env.store);
+  const text='a'.repeat(3300)+' Research result. [S1]',url='https://example.org/report?reference='+ 'b'.repeat(160);
+  const source={id:'S1',source:'ChatGPT public web research',path:'report-1',sha256:'a'.repeat(64),observed_at:new Date().toISOString(),citations:[{title:'Official reference',url}]};
+  const pending=env.store.submit(device,randomUUID(),'Read this public report');env.store.claim();
+  env.store.finish(pending.seq,{text,sources:[source]},new ConversationAssistant({},noSources).checkpoint());
+  const parts=deliverAll(env.store);
+  assert.ok(parts.length>1);assert.ok(parts.some(part=>part.text.includes(url)));
+  assert.ok(parts.map(part=>part.text.replace(/^\[\d+\/\d+\]\n/u,'')).join('').includes(text));
+  assert.ok(parts.every(part=>part.text.length<4096));
+ }finally{env.close();}
+});

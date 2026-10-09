@@ -233,3 +233,31 @@ test('structured provider refusal remains a conversation answer and never replac
     assert.equal(e.store.documentPage().documents.length, 1); assert.equal(e.store.document(1).content, 'Original text');
   } finally { await service?.close(); e.close(); }
 });
+
+for (const format of ['markdown', 'text']) test(`downloaded ${format} research retains source URLs after restart without model-written links`, async () => {
+  const e = env(); let service, host;
+  try {
+    const device = e.store.addDevice('Browser'), url = 'https://example.org/primary?year=2026&part=2';
+    const steps = [call('research_public_web', {}), call('prepare_document', { title: 'Research', format, based_on: null }), result('조사 결과입니다. [S1]')];
+    service = new ContactService(e.store, { ...scripted(steps), identity: { provider: 'chatgpt-subscription' },
+      researchPublicWeb: async () => ({ report: { kind: 'answer', searches: 1, parts: [{ text: 'Facts', citations: [{ url, title: '<img src=x> [official]', start: 0, end: 5 }] }] }, input_tokens: 1, output_tokens: 1 }) }, noSources);
+    service.submit(device.id, randomUUID(), '공개 자료를 조사해 문서로 만들어줘.'); await service.idle();
+    assert.equal(e.store.turn(1).state, 'answered', e.store.turn(1).error);
+    await service.close(); e.restart();
+    service = new ContactService(e.store, scripted([]), noSources);
+    const reserve = createServer(); await new Promise(r => reserve.listen(0, '127.0.0.1', r));
+    const port = reserve.address().port; await new Promise(r => reserve.close(r));
+    const origin = `http://127.0.0.1:${port}`;
+    host = await serveContact({ store: e.store, service, origin, port });
+    const response = await fetch(origin + '/api/documents/1', { headers: { Origin: origin, Cookie: `tada_local=${device.token}` } });
+    assert.equal(response.status, 200); const body = await response.text();
+    assert.ok(body.startsWith('조사 결과입니다. [S1]')); assert.ok(body.includes(url));
+    assert.match(body, /참고 자료\n\[S1\]/u);
+    assert.equal(response.headers.get('x-content-sha256'), createHash('sha256').update(body).digest('hex'));
+    assert.equal(Number(response.headers.get('content-length')), Buffer.byteLength(body));
+    if (format === 'markdown') { assert.ok(body.includes('\\<img src=x\\>')); assert.ok(body.includes(`<${url}>`)); }
+    else assert.ok(body.includes('<img src=x> [official]'));
+    e.store.revoke(device.id);
+    assert.equal((await fetch(origin + '/api/documents/1', { headers: { Cookie: `tada_local=${device.token}` } })).status, 401);
+  } finally { await host?.close(); await service?.close(); e.close(); }
+});

@@ -20,6 +20,8 @@ The same conversation now supports [saved documents](docs/contact-documents.md):
 
 A [bounded live check on 2026-10-09](docs/qualification-2026-10-07.md#2026-10-09--연결된-google-계정에서-문서-완성) used the selected ChatGPT subscription and a connected Google account to produce a saved document, recheck three cited sources and preserve it across restart. Mail results were truncated; this does not qualify comprehensive inbox review or the finished product. The [current subscription acceptance record](docs/qualification-2026-10-09.md) separately reports real-model behavior on fixed synthetic environments, including retained failures.
 
+The same subscription conversation also supports [public web research](docs/public-research.md), with source links and saved-document follow-up. Searches use the existing selected account and durable request ledger; unsupported searches never fall back to separate API billing. Web queries use only the current and recent owner messages, not connected mail/file bodies. Automatic care does not gain web access.
+
 ## Proactive suggestions and phone contact
 
 [먼저 챙겨보기와 휴대폰 연락](docs/proactive-and-mobile.md)은 같은 대화의 설정에서 켭니다. 수시 확인을 선택하면 연결된 메일·일정을 15분마다 살펴보고, 변화가 있을 때 하루 최대 네 번 판단합니다. 시간 일정은 30분 전에 알리며 새 내용이 없으면 조용히 기다립니다. Telegram 연결은 화면에서 설정하고 휴대폰에서 같은 비서에게 이야기합니다. 기존 기록은 원본 백업 후 v5 업데이트를 본인이 선택해야 합니다. 실제 계정에서의 제안 품질과 휴대폰 송수신은 아직 검증하지 않았으며, 컴퓨터에서 Tada가 실행 중이어야 합니다.
