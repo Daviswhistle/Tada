@@ -126,3 +126,17 @@ test('a temporary startup failure recovers with the encrypted credential without
     e.service.revoke(d.id); await assert.rejects(mobile.reconnect(d.id), /DEVICE_REVOKED/); assert.equal(inspected, 2);
   } finally { await mobile?.close(); await e.close(); }
 });
+
+test('shutdown during mobile account inspection admits neither new credentials nor polling', async () => {
+  const e = fixture(); let release, entered; const started = new Promise(resolve => { entered = resolve; });
+  const mobile = new MobileContact(e.store, e.service, () => ({
+    inspect: async () => { entered(); await new Promise(resolve => { release = resolve; }); return { id: '123456789', username: 'TadaFixtureBot' }; },
+    updates: () => assert.fail('No new polling after stop'), close() {},
+  }));
+  try {
+    const device = e.store.addDevice('Computer');
+    const connecting = mobile.connect(device.id, token, consent); await started;
+    e.service.beginStop(); release(); await assert.rejects(connecting, /HOST_STOPPING/);
+    assert.equal(e.store.mobileCredential(), null); assert.equal(mobile.status().enabled, false);
+  } finally { release?.(); await mobile.close(); await e.close(); }
+});

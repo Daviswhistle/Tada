@@ -46,7 +46,7 @@ try {
   & $node (Join-Path $root 'scripts/windows-bundle.mjs') manifest $Output
   if ($LASTEXITCODE -ne 0) { throw 'Manifest generation failed' }
   $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-  & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /platform:x64 /optimize+ /reference:System.Runtime.Serialization.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:Microsoft.CSharp.dll "/resource:$Output\bundle.json,Tada.Bundle" "/out:$Output\Tada.exe" (Join-Path $root 'apps/windows/Launcher.cs') (Join-Path $root 'apps/windows/InstalledApp.cs') (Join-Path $root 'apps/windows/InstallPrompt.cs')
+  & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /platform:x64 /optimize+ /reference:System.Runtime.Serialization.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:Microsoft.CSharp.dll "/resource:$Output\bundle.json,Tada.Bundle" "/out:$Output\Tada.exe" (Join-Path $root 'apps/windows/Launcher.cs') (Join-Path $root 'apps/windows/InstalledApp.cs') (Join-Path $root 'apps/windows/InstallPrompt.cs') (Join-Path $root 'apps/windows/OwnedHostContext.cs')
   if ($LASTEXITCODE -ne 0) { throw 'Launcher compilation failed' }
   $verification = Start-Process -FilePath (Join-Path $Output 'Tada.exe') -ArgumentList '--verify' -PassThru -Wait
   if ($verification.ExitCode -ne 0) { throw 'Bundle verification failed' }

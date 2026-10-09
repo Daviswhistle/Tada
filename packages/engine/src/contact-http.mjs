@@ -69,6 +69,8 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
     res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', ...extra });
     res.end(JSON.stringify(value));
   };
+  const assertAccepting = () => { if (service.stopped) throw Error('CONTACT_HOST_STOPPING'); };
+  const readBody = async (req, limit) => { const data = await jsonBody(req, limit); assertAccepting(); return data; };
   const listener = async (req, res) => {
     const timer = setTimeout(() => { req.destroy(); }, 10000);
     try {
@@ -89,10 +91,11 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         res.writeHead(200, { ...headers, 'Content-Type': type }); res.end(content); return;
       }
       if (req.method === 'POST' && req.headers.origin !== origin) return send(res, 403, { error: 'CONTACT_ORIGIN_REQUIRED' });
+      if (req.method === 'POST') assertAccepting();
       if (req.method === 'POST' && target.pathname === '/api/pair' && !target.search) {
         if (Date.now() - pairWindow > 60000) { pairAttempts = 0; pairWindow = Date.now(); }
         if (++pairAttempts > 20) return send(res, 429, { error: 'CONTACT_PAIR_RATE_LIMIT' });
-        const data = await jsonBody(req); object(data, ['code', 'name']);
+        const data = await readBody(req); object(data, ['code', 'name']);
         if (typeof data.code !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(data.code)) return send(res, 403, { error: 'CONTACT_PAIR_REJECTED' });
         const key = sha(data.code), expiry = pairing.get(key);
         if (!expiry || expiry < Date.now()) return send(res, 403, { error: 'CONTACT_PAIR_REJECTED' });
@@ -111,7 +114,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         return send(res, 200, { document });
       }
       if (req.method === 'POST' && target.pathname === '/api/documents/edit' && !target.search) {
-        const data = await jsonBody(req, 32768); object(data, ['request_id', 'based_on', 'title', 'content']);
+        const data = await readBody(req, 32768); object(data, ['request_id', 'based_on', 'title', 'content']);
         return send(res, 200, service.editDocument(device, data));
       }
       if (req.method === 'GET' && /^\/api\/documents\/[1-9][0-9]*$/u.test(target.pathname) && !target.search) {
@@ -138,8 +141,8 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), browser: service.browserStatus(device), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
       }
       if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
-        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
-        const { transfer, ...state } = await background.configure(data.enabled, data.consent, () => store.assertDevice(device));
+        const data = await readBody(req); object(data, ['enabled', 'consent']);
+        const { transfer, ...state } = await background.configure(data.enabled, data.consent, () => { assertAccepting(); store.assertDevice(device); });
         // Deliver the accepted setting before releasing this runtime's lease.
         if (transfer) {
           let transferred = false;
@@ -149,49 +152,49 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         return send(res, 200, { ...state, transferring: transfer === true });
       }
       if (req.method === 'POST' && target.pathname === '/api/followup-delegation' && !target.search) {
-        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const data = await readBody(req); object(data, ['enabled', 'consent']);
         const result = store.configureFollowupDelegation(device, data.enabled, data.consent);
         service.emit('change'); return send(res, 200, result);
       }
       if (req.method === 'POST' && target.pathname === '/api/continuing-use' && !target.search) {
-        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const data = await readBody(req); object(data, ['enabled', 'consent']);
         const result = store.configureContinuingUse(device, data.enabled, data.consent);
         service.emit('change'); return send(res, 200, result);
       }
       if (req.method === 'POST' && target.pathname === '/api/proactive' && !target.search) {
-        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const data = await readBody(req); object(data, ['enabled', 'consent']);
         return send(res, 200, service.configureProactive(device, data.enabled, data.consent));
       }
       if (req.method === 'GET' && target.pathname === '/api/browser/tabs' && !target.search) return send(res, 200, { tabs: await service.browserTabs(device) });
       if (req.method === 'POST' && target.pathname === '/api/browser/open' && !target.search) {
-        object(await jsonBody(req), []); return send(res, 200, await service.openBrowser(device));
+        object(await readBody(req), []); return send(res, 200, await service.openBrowser(device));
       }
       if (req.method === 'POST' && target.pathname === '/api/browser/share' && !target.search) {
-        const data = await jsonBody(req); object(data, ['target', 'consent', 'url']);
+        const data = await readBody(req); object(data, ['target', 'consent', 'url']);
         if (typeof data.target !== 'string' || data.target.length > 200) throw Error('CONTACT_REQUEST_INVALID');
         return send(res, 200, await service.shareBrowser(device, data.target, data.consent, data.url));
       }
       if (req.method === 'POST' && target.pathname === '/api/browser/stop' && !target.search) {
-        object(await jsonBody(req), []); return send(res, 200, service.unshareBrowser(device));
+        object(await readBody(req), []); return send(res, 200, service.unshareBrowser(device));
       }
       if (req.method === 'POST' && target.pathname === '/api/browser/resolve' && !target.search) {
-        const data = await jsonBody(req); object(data, ['id', 'consent']);
+        const data = await readBody(req); object(data, ['id', 'consent']);
         return send(res, 200, service.resolveBrowser(device, data.id, data.consent));
       }
       if (req.method === 'POST' && target.pathname === '/api/google/connect' && !target.search) {
-        const data = await jsonBody(req); object(data, ['consent']); store.assertDevice(device);
+        const data = await readBody(req); object(data, ['consent']); store.assertDevice(device);
         return send(res, 202, await service.connectGoogle(device, data.consent));
       }
       if (req.method === 'POST' && target.pathname === '/api/google/related-mail' && !target.search) {
-        const data = await jsonBody(req); object(data, ['enabled', 'consent']);
+        const data = await readBody(req); object(data, ['enabled', 'consent']);
         return send(res, 200, service.configureRelatedMail(device, data.enabled, data.consent));
       }
       if (req.method === 'POST' && target.pathname === '/api/google/disconnect' && !target.search) {
-        const data = await jsonBody(req); object(data, []); store.assertDevice(device);
+        const data = await readBody(req); object(data, []); store.assertDevice(device);
         return send(res, 200, await service.disconnectGoogle(device));
       }
       if (req.method === 'POST' && target.pathname.startsWith('/api/mobile/') && !target.search && mobile) {
-        const data = await jsonBody(req);
+        const data = await readBody(req);
         // Recheck after body receipt and inside the controller after async inspection.
         store.assertDevice(device);
         if (target.pathname === '/api/mobile/connect') {
@@ -213,13 +216,13 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         return;
       }
       if (req.method === 'POST' && target.pathname === '/api/turns' && !target.search) {
-        const data = await jsonBody(req); object(data, ['request_id', 'text']);
+        const data = await readBody(req); object(data, ['request_id', 'text']);
         // Authentication is checked again on durable admission and each model
         // request: a slow body cannot race a device revocation into new work.
         return send(res, 202, service.submit(device, data.request_id, data.text));
       }
       if (req.method === 'POST' && target.pathname === '/api/cancel' && !target.search) {
-        const data = await jsonBody(req); object(data, ['seq']);
+        const data = await readBody(req); object(data, ['seq']);
         if (!Number.isSafeInteger(data.seq) || data.seq < 1) throw new Error('CONTACT_REQUEST_INVALID');
         if (!store.authenticate(tokenOf(req))) return send(res, 401, { error: 'CONTACT_PAIR_REQUIRED' });
         return send(res, 200, { changed: service.cancel(data.seq) });
@@ -229,30 +232,30 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         return send(res, 200, store.followupPage('all', Number(target.searchParams.get('offset') ?? 0)));
       }
       if (req.method === 'POST' && target.pathname === '/api/followups/decision' && !target.search) {
-        const data = await jsonBody(req); object(data, ['proposal_id', 'decision']);
+        const data = await readBody(req); object(data, ['proposal_id', 'decision']);
         return send(res, 200, service.confirmFollowup(device, data.proposal_id, data.decision));
       }
       if (req.method === 'POST' && target.pathname === '/api/followups/review' && !target.search) {
-        const data = await jsonBody(req); object(data, ['commitment', 'version', 'consent']);
+        const data = await readBody(req); object(data, ['commitment', 'version', 'consent']);
         return send(res, 200, service.armReview(device, data.commitment, data.version, data.consent));
       }
       if (req.method === 'POST' && target.pathname === '/api/followups/review/cancel' && !target.search) {
-        const data = await jsonBody(req); object(data, ['commitment', 'version']);
+        const data = await readBody(req); object(data, ['commitment', 'version']);
         return send(res, 200, service.cancelReview(device, data.commitment, data.version));
       }
       if (req.method === 'POST' && target.pathname === '/api/followups/seen' && !target.search) {
-        const data = await jsonBody(req); object(data, ['notice_id']);
+        const data = await readBody(req); object(data, ['notice_id']);
         store.dismissFollowupNotice(device, data.notice_id); service.emit('change');
         return send(res, 200, { acknowledged: true });
       }
       if (req.method === 'POST' && target.pathname === '/api/logout' && !target.search) {
-        const data = await jsonBody(req); object(data, []);
+        const data = await readBody(req); object(data, []);
         service.revoke(device);
         return send(res, 200, { disconnected: true }, { 'Set-Cookie': setCookie('', 0) });
       }
       send(res, 404, { error: 'CONTACT_ROUTE_NOT_FOUND' });
     } catch (error) {
-      if (!res.headersSent && !res.destroyed) send(res, 400, { error: /^CONTACT_[A-Z_]+$/u.test(error.message) ? error.message : 'CONTACT_REQUEST_REJECTED' });
+      if (!res.headersSent && !res.destroyed) send(res, error.message === 'CONTACT_HOST_STOPPING' ? 503 : 400, { error: /^CONTACT_[A-Z_]+$/u.test(error.message) ? error.message : 'CONTACT_REQUEST_REJECTED' });
       else if (!res.destroyed) res.destroy();
     } finally { clearTimeout(timer); }
   };

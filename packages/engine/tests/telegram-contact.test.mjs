@@ -766,3 +766,47 @@ test('research citation URLs remain complete in an individual Telegram part at a
   assert.ok(parts.every(part=>part.text.length<4096));
  }finally{env.close();}
 });
+
+test('shutdown during delivery validation preserves an unsent item for restart instead of suppressing it', async () => {
+  const env = setup(), f = await fixture(); let release;
+  const service = new ContactService(env.store, {}, noSources), bridge = new TelegramContact(env.store, service, f.api());
+  try {
+    await bridge.initialize(); await pair(bridge, f);
+    service.validateDelivery = async () => { await new Promise(resolve => { release = resolve; }); return false; };
+    const sending = bridge.deliverOnce(); assert.ok(release); service.beginStop(); release(); await sending;
+    const counts = env.store.messagingStatus().deliveries;
+    assert.equal(f.effects.length, 0); assert.equal(counts.queued, 1); assert.equal(counts.suppressed ?? 0, 0); assert.equal(counts.unknown ?? 0, 0);
+    assert.equal(await bridge.deliverOnce(Date.now() + 86400000), false);
+    const queued = env.store.telegramClaimDelivery(Date.now() + 1000); assert.ok(queued);
+    env.store.telegramDelivery(queued.id, 'queued', { retryAt: Date.now() });
+  } finally { release?.(); await bridge.close(); await service.close(); env.close(); await f.close(); }
+});
+
+test('shutdown while Telegram is receiving an update does not acknowledge an unaccepted message', async () => {
+  const env = setup(), f = await fixture(); let received, finish;
+  const service = new ContactService(env.store, {}, noSources), bridge = new TelegramContact(env.store, service, f.api());
+  try {
+    await bridge.initialize(); await pair(bridge, f); const cursor = env.store.telegramCursor();
+    const reached = new Promise(resolve => { received = resolve; });
+    f.nextPoll = (_req, _res, _input, json) => { finish = () => { finish = null; json({ ok: true, result: [message(2, '종료 중에 도착한 요청')] }); }; received(); };
+    const polling = bridge.pollOnce(); await reached; service.beginStop(); finish();
+    await assert.rejects(polling, /HOST_STOPPING/); assert.equal(env.store.telegramCursor(), cursor); assert.equal(env.store.page().turns.length, 0);
+    await assert.rejects(bridge.pollOnce(), /HOST_STOPPING/);
+  } finally { finish?.(); await bridge.close(); await service.close(); env.close(); await f.close(); }
+});
+
+for (const observed of [false, true]) test(`shutdown preserves a Telegram send outcome: receipt observed=${observed}`, async () => {
+  const env = setup(), f = await fixture(); let entered, finish;
+  const service = new ContactService(env.store, {}, noSources), bridge = new TelegramContact(env.store, service, f.api());
+  try {
+    await bridge.initialize(); await pair(bridge, f);
+    const reached = new Promise(resolve => { entered = resolve; });
+    f.nextSend = (_req, res, input, json) => {
+      f.effects.push(input); finish = () => observed ? json({ ok: true, result: { message_id: 1, chat: { id: Number(input.chat_id), type: 'private' }, from: f.me, text: input.text } }) : res.destroy(); entered();
+    };
+    const sending = bridge.deliverOnce(); await reached; service.beginStop(); finish(); await sending;
+    const counts = env.store.messagingStatus().deliveries;
+    assert.equal(counts[observed ? 'sent' : 'unknown'], 1); assert.equal(counts.queued ?? 0, 0);
+    assert.equal(await bridge.deliverOnce(Date.now() + 86400000), false); assert.equal(f.effects.length, 1);
+  } finally { await bridge.close(); await service.close(); env.close(); await f.close(); }
+});

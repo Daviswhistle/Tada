@@ -10,13 +10,18 @@ export class MobileContact {
   }
   #authorize(device) {
     this.#store.assertDevice(device);
+    if (this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
     if (this.#closed || this.#busy) throw Error('CONTACT_MOBILE_BUSY');
   }
   async #open(token, assertAuthority = () => {}) {
+    if (this.#closed || this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
     const contact = new TelegramContact(this.#store, this.#service, this.#makeAPI(token));
     this.#contact = contact;
     try {
-      await contact.initialize(assertAuthority);
+      await contact.initialize(() => {
+        if (this.#closed || this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
+        assertAuthority();
+      });
       if (this.#closed) throw Error('CONTACT_MOBILE_CLOSED');
       contact.on('pairing', ({ candidate, user }) => {
         this.#pending.set(candidate, { candidate, user, expires: Date.now() + 5 * 60000 });
@@ -45,6 +50,7 @@ export class MobileContact {
     try {
       await this.#contact?.close(); this.#contact = null; this.#pending.clear(); this.#link = null;
       const contact = await this.#open(token, () => this.#store.assertDevice(device));
+      if (this.#closed || this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
       this.#store.assertDevice(device);
       this.#store.saveMobileCredential(device, token);
       this.#error = null; contact.start(); this.#service.emit('change'); return this.status();

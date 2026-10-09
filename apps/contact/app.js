@@ -94,7 +94,7 @@ const errors = {
   CONTACT_BACKGROUND_BUSY: '자동 실행을 준비하고 있어요. 잠시 후 다시 확인해 주세요.',
   CONTACT_BACKGROUND_START_FAILED: '자동 실행 설정은 저장했지만 시작을 확인하지 못했어요. 현재 비서는 계속 실행됩니다. 잠시 후 다시 켜 주세요.',
   CONTACT_BACKGROUND_CONSENT_REQUIRED: '같은 계정과 대화로 자동 실행하는 안내를 확인해 주세요.',
-  CONTACT_HOST_STOPPING: '같은 비서로 다시 연결하고 있어요. 작성한 내용은 유지됩니다. 연결된 뒤 보내 주세요.',
+  CONTACT_HOST_STOPPING: 'Tada가 요청 접수를 멈췄어요. 작성한 내용은 유지됩니다. 다시 연결되면 보내 주세요.',
   CONTACT_PROACTIVE_CONSENT_REQUIRED: '먼저 챙겨보기의 범위와 사용량 안내를 확인해 주세요.',
   CONTACT_ASSISTANCE_UPGRADE_REQUIRED: 'Tada를 다시 열어 기록 업데이트를 완료해 주세요. 원본은 먼저 백업합니다.',
   CONTACT_MOBILE_BUSY: '휴대폰 연결을 확인하고 있어요. 잠시 후 다시 시도해 주세요.',
@@ -605,7 +605,7 @@ function renderAssistance(result) {
   $('background-toggle').textContent = backgroundEnabled ? '다음 자동 시작 끄기' : '자동 실행 켜기';
   $('background-toggle').setAttribute('aria-pressed', String(backgroundEnabled));
   $('background-environment').textContent = background?.platform === 'win32'
-    ? 'Windows 로그인 시 이 비서를 다시 열도록 등록합니다. Windows 설정의 시작 앱에서 Tada를 허용해야 하며, 로그아웃하거나 컴퓨터가 꺼져 있거나 잠들면 멈춰요. 실행기 자체가 종료되면 Tada를 다시 열어 주세요. 자동 시작을 꺼도 현재 대화와 기록은 유지됩니다.'
+    ? 'Windows 로그인 시 이 비서를 다시 열도록 등록합니다. Windows 설정의 시작 앱에서 Tada를 허용해야 하며, 로그아웃하거나 컴퓨터가 꺼져 있거나 잠들면 멈춰요. 작업 표시줄의 Tada 아이콘에서 대화를 다시 열거나 작업을 멈추고 종료할 수 있어요. 종료해도 대화와 계정은 보존하며, 대기 중인 요청은 다음 실행 때 이어갑니다. 자동 시작을 꺼도 지금 실행 중인 비서는 유지됩니다.'
     : 'Linux 사용자 서비스로 실행합니다. WSL에서는 Windows의 Linux 환경이 시작될 때 함께 켜집니다. 컴퓨터가 꺼져 있거나 잠들면 멈춰요. 자동 시작을 꺼도 지금 실행 중인 비서와 기록은 유지됩니다.';
   $('background-status').textContent = background?.checking ? '자동 실행 환경을 확인하고 있어요.' : !background?.available ? '이 환경의 자동 실행을 확인하지 못했어요. 현재 대화는 계속 사용할 수 있습니다.'
     : background.error ? '자동 실행이 멈췄어요. 다시 켜서 연결할 수 있습니다.'

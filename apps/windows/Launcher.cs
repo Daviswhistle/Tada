@@ -101,20 +101,10 @@ static class Launcher {
             start.RedirectStandardOutput = true; start.RedirectStandardError = true; start.RedirectStandardInput = true;
             start.EnvironmentVariables["TADA_WINDOWS_SUPERVISED"] = "1";
             foreach (var key in new[] { "NODE_OPTIONS", "NODE_PATH", "TADA_GOOGLE_OAUTH_CLIENT_ID", "TADA_GOOGLE_OAUTH_CLIENT_SECRET" }) start.EnvironmentVariables.Remove(key);
-            int opened = 0, ready = 0;
-            for (int attempt = 0; ; attempt++) {
-              using (var process = new Process()) {
-                process.StartInfo = start;
-                // Capability URLs and account details must not be persisted in launcher logs.
-                process.OutputDataReceived += (sender, e) => { if (e.Data == "\u001eTADA_HOST_OPEN_V1") System.Threading.Interlocked.Exchange(ref opened, 1); if (e.Data == "\u001eTADA_ASSISTANT_READY_V1") System.Threading.Interlocked.Exchange(ref ready, 1); }; process.ErrorDataReceived += (sender, e) => {};
-                process.Start(); process.BeginOutputReadLine(); process.BeginErrorReadLine(); process.WaitForExit();
-                if (process.ExitCode == 0) return 0;
-                if (!background && System.Threading.Interlocked.CompareExchange(ref opened, 0, 0) == 0) throw new IOException("Initial application window failed");
-                if (attempt >= 3) throw new IOException("Application failed");
-              }
-              if (!background && System.Threading.Interlocked.CompareExchange(ref ready, 0, 0) != 0 && !start.Arguments.EndsWith(" --background", StringComparison.Ordinal)) start.Arguments += " --background";
-              System.Threading.Thread.Sleep(new[] { 1000, 5000, 15000 }[attempt]);
-              Verify(root);
+            using (var host = new OwnedHostContext(start, () => Verify(root), background)) {
+                Application.Run(host);
+                if (host.ExitCode != 0) throw new IOException("Application failed");
+                return 0;
             }
         } catch {
             if (!verify && !installOnly && !background) MessageBox.Show("Tada를 열지 못했어요.\n\n압축 파일을 새 폴더에 모두 풀고 Tada.exe를 다시 열어 주세요. 브라우저가 열리지 않으면 Windows의 기본 브라우저 설정도 확인해 주세요.\n\n저장된 대화와 계정 연결은 지우지 않습니다.", "Tada", MessageBoxButtons.OK, MessageBoxIcon.Error);

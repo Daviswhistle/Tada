@@ -1,0 +1,136 @@
+{
+  "date": "2026-10-10",
+  "scope": "Windows owned tray, same conversation reopening and explicit interrupted shutdown; not release acceptance",
+  "baseline_commit": "6883a6c8f4657cd6312bc28b8f6576b5c05cc71e",
+  "artifact": {
+    "files": 1009,
+    "zip_bytes": 37316063,
+    "zip_sha256": "c74e0ef777bb4bdf09685e3d52735ac3e012a7274fd7baeb22ae71ad5e4baf89",
+    "manifest_sha256": "b11cbf5dbf07824db6f842f08a5ab805e05b9f40f456ad5248fb80cd031b650c",
+    "launcher_sha256": "0203869576f33850075077ff5614726c9299a1304bb0bd00640faef64ff9d59b",
+    "all_archive_entries_exact": true
+  },
+  "native_windows": {
+    "tray_menu": {
+      "scope": "Real Windows Forms tray/menu and production Node receiver with synthetic work, CP949 and UTF-8 BOM; not live account or physical mobile acceptance",
+      "checks": [
+        "active encoding 949 passed: exact one Node child; first command bytes, native open and EOF stop verified",
+        "backoff encoding 949 passed: exact one Node child; native lifecycle verified",
+        "reopen encoding 949 passed: exact one Node child; native lifecycle verified",
+        "active encoding 65001 passed: exact one Node child; first command bytes, native open and EOF stop verified",
+        "backoff encoding 65001 passed: exact one Node child; native lifecycle verified",
+        "reopen encoding 65001 passed: exact one Node child; native lifecycle verified"
+      ],
+      "passed": true
+    },
+    "launcher_recovery": {
+      "checks": [
+        "first exit=1 attempts=1",
+        "started exit=0 attempts=2",
+        "onboarding exit=0 attempts=2",
+        "normal exit=0 attempts=1",
+        "background exit=1 attempts=4"
+      ],
+      "passed": true
+    },
+    "installed_regression": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "HTML, native runtime, payload launcher and reserved bootstrap corruption repaired; old copies preserved and healthy repaired copy reused",
+        "the same shortcut creator targets the stable bootstrap in an isolated shortcut location",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+        "actual foreground setup recovered its crash into a visible replacement onboarding screen",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "running_upgrade_and_duplicate": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "installing a new payload retains the running previous version and changes only the next-launch pointer",
+        "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "portable_regression": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "embedded manifest and bundled runtime verified",
+        "changed, missing, additional files, manifest and junction rejected",
+        "bundled native read broker reads scoped fixture and rejects traversal without developer runtimes",
+        "fresh Windows DPAPI storage reaches subscription consent without developer tools or inherited Node options",
+        "native Chrome shared textbox verified",
+        "native Edge shared textbox verified",
+        "same and relocated bundles reopen one host and preserve protected storage key",
+        "restart from relocated bundle preserves protected key and reacquires ownership"
+      ],
+      "passed": true
+    },
+    "evidence_scope": "Tray preview and native menu actions use the exact production Windows Forms context and Node control receiver with synthetic work under isolated CP949 and UTF-8 consoles. The packaged application regressions use real bundled Node, DPAPI and isolated records. No owner install, account, production startup entry or live message is changed.",
+    "probe_version": "Final baseline and upgrade variants both exercise duplicate-background reopening. All artifact entries match final runtime bytes."
+  },
+  "validation": {
+    "npm_ci_ignore_scripts": "passed; one pre-existing moderate Ajv advisory recorded separately",
+    "npm_run_check": {
+      "passed": 1101,
+      "failed": 0,
+      "skipped": 0,
+      "log": "tada-tray-amend-check.log"
+    },
+    "cargo_fmt": "passed",
+    "cargo_clippy_workspace_all_targets_locked_warnings_denied": "passed",
+    "cargo_test_workspace_locked": "passed",
+    "tada_agentd_process_fixtures": "passed",
+    "native_windows_rust": "Unchanged crates, schemas, Cargo and exact native broker: preceding Windows workspace/process results reused; packaged native broker read/traversal tests passed again.",
+    "actual_chrome_ui": {
+      "viewports": [
+        1280,
+        390
+      ],
+      "startup_toggle": true,
+      "draft_preserved": true,
+      "no_horizontal_overflow": true,
+      "no_model_requests": true
+    },
+    "boundary_cases": [
+      "Slow cleanup closes admission before its first await; active inference becomes interrupted, observed usage remains, queued work resumes once after reopen.",
+      "Slow HTTP settings body and asynchronous startup admission cannot mutate after stopping.",
+      "New Telegram polling stops without acknowledging an unaccepted update; pending account inspection cannot persist credentials.",
+      "Unsent alert stays queued; observed receipt stays sent; ambiguous send stays unknown and is not replayed.",
+      "Shutdown after browser input preserves its actual value and uncertain verification across restart.",
+      "Parent pipe accepts only bounded fixed commands, coalesces pending opens, and gives EOF priority over a pending open.",
+      "The first open works with a .NET UTF-8 BOM, including every split boundary; partial, repeated and misplaced preambles cannot admit a command. Native first-command bytes were checked in CP949 and UTF-8 processes."
+    ]
+  },
+  "retained_failures": [
+    {
+      "stage": "first new Telegram shutdown fixture run",
+      "result": "Four fixture failures: zero-count delivery keys are absent rather than numeric zero; cleanup attempted to answer the same HTTP response twice, leaving one synthetic test process alive.",
+      "followup": "Corrected assertions and one-shot fixture reply; stopped only the known test process; unforced focused 77-test suite and full 1099-test suite passed. No product expectation was weakened."
+    },
+    {
+      "stage": "first independent whole-commit review",
+      "result": "Valid P2: .NET redirected stdin can emit a UTF-8 BOM, causing the first tray open to be discarded. The initial all-.NET fixture decoded it before checking the command and missed the product receiver failure.",
+      "followup": "The Node receiver accepts exactly one initial UTF-8 preamble. The native fixture now connects the real Windows Forms context to the production Node receiver, checks actual bytes in CP949 and UTF-8, and verifies first click plus EOF stop. Raw BaseStream writes were also observed to retain the automatic preamble, so a sender-only raw write was not used."
+    }
+  ],
+  "remaining_limits": [
+    "Same-machine native proof; no clean second Windows device, physical phone or actual Windows login acceptance.",
+    "Explicit stop preserves unstarted requests for next launch; it does not cancel all saved work or revoke accounts.",
+    "External changes are not rolled back by shutdown. Unknown sends/actions remain unknown.",
+    "Unsigned distribution, backup/restore and broad assistant acceptance remain separate release gates.",
+    "Pinned Ajv 8.17.1 has GHSA-2g4f-4pwh-qvx6 for optional $data mode. Tada does not enable that option. Dependency update is still queued; no forced dependency update was applied in this lifecycle change."
+  ]
+}

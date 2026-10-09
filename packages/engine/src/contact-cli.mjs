@@ -140,6 +140,7 @@ async function ownerQuestion(label) {
 // Release the journal and account leases even if browser/channel cleanup fails.
 export async function closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }) {
   let failure;
+  try { service?.beginStop?.(); } catch (error) { failure = error; }
   for (const [resource, method] of [[prompt, 'close'], [mobile, 'close'], [telegram, 'close'], [host, 'close'], [service, 'close'], [store, 'close'], [account, 'stop'], [accountStore, 'close']]) {
     try { await resource?.[method](); } catch (error) { failure ??= error; }
   }
@@ -150,7 +151,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
   if (options.help) { process.stdout.write(HELP); return; }
   if (!ui && (!process.stdin.isTTY || !process.stdout.isTTY)) throw new Error('CONTACT_OWNER_TERMINAL_REQUIRED');
   if (ui && (options.askPassphrase || options.telegram || options.logout)) throw Error('CONTACT_APP_ADVANCED_MODE');
-  let accountStore, account, store, service, host, prompt, telegram, mobile;
+  let accountStore, account, store, service, host, prompt, telegram, mobile, stopAdmission;
   const profile = options.provider === 'chatgpt' ? resolve(options['chatgpt-profile'] ?? `${resolve(options.data)}.chatgpt-private`) : undefined;
   let passphrase;
   if (options.askPassphrase) {
@@ -224,6 +225,9 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
     const portableGoogle = !background || googleClient.clientId === savedGoogleClient.clientId && googleClient.clientSecret === savedGoogleClient.clientSecret;
     passphrase = '';
     service = new ContactService(store, provider, sources, { timezone: options.timezone });
+    stopAdmission = () => service.beginStop();
+    ui?.signal.addEventListener('abort', stopAdmission, { once: true });
+    ui?.signal.throwIfAborted();
     service.on('turn-failed', details => process.stderr.write(`Tada request failed: ${JSON.stringify(details)}\n`));
     const google = new GoogleConnection({ store, ...googleClient, openBrowser: openSystemBrowser });
     service.attachGoogle(google);
@@ -296,7 +300,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       } else if (/^\/revoke [a-f0-9-]{36}$/u.test(line)) service.revoke(line.slice(8));
       else process.stdout.write('대화는 연결한 브라우저에서 하세요. 호스트 명령: /pair, /devices, /revoke DEVICE_ID, /quit\n');
     }
-  } finally { passphrase = ''; await closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }); }
+  } finally { passphrase = ''; if (stopAdmission) ui?.signal.removeEventListener('abort', stopAdmission); await closeContactResources({ prompt, mobile, telegram, host, service, store, account, accountStore }); }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch(error => {

@@ -50,16 +50,16 @@ test('instance discovery rejects a symlinked private directory', { skip: process
   finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('background startup waits for the existing lease, opens no browser, and never repeats initialization', async () => {
+test('Linux service handoff waits for the existing lease, opens no browser, and never repeats initialization', async () => {
   const root = mkdtempSync(join(tmpdir(), 'tada-background-owner-')), data = join(root, 'conversation'), os = protector();
   let first, second, pending, runs = 0; const opened = [], argsSeen = [], written = [];
   const instance = (options, config) => acquireAppInstance(options, { ...config, protector: os });
   const run = async (args, { ui }) => { runs++; argsSeen.push(args); if (runs === 1) mkdirSync(data); ui.ready('http://127.0.0.1:8787/#entry=fixture'); await ui.wait(); };
   const stdout = process.stdout.write;
   try {
-    first = await startApp(['--data', data], { run, instance, open: async url => { opened.push(url); } });
+    first = await startApp(['--data', data], { run, instance, platform: 'linux', open: async url => { opened.push(url); } });
     process.stdout.write = function (chunk, ...rest) { written.push(String(chunk)); const callback = rest.find(value => typeof value === 'function'); callback?.(); return true; };
-    pending = startApp(['--background', '--data', data], { run, instance, open: async url => { opened.push(url); } });
+    pending = startApp(['--background', '--data', data], { run, instance, platform: 'linux', open: async url => { opened.push(url); } });
     await new Promise(resolve => setTimeout(resolve, 25)); assert.equal(runs, 1);
     await first.close(); second = await pending;
     assert.equal(runs, 2); assert.equal(opened.length, 1);
@@ -252,4 +252,18 @@ test('foreground recovery before model selection preserves visible setup and ini
     assert.equal(action.status, 200); await until(recovered, 'ready');
     assert.equal(ready, 1); assert.equal(initialized, 1); assert.equal(existsSync(join(data, 'contact.sqlite')), true);
   } finally { await recovered?.close(); await first?.close(); globalThis.fetch = nativeFetch; rmSync(root, { recursive: true, force: true }); }
+});
+
+test('Windows background relaunch exits against the existing owner instead of waiting to revive a stopped app', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-windows-owner-')), data = join(root, 'conversation'), os = protector();
+  let first, second, runs = 0; const opened = [];
+  const config = { platform: 'win32', instance: (options, config) => acquireAppInstance(options, { ...config, protector: os }),
+    backgroundFactory: () => ({}), open: async url => { opened.push(url); },
+    run: async (_args, { ui }) => { runs++; ui.ready('http://127.0.0.1:8787/#entry=fixture'); await ui.wait(); } };
+  try {
+    first = await startApp(['--data', data], config); second = await startApp(['--background', '--data', data], config);
+    assert.equal(second.owned, undefined); assert.equal(second.url, first.url); assert.equal(runs, 1); assert.equal(opened.length, 1);
+    await first.reopen(); assert.equal(opened.length, 2); assert.equal(opened[1], first.url);
+    await second.close(); await first.close(); await first.reopen(); assert.equal(opened.length, 2); assert.equal(runs, 1);
+  } finally { await second?.close(); await first?.close(); rmSync(root, { recursive: true, force: true }); }
 });

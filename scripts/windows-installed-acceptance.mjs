@@ -97,6 +97,11 @@ try {
     return found ? Number(found) : null;
   };
   let firstNode = childNode(direct.pid); assert.ok(firstNode);
+  const currentPayload = join(installed, 'versions', readFileSync(join(installed, 'current.txt'), 'utf8').split('\n')[1]);
+  const duplicate = spawn(join(currentPayload, 'Tada.exe'), ['--background', '--data', data], { stdio: 'ignore', windowsHide: true }); children.push(duplicate);
+  await until(() => duplicate.exitCode !== null); assert.equal(duplicate.exitCode, 0);
+  assert.equal(alive(firstNode), true); assert.equal((await acquireAppInstance(options)).url, instance.url);
+  report.checks.push('background relaunch exits against the existing owner instead of waiting to revive it after explicit stop');
   if (!previousInput) {
     const lost = firstNode; process.kill(lost);
     firstNode = await until(() => { const next = childNode(direct.pid); return next && next !== lost ? next : null; });

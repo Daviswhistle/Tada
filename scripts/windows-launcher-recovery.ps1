@@ -32,7 +32,7 @@ class Child {
  })
  $manifest=@{version=1;platform='win32-x64';appVersion='synthetic-fixture';files=$files}|ConvertTo-Json -Depth 5
  [IO.File]::WriteAllText((Join-Path $payload 'bundle.json'),$manifest,[Text.UTF8Encoding]::new($false))
- & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /reference:System.Runtime.Serialization.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:Microsoft.CSharp.dll "/resource:$payload\bundle.json,Tada.Bundle" "/out:$payload\Tada.exe" (Join-Path $source 'apps/windows/Launcher.cs') (Join-Path $source 'apps/windows/InstalledApp.cs') (Join-Path $source 'apps/windows/InstallPrompt.cs')
+ & $compiler /nologo /warnaserror+ /codepage:65001 /target:winexe /reference:System.Runtime.Serialization.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:Microsoft.CSharp.dll "/resource:$payload\bundle.json,Tada.Bundle" "/out:$payload\Tada.exe" (Join-Path $source 'apps/windows/Launcher.cs') (Join-Path $source 'apps/windows/InstalledApp.cs') (Join-Path $source 'apps/windows/InstallPrompt.cs') (Join-Path $source 'apps/windows/OwnedHostContext.cs')
  if($LASTEXITCODE -ne 0){throw 'Launcher fixture compilation failed'}
  $verified=Start-Process -FilePath (Join-Path $payload 'Tada.exe') -ArgumentList '--verify' -PassThru -Wait
  if($verified.ExitCode -ne 0){throw 'Synthetic bundle verification failed'}

@@ -29,9 +29,9 @@ function setup(options = {}) {
     close() { store.close(); rmSync(root, { recursive: true, force: true }); } };
 }
 const pairedDevice = store => store.addDevice('Test device');
-async function serverFor(store, service) {
+async function serverFor(store, service, extra = {}) {
   const origin = 'http://127.0.0.1:9177';
-  const host = await serveContact({ store, service, origin, port: 0 });
+  const host = await serveContact({ store, service, origin, port: 0, ...extra });
   const address = `http://127.0.0.1:${host.address.port}`;
   const call = (path, body, cookie = '', extra = {}) => new Promise((yes, no) => {
     const req = request(address + path, { method: body === undefined ? 'GET' : 'POST',
@@ -504,4 +504,68 @@ test('authenticated view revisions detect off-page work mutations and host repla
   await net.host.close();net=await serverFor(e.store,service);
   assert.notEqual((await getState()).view_revision,cancelled.view_revision,'restarted hosts cannot reuse an old display revision');
  }finally{await net.host.close();await service.close();e.close();}
+});
+
+test('explicit shutdown closes admission before slow channel cleanup and preserves interrupted versus queued work', async () => {
+  const { closeContactResources } = await import('../src/contact-cli.mjs');
+  const env = setup(); let releaseModel, releaseMobile, signal, calls = 0;
+  let service = new ContactService(env.store, { chat: async (_messages, _tools, abort) => {
+    signal = abort; calls++; return new Promise(resolve => { releaseModel = resolve; });
+  } }, noSources);
+  try {
+    const device = pairedDevice(env.store).id;
+    const active = service.submit(device, randomUUID(), '진행 중인 일');
+    await new Promise(resolve => setImmediate(resolve)); assert.ok(signal);
+    const waiting = service.submit(device, randomUUID(), '아직 시작하지 않은 일');
+    const closing = closeContactResources({ service, mobile: { close: () => new Promise(resolve => { releaseMobile = resolve; }) } });
+    assert.equal(service.stopped, true); assert.equal(signal.aborted, true);
+    assert.throws(() => service.submit(device, randomUUID(), '종료 뒤 요청'), /HOST_STOPPING/);
+    assert.equal(service.tickFollowups(), 0); assert.equal(service.checkAttention(), null);
+    releaseModel(response('종료 뒤 도착한 결과')); await service.idle();
+    assert.equal(env.store.turn(active.seq).state, 'interrupted'); assert.equal(env.store.turn(active.seq).answer, null);
+    assert.equal(env.store.turn(waiting.seq).state, 'queued'); assert.equal(calls, 1);
+    assert.equal(env.store.usage().input_tokens, 5); releaseMobile(); await closing;
+    env.reopen();
+    service = new ContactService(env.store, { chat: async () => { calls++; return response('대기한 일만 처리'); } }, noSources);
+    service.start(); await service.idle(); assert.equal(calls, 2);
+    assert.equal(env.store.turn(active.seq).state, 'interrupted'); assert.equal(env.store.turn(waiting.seq).state, 'answered');
+  } finally { releaseMobile?.(); releaseModel?.(response('cleanup')); await service.close(); env.close(); }
+});
+
+test('a settings body admitted before shutdown cannot mutate the journal after shutdown starts', async () => {
+  const env = setup({ assistance: true }), service = new ContactService(env.store, {}, noSources);
+  const network = await serverFor(env.store, service);
+  let started;
+  try {
+    const paired = await network.pair('Computer');
+    const actual = Object.getOwnPropertyDescriptor(ContactService.prototype, 'stopped').get;
+    const admission = new Promise(resolve => { started = resolve; });
+    Object.defineProperty(service, 'stopped', { get() { started(); return actual.call(service); } });
+    const data = JSON.stringify({ enabled: true, consent: 'continuing_conversation_24h_v1' });
+    const result = new Promise((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port: network.host.address.port, path: '/api/continuing-use', method: 'POST',
+        headers: { Host: '127.0.0.1:9177', Origin: 'http://127.0.0.1:9177', Cookie: paired.cookie, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } }, res => {
+        const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(Buffer.concat(chunks)) }));
+      });
+      req.on('error', reject); req.write(data.slice(0, 5));
+      void admission.then(() => { service.beginStop(); req.end(data.slice(5)); });
+    });
+    assert.deepEqual(await result, { status: 503, body: { error: 'CONTACT_HOST_STOPPING' } });
+    assert.equal(env.store.continuingUseEnabled(), false);
+    assert.equal((await network.call('/api/turns', { request_id: randomUUID(), text: '새 요청' }, paired.cookie)).status, 503);
+    assert.equal((await (await network.call('/api/state', undefined, paired.cookie)).json()).host_stopping, true);
+  } finally { await network.host.close(); await service.close(); env.close(); }
+});
+
+test('shutdown revokes a pending startup configuration before its asynchronous dispatch admission', async () => {
+  const env = setup(), service = new ContactService(env.store, {}, noSources); let entered, release, changes = 0;
+  const started = new Promise(resolve => { entered = resolve; });
+  const background = { async configure(_enabled, _consent, authorize) { entered(); await new Promise(resolve => { release = resolve; }); authorize(); changes++; return { transfer: false }; } };
+  const network = await serverFor(env.store, service, { background });
+  try {
+    const paired = await network.pair('Computer');
+    const setting = network.call('/api/background', { enabled: true, consent: 'same_assistant_background_v1' }, paired.cookie);
+    await started; service.beginStop(); release();
+    assert.equal((await setting).status, 503); assert.equal(changes, 0);
+  } finally { release?.(); await network.host.close(); await service.close(); env.close(); }
 });

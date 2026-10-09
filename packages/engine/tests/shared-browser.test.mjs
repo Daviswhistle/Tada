@@ -271,3 +271,26 @@ test('browser cleanup failure cannot keep journal and account resources locked',
     reopened.close();
   } finally { e.close(); }
 });
+
+test('explicit host stop after browser input preserves the applied value and its uncertain verification without replay', async () => {
+  const e = setup(), b = browser(e); let service, release, applied;
+  try {
+    e.store.cancel(e.job.seq);
+    const reached = new Promise(resolve => { applied = resolve; });
+    b.fill = async (_epoch, _obs, _ref, value, admit) => { admit(); b.actual = value; applied(); await new Promise(resolve => { release = resolve; }); return { applied: true }; };
+    let calls = 0;
+    const model = { chat: async messages => {
+      calls++;
+      const name = calls === 1 ? 'observe_shared_browser' : 'fill_shared_textbox';
+      const args = calls === 1 ? {} : { observation: JSON.parse(messages.at(-1).content).observation, ref: '1', value: '확인 전 적용된 값' };
+      return { message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] }, input_tokens: 1, output_tokens: 1 };
+    } };
+    service = new ContactService(e.store, model, base); service.attachBrowser(b);
+    const turn = service.submit(e.device.id, randomUUID(), '제목을 바꿔줘.');
+    await reached; service.beginStop(); release(); await service.close();
+    assert.equal(b.actual, '확인 전 적용된 값'); assert.equal(calls, 2);
+    assert.equal(e.store.turn(turn.seq).state, 'interrupted'); assert.equal(e.store.browserActions()[0].action.state, 'UNCERTAIN');
+    e.reopen(); assert.equal(e.store.browserActions()[0].action.state, 'UNCERTAIN');
+    assert.equal(e.store.turn(turn.seq).state, 'interrupted'); assert.equal(e.store.claim(), null);
+  } finally { release?.(); await service?.close(); e.close(); }
+});

@@ -39,12 +39,12 @@ export class ContactService extends EventEmitter {
     return { available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device } : null,
       actions: [...new Map([...this.#store.browserActions().slice(0,10), ...this.#store.browserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved })) };
   }
-  async openBrowser(device) { this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE'); await this.#browser.open(); this.#store.assertDevice(device); return this.browserStatus(device); }
+  async openBrowser(device) { this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE'); await this.#browser.open(); if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); this.#store.assertDevice(device); return this.browserStatus(device); }
   async browserTabs(device) { this.#store.assertDevice(device); if (!this.#browser) return []; const tabs = await this.#browser.tabs(); this.#store.assertDevice(device); return tabs; }
   async shareBrowser(device, target, consent, url) {
     this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE');
     let shared;
-    try { shared = await this.#browser.share(device, target, consent, url); this.#store.assertDevice(device); }
+    try { shared = await this.#browser.share(device, target, consent, url); if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); this.#store.assertDevice(device); }
     catch (error) { if (shared && this.#browser.grant?.epoch === shared.epoch) this.#browser.unshare(); throw error; }
     this.emit('change'); return this.browserStatus(device);
   }
@@ -284,11 +284,13 @@ export class ContactService extends EventEmitter {
     return queued + this.#store.followupTick(now) + this.#store.proactiveTick(now, this.#google?.status().connected === true);
   }
   async validateDelivery(delivery, signal) {
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     if (!delivery.turn) return true;
     const notice = this.#store.attentionDelivery(delivery.turn);
     if (!notice) return true;
-    if (notice.stopped || this.#stopped || !this.#google) return false;
+    if (notice.stopped || !this.#google) return false;
     const observation = await observeAttention(this.#store, this.#google, notice.ticket, signal, Date.now(), true);
+    if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     this.#store.assertAttentionDelivery(delivery.id, delivery.turn, notice.ticket);
     const event = observation.events.find(item => eventKey(observation.account, item) === notice.key);
     // Missing in a partial page is not cancellation, but also not permission to
@@ -328,13 +330,17 @@ export class ContactService extends EventEmitter {
     this.#stopped = true; clearInterval(this.#timer); this.#attentionAbort?.abort();
     this.emit('change');
   }
-  async close() {
-    this.#browser?.unshare();
+  beginStop() {
+    const changed = !this.#stopped;
     this.#stopped = true;
     clearInterval(this.#timer);
     this.#attentionAbort?.abort(); this.#active?.abort.abort();
+    this.#browser?.unshare(); this.#google?.close();
+    if (changed) this.emit('change');
+  }
+  async close() {
+    this.beginStop();
     await this.#attention;
-    this.#google?.close();
     this.#active?.abort.abort();
     await this.#drain;
     await this.#browser?.close();

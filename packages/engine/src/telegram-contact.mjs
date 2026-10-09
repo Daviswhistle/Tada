@@ -12,10 +12,12 @@ export class TelegramContact extends EventEmitter {
   #polling; #sending; #closed = false; #online = false; #nextSend = 0; #lastError = null; #pairWindow = 0; #pairCount = 0; #suspended = false; #pollActive = false;
   constructor(store, service, api) { super(); this.#store = store; this.#service = service; this.#api = api; }
   async initialize(assertAuthority = () => {}) {
+    if (this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
     if (this.#closed || this.#bot) throw new Error('CONTACT_TELEGRAM_ALREADY_STARTED');
     if (this.#store.contactVersion < 2) throw new Error('CONTACT_MESSAGING_UPGRADE_REQUIRED');
     const bot = await this.#api.inspect(this.#abort.signal);
     if (this.#closed) throw Error('CONTACT_TELEGRAM_CLOSED');
+    if (this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
     assertAuthority();
     this.#store.telegramConfigure(bot.id); this.#bot = bot;
     return bot;
@@ -42,6 +44,7 @@ export class TelegramContact extends EventEmitter {
     this.#service.emit('change'); return device;
   }
   async pollOnce() {
+    if (this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
     if (this.#closed || this.#suspended || !this.#bot) throw new Error('CONTACT_TELEGRAM_NOT_INSPECTED');
     if (this.#pollActive) throw new Error('CONTACT_TELEGRAM_POLL_BUSY');
     this.#pollActive = true;
@@ -49,6 +52,7 @@ export class TelegramContact extends EventEmitter {
       const updates = await this.#api.updates(this.#store.telegramCursor(), this.#abort.signal);
       for (const update of updates) {
         if (this.#closed || this.#suspended) break;
+        if (this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
         this.#receive(update);
         // Admission precedes upstream ACK. If this commit is lost, the stable
         // bot/chat/message key replays the same turn, not another model request.
@@ -138,14 +142,16 @@ export class TelegramContact extends EventEmitter {
     }
   }
   async deliverOnce(now = Date.now()) {
-    if (this.#closed || this.#suspended || !this.#bot || now < this.#nextSend) return false;
+    if (this.#closed || this.#suspended || this.#service.stopped || !this.#bot || now < this.#nextSend) return false;
     this.#store.telegramQueueResults();
     const delivery = this.#store.telegramClaimDelivery(now);
     if (!delivery) return false;
     this.#nextSend = now + 1100;
     let sending = false;
     try {
-      if (this.#service.validateDelivery && !await this.#service.validateDelivery(delivery, this.#abort.signal)) {
+      const valid = !this.#service.validateDelivery || await this.#service.validateDelivery(delivery, this.#abort.signal);
+      if (this.#closed || this.#service.stopped) throw Error('CONTACT_HOST_STOPPING');
+      if (!valid) {
         this.#store.telegramDelivery(delivery.id, 'suppressed', { error: 'CONTACT_SOURCE_CHANGED' }); return true;
       }
       this.#store.assertTelegramDelivery(delivery);
@@ -155,7 +161,7 @@ export class TelegramContact extends EventEmitter {
     } catch (error) {
       const code = safe(error);
       if (!sending) {
-        this.#store.telegramDelivery(delivery.id, 'queued', { retryAt: Date.now() + 15 * 60000, error: code });
+        this.#store.telegramDelivery(delivery.id, 'queued', { retryAt: Date.now() + (code === 'CONTACT_HOST_STOPPING' ? 0 : 15 * 60000), error: code });
       } else if (code === 'CONTACT_TELEGRAM_RATE_LIMIT' && error.definitelyRejected && error.retryAfter) {
         this.#store.telegramDelivery(delivery.id, 'queued', { retryAt: Date.now() + error.retryAfter * 1000, error: code });
       } else this.#store.telegramDelivery(delivery.id, error.definitelyRejected ? 'rejected' : 'unknown', { error: code });
@@ -174,10 +180,10 @@ export class TelegramContact extends EventEmitter {
     if (!this.#bot || this.#closed || this.#suspended || this.#polling) throw new Error('CONTACT_TELEGRAM_ALREADY_STARTED');
     const wait = async ms => { try { await pause(ms, undefined, { signal: this.#abort.signal }); } catch { /* shutdown */ } };
     this.#polling = (async () => {
-      while (!this.#closed && !this.#suspended) {
+      while (!this.#closed && !this.#suspended && !this.#service.stopped) {
         try { await this.pollOnce(); }
         catch (error) {
-          if (this.#closed) break;
+          if (this.#closed || this.#service.stopped) break;
           this.#online = false; this.#lastError = safe(error); this.emit('status', this.#lastError);
           if (['CONTACT_TELEGRAM_ACCESS_DENIED','CONTACT_TELEGRAM_POLL_CONFLICT','CONTACT_TELEGRAM_BOT_CHANGED'].includes(this.#lastError)
               || !this.#lastError.startsWith('CONTACT_TELEGRAM_')) { this.#suspend(error); break; }
@@ -188,7 +194,7 @@ export class TelegramContact extends EventEmitter {
       }
     })().catch(error => { this.#suspend(error); });
     this.#sending = (async () => {
-      while (!this.#closed && !this.#suspended) { await this.deliverOnce(); await wait(1100); }
+      while (!this.#closed && !this.#suspended && !this.#service.stopped) { await this.deliverOnce(); await wait(1100); }
     })().catch(error => { this.#suspend(error); });
   }
   status() { return { online: this.#online, suspended: this.#suspended, last_error: this.#lastError, ...this.#store.messagingStatus() }; }
