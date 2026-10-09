@@ -1,0 +1,65 @@
+{
+  "case": "A11",
+  "implementation": "c8b90b3effd4e5ec30b36026e224510df0d70479",
+  "report_sha256": "a152e5ddacad9b441b6f217ecfcfdd430d60d1892ad319f747adaa1f23ef293d",
+  "harness_sha256": "a77c1d0ba0068b6151937c8a02861129f483c0063f7e4119004e9a82c99e7ef4",
+  "reviewer": "independent release_acceptance_audit; primary verified raw ledger, document content and hashes",
+  "scope": "Continuation from the last committed document after a real fixture process restart; not general external-action or mid-turn observation recovery",
+  "variants": [
+    {
+      "variant": 1,
+      "status": "passed",
+      "evidence": [
+        "Read interrupted request 6 and document 4",
+        "Preserved first-floor room, 15:00, eight participants, wheelchair access and captions",
+        "Completed remaining preparation as before/during/after table without claiming physical execution",
+        "Saved root 4 revision 2 based_on 4"
+      ]
+    },
+    {
+      "variant": 2,
+      "status": "passed",
+      "evidence": [
+        "Read interrupted request 7 and owner-edited document 5",
+        "Preserved Dalmaeul building 203, 10:00 and cat carrier",
+        "Kept recorded completed vehicle booking and box sorting; organized only remaining preparation",
+        "Saved root 4 revision 3 based_on 5"
+      ]
+    }
+  ],
+  "shared_evidence": [
+    "No provider dispatch on restart alone; ordinary current instruction triggered continuation",
+    "Tool result exposed interrupted state, unaccepted result, one unknown historical inference reservation and current allowance",
+    "Each prior ledger of two synthetic requests and one unknown remained intact",
+    "New real requests: nine observed, zero unknown, zero web",
+    "Cancelled commitment and request, unrelated same-title document and prior versions remained unchanged",
+    "No technical preparation, repeated goal/source question or fabricated external completion",
+    "Final document content equals answer; SHA256 and token totals independently recomputed"
+  ],
+  "limitations": [
+    "Killed child held synthetic inference reservation before any provider dispatch; no actual uncertain external write was exercised",
+    "Uncommitted mid-turn observations and arbitrary external execution plans are not restored",
+    "No physical-device, exhausted-budget or revoked-authority live acceptance in these fixtures"
+  ],
+  "product_acceptance": "not_passed",
+  "formal_cases_passed": [
+    "A01",
+    "A04",
+    "A05",
+    "A09",
+    "A10",
+    "A11",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "formal_cases_not_run": [
+    "A02",
+    "A03",
+    "A06",
+    "A07",
+    "A08",
+    "A12"
+  ]
+}

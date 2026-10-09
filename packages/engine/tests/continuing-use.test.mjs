@@ -248,3 +248,41 @@ test('shortening historical results preserves pagination and marks omitted reque
     assert.ok(e.store.turn(1).text.length > 1000);
   } finally { e.close(); }
 });
+
+test('history exposes recorded inference uncertainty and current allowance without replaying stopped or cancelled work', async () => {
+  const e = env(); let service;
+  try {
+    e.store.configureContinuingUse(e.device, true, CONTINUING_CONSENT);
+    const stopped = running(e, 'Continue preparing the saved document');
+    e.store.observe(e.store.reserve(stopped), { input_tokens: 7, output_tokens: 3 });
+    e.store.reserve(stopped);
+    const cancelled = e.store.submit(e.device, randomUUID(), 'Unrelated cancelled work').seq; e.store.cancel(cancelled);
+    const before = e.store.usage(); e.reopen();
+    assert.deepEqual(e.store.usage(), before);
+    let calls = 0;
+    service = new ContactService(e.store, { chat: async messages => {
+      calls++;
+      if (calls === 1) return call('read_history', { id: stopped });
+      const history = JSON.parse(messages.at(-1).content);
+      assert.equal(history.execution.result_accepted, false); assert.equal(history.execution.stop_reason, 'HOST_RESTARTED');
+      assert.deepEqual(history.execution.model_requests, { total: 2, observed: 1, reserved: 0, unknown: 1, input_tokens: 7, output_tokens: 3 });
+      assert.equal(history.execution.scope, 'model_inference_not_external_action_receipts');
+      assert.equal(history.current_request_allowance, 61);
+      return reply('이전 요청은 최종 결과가 저장되지 않았고, 모델 응답 한 건은 확인되지 않았습니다. 저장된 문서부터 확인해 이어갈 수 있습니다.');
+    } }, sources);
+    service.start(); await service.idle(); assert.equal(calls, 0, 'restart alone dispatches nothing');
+    const current = service.submit(e.device, randomUUID(), '아까 하던 거 계속해.').seq; await service.idle();
+    assert.equal(e.store.turn(current).state, 'answered'); assert.equal(calls, 2);
+    assert.equal(e.store.turn(stopped).state, 'interrupted'); assert.equal(e.store.turn(cancelled).state, 'cancelled');
+    assert.deepEqual(e.store.usage(), { requests: 4, unknown_requests: 1, input_tokens: 9, output_tokens: 5 });
+    await service.close(); service = null;
+    const next = running(e);
+    const cancelledRecord = e.store.readHistory(cancelled, next);
+    assert.equal(cancelledRecord.execution.stop_reason, 'USER_CANCELLED'); assert.equal(cancelledRecord.execution.model_requests.total, 0);
+    const accepted = e.store.readHistory(current, next);
+    assert.equal(accepted.execution.result_accepted, true); assert.equal(accepted.execution.stop_reason, null);
+    assert.equal(accepted.execution.model_requests.observed, 2);
+    assert.throws(() => e.store.readHistory(next, next), /HISTORY_INVALID/);
+    e.store.revoke(e.device); assert.throws(() => e.store.readHistory(stopped, next), /REVOKED|STOPPED/);
+  } finally { await service?.close(); e.close(); }
+});
