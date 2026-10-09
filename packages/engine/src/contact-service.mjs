@@ -122,7 +122,7 @@ export class ContactService extends EventEmitter {
         const ownerContext = !review && !proactive ? new OwnerContext(this.#store, job) : null;
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
         const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserSources(google ?? this.#sources, this.#store, this.#browser, job)) : google ?? this.#sources;
-        const mailSources = !review && !proactive && this.#store.contactVersion >= 6 ? new MailSources(interactive, this.#store, job, google) : null;
+        const mailSources = !review && !proactive && this.#store.contactVersion >= 6 ? new MailSources(interactive, this.#store, job, google, (id, signal) => this.reconcileMail(job.device, id, signal)) : null;
         const interactiveTools = mailSources ?? interactive;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
@@ -270,7 +270,7 @@ export class ContactService extends EventEmitter {
       catch { return receipt; }
     });
   }
-  reconcileMail(device, id) { return this.mailOperation(device, id, () => this.#google.reconcileMail(device, id)); }
+  reconcileMail(device, id, signal) { return this.mailOperation(device, id, () => this.#google.reconcileMail(device, id, signal)); }
   editMail(device, input) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     const result = this.#store.editMail(device, input.id, input.revision, input.sha256, input.draft); this.emit('change'); return result;

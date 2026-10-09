@@ -1,0 +1,27 @@
+{
+  "implementation": "9bbd824d389855360072fd89022e264232441fd7+mail-confirmation-candidate",
+  "harness_sha256": "12aeac5b574c8a4d187b3580774d79b6ae7d69d401bb9036000eb30802287314",
+  "fixtures_sha256": "e489b101ba184ff15f9219647ab06c07ccd6ebb232a1121502e7c1f8eac78e2d",
+  "report_sha256": "f8e0ee3bc9d7fd7bd25c43780058848f9590fc8d5407fb73879b7c51e5e3386b",
+  "reviewer": "independent execution_audit; primary inspected raw answers and tool observations",
+  "variants": [
+    {
+      "case": "A12",
+      "variant": 1,
+      "status": "passed",
+      "evidence": "Read original attempted send, queried matching SENT copy, reported no delivery/read proof; one original POST only."
+    },
+    {
+      "case": "A12",
+      "variant": 2,
+      "status": "failed",
+      "evidence": "Only read newer unsent draft; no confirmation lookup of the actual send."
+    }
+  ],
+  "limitations": [
+    "Synthetic Gmail only; no real send or delivery proof.",
+    "Single-candidate SENT fixture does not qualify real-account search ambiguity.",
+    "Source was dirty candidate atop 9bbd824; harness and fixtures pinned by hashes, not a claim that base commit contained changes."
+  ],
+  "product_acceptance": "not_passed"
+}
