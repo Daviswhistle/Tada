@@ -46,14 +46,23 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
   // Hold one matching UI version for this host's lifetime, including its parser.
   // Updating files on disk cannot mix old HTML with a new client or missing bundle.
   const loadedAssets = new Map([...assets].map(([path, [type, file]]) => [path, [type, readFileSync(file)]]));
-  const cookieName = url.protocol === 'https:' ? '__Host-tada' : 'tada_local';
+  const legacyCookieName = url.protocol === 'https:' ? '__Host-tada' : 'tada_local';
+  // Browser cookies are shared across ports. Keep independently stored
+  // assistants from replacing each other's connection, even on localhost.
+  // Journal identity remains stable when this host restarts on another port.
+  const cookieName = `${legacyCookieName}_${sha(store.id).slice(0, 24)}`;
   const pairing = new Map();
   const streams = new Set();
   let pairWindow = Date.now(), pairAttempts = 0, appPair;
-  const tokenOf = req => {
-    const items = (req.headers.cookie ?? '').split(';').map(s => s.trim()).filter(s => s.startsWith(`${cookieName}=`));
-    return items.length === 1 ? items[0].slice(cookieName.length + 1) : '';
+  const cookieOf = req => {
+    const cookies = (req.headers.cookie ?? '').split(';').map(s => s.trim());
+    const scoped = cookies.filter(s => s.startsWith(`${cookieName}=`));
+    // An invalid/duplicate scoped cookie must not fall back to another token.
+    if (scoped.length) return { token: scoped.length === 1 ? scoped[0].slice(cookieName.length + 1) : '', legacy: false };
+    const legacy = cookies.filter(s => s.startsWith(`${legacyCookieName}=`));
+    return { token: legacy.length === 1 ? legacy[0].slice(legacyCookieName.length + 1) : '', legacy: true };
   };
+  const tokenOf = req => cookieOf(req).token;
   const setCookie = (token, age = 30 * 86400) => `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${url.protocol === 'https:' ? '; Secure' : ''}`;
   const send = (res, status, value, extra = {}) => {
     res.writeHead(status, { ...headers, 'Content-Type': 'application/json; charset=utf-8', ...extra });
@@ -90,8 +99,11 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         pairing.delete(key);
         return send(res, 200, { device: device.id }, { 'Set-Cookie': setCookie(device.token) });
       }
-      const device = store.authenticate(tokenOf(req));
+      const cookie = cookieOf(req), device = store.authenticate(cookie.token);
       if (!device) return send(res, 401, { error: 'CONTACT_PAIR_REQUIRED' });
+      // Preserve an existing connection only after this journal authenticates
+      // its legacy token. Other still-running versions may need that cookie.
+      if (cookie.legacy) res.setHeader('Set-Cookie', setCookie(cookie.token));
       if (req.method === 'GET' && /^\/api\/documents\/[1-9][0-9]*$/u.test(target.pathname) && !target.search) {
         const document = store.document(Number(target.pathname.split('/').at(-1)));
         if (!document) return send(res, 404, { error: 'CONTACT_DOCUMENT_NOT_FOUND' });

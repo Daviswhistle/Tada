@@ -86,6 +86,48 @@ test('two independently paired clients share actual accepted conversation and fo
   } finally { await network.host.close(); await service.close(); env.close(); }
 });
 
+test('separate localhost assistants coexist in one browser cookie jar and logout affects only its journal', async () => {
+  const a = setup(), b = setup();
+  const serviceA = new ContactService(a.store, {}, noSources), serviceB = new ContactService(b.store, {}, noSources);
+  const networkA = await serverFor(a.store, serviceA), networkB = await serverFor(b.store, serviceB);
+  try {
+    const first = await networkA.pair('Browser A'), second = await networkB.pair('Browser B');
+    assert.notEqual(first.cookie.split('=')[0], second.cookie.split('=')[0]);
+    const jar = `${first.cookie}; ${second.cookie}`;
+    const stateA = await networkA.call('/api/state', undefined, jar), stateB = await networkB.call('/api/state', undefined, jar);
+    assert.equal(stateA.status, 200); assert.equal(stateB.status, 200);
+    assert.equal((await stateA.json()).assistant, a.store.id); assert.equal((await stateB.json()).assistant, b.store.id);
+    assert.equal((await networkA.call('/api/state', undefined, second.cookie)).status, 401);
+    const logout = await networkB.call('/api/logout', {}, jar);
+    assert.equal(logout.status, 200); assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
+    assert.equal((await networkB.call('/api/state', undefined, jar)).status, 401);
+    assert.equal((await networkA.call('/api/state', undefined, jar)).status, 200);
+  } finally { await networkA.host.close(); await networkB.host.close(); await serviceA.close(); await serviceB.close(); a.close(); b.close(); }
+});
+
+test('authenticated legacy connections migrate without a new device and cannot bypass invalid scoped cookies', async () => {
+  const e = setup(); let service = new ContactService(e.store, {}, noSources), network = await serverFor(e.store, service);
+  try {
+    const device = e.store.addDevice('Existing browser'), legacy = `tada_local=${device.token}`;
+    const response = await network.call('/api/state', undefined, legacy);
+    assert.equal(response.status, 200); assert.equal((await response.json()).device, device.id);
+    const cookie = response.headers.get('set-cookie').split(';')[0], name = cookie.split('=')[0];
+    assert.match(name, /^tada_local_[a-f0-9]{24}$/u);
+    assert.ok(cookie.endsWith(`=${device.token}`)); assert.match(response.headers.get('set-cookie'), /HttpOnly; SameSite=Strict/);
+    assert.equal((await network.call('/api/state', undefined, `${name}=invalid; ${legacy}`)).status, 401);
+    assert.equal((await network.call('/api/state', undefined, `${cookie}; ${cookie}; ${legacy}`)).status, 401);
+    assert.equal((await network.call('/api/state', undefined, `${legacy}; ${legacy}`)).status, 401);
+    await network.host.close(); await service.close(); e.reopen();
+    service = new ContactService(e.store, {}, noSources); network = await serverFor(e.store, service);
+    const restored = await network.call('/api/state', undefined, cookie);
+    assert.equal(restored.status, 200); assert.equal((await restored.json()).device, device.id);
+    assert.equal(restored.headers.get('set-cookie'), null);
+    e.store.revoke(device.id);
+    const rejected = await network.call('/api/state', undefined, legacy);
+    assert.equal(rejected.status, 401); assert.equal(rejected.headers.get('set-cookie'), null);
+  } finally { await network.host.close(); await service.close(); e.close(); }
+});
+
 test('closing an HTTP client does not cancel an accepted request and completion is available to another client', async () => {
   const env = setup(); let finish;
   const model = { chat: () => new Promise(resolve => { finish = resolve; }) };
