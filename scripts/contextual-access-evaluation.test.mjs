@@ -4,6 +4,14 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { contextualAccessFixtures, runContextualAccess } from '../evals/assistant-v1/contextual-access-candidate.mjs';
+// Case IDs are complete identifiers, not substrings of encoded timestamps.
+const EVALUATOR_MARKERS = /\bA0[67]\b|completion_checks|mechanical_checks/;
+test('evaluator marker checks distinguish case labels from URL-encoded times', () => {
+  for (const time of ['2026-10-09T15:06:07.000Z', '2026-10-09T15:07:06.000Z'])
+    assert.doesNotMatch(JSON.stringify({ path: `primary/events?from=${encodeURIComponent(time)}` }), EVALUATOR_MARKERS);
+  for (const marker of ['A06', 'A07', 'completion_checks', 'mechanical_checks'])
+    assert.match(JSON.stringify({ prompt: `Do ${marker} now` }), EVALUATOR_MARKERS);
+});
 const identity = { provider: 'chatgpt-subscription', model: 'synthetic', billing: 'chatgpt-plan', account_label: 'ACCOUNT_CANARY' };
 const reply = content => ({ message: { role: 'assistant', content }, input_tokens: 1, output_tokens: 1 });
 const call = (name, args) => ({ ...reply(''), message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] } });
@@ -45,7 +53,7 @@ test('contextual access uses real local OAuth callback, same history and current
       assert.ok(result.network.some(n => n.phase === 'connecting' && n.method === 'POST'));
     }
     assert.ok(seen.every(s => s.gate === 'function' && s.names.includes('research_public_web')));
-    assert.doesNotMatch(JSON.stringify(seen), /A06|A07|completion_checks|mechanical_checks/);
+    assert.doesNotMatch(JSON.stringify(seen), EVALUATOR_MARKERS);
     assert.doesNotMatch(readFileSync(path, 'utf8'), /ACCOUNT_CANARY|SYNTHETIC_ACCESS_ONLY|SYNTHETIC_REFRESH_ONLY|SYNTHETIC_AUTH_CODE/);
     assert.equal(report.product_acceptance, 'not_passed');
   } finally { rmSync(root, { recursive: true, force: true }); }
