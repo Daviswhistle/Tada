@@ -98,6 +98,52 @@ function paired(yes) {
 const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할게요.', running: '확인하고 있어요. 다른 기기로 옮겨도 괜찮아요.',
   cancelled: '이 요청은 취소했어요.', interrupted: 'Tada가 멈춰 답변을 끝내지 못했어요. 요청은 남아 있어요.',
   failed: '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.' };
+function renderAnswer(parent, text) {
+  // CommonMark supplies structure only. We create a fixed set of DOM elements;
+  // model HTML and link/image destinations remain inert, selectable text.
+  const fragment = document.createDocumentFragment();
+  try {
+    const walker = new globalThis.commonmark.Parser().parse(text).walker();
+    const containers = [fragment];
+    const tags = { paragraph: 'p', block_quote: 'blockquote', item: 'li',
+      emph: 'em', strong: 'strong', link: 'span', image: 'span' };
+    let event;
+    while ((event = walker.next())) {
+      const node = event.node;
+      if (node.type === 'document') continue;
+      if (!event.entering) {
+        if (node.type === 'link' || node.type === 'image') {
+          containers.at(-1).append(document.createTextNode(` (${node.destination})`));
+        }
+        containers.pop(); continue;
+      }
+      const target = containers.at(-1);
+      if (node.type === 'text' || node.type === 'html_inline' || node.type === 'html_block') {
+        target.append(document.createTextNode(node.literal)); continue;
+      }
+      if (node.type === 'softbreak') { target.append(document.createTextNode('\n')); continue; }
+      if (node.type === 'code' || node.type === 'code_block') {
+        const code = document.createElement('code'); code.textContent = node.literal;
+        if (node.type === 'code_block') {
+          const pre = document.createElement('pre'); pre.append(code); target.append(pre);
+        } else target.append(code);
+        continue;
+      }
+      const tag = tags[node.type] ?? (node.type === 'list' ? (node.listType === 'ordered' ? 'ol' : 'ul')
+        : node.type === 'heading' ? `h${Math.min(6, node.level + 2)}`
+        : node.type === 'thematic_break' ? 'hr' : node.type === 'linebreak' ? 'br' : null);
+      if (!tag) throw Error('Unsupported answer structure');
+      const element = document.createElement(tag);
+      if (tag === 'ol') element.setAttribute('start', String(node.listStart));
+      target.append(element);
+      if (node.isContainer) containers.push(element);
+    }
+    parent.append(fragment);
+  } catch {
+    // Even a missing parser or an unusual answer must not hide the conversation.
+    const paragraph = document.createElement('p'); paragraph.textContent = text; parent.append(paragraph);
+  }
+}
 function render() {
   const list = [...turns.values()].filter(t => !t.answer?.quiet && (t.origin !== 'proactive' || t.state === 'answered')).sort((a, b) => a.seq - b.seq);
   const fingerprint = JSON.stringify(list);
@@ -123,7 +169,7 @@ function render() {
         download.href = `/api/documents/${doc.id}`; download.setAttribute('download', '');
         card.append(title, download); article.append(card);
       }
-      const answer = document.createElement('div'); answer.className = 'answer'; answer.textContent = turn.answer.text; article.append(answer);
+      const answer = document.createElement('div'); answer.className = 'answer'; renderAnswer(answer, turn.answer.text); article.append(answer);
       if (turn.answer.notice) { const note = document.createElement('p'); note.className = 'status'; note.textContent = turn.answer.notice; article.append(note); }
       if (turn.answer.sources.length) {
         const details = document.createElement('details'); details.className = 'source-list';

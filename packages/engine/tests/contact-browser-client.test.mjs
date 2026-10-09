@@ -7,7 +7,8 @@ import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../../apps/contact/app.js', import.meta.url), 'utf8');
-function client() {
+const parserSource = readFileSync(new URL('../../../node_modules/commonmark/dist/commonmark.min.js', import.meta.url), 'utf8');
+function client({ parser = true } = {}) {
   const elements = new Map();
   let focused = null, offline = false;
   class Element {
@@ -36,7 +37,7 @@ function client() {
     before(...items) { this.parentNode?.insert(this.parentNode.children.indexOf(this), items); }
     replaceChildren(...items) { for (const item of this.children) item.parentNode = null; this.children = []; this.append(...items); }
     querySelectorAll(selector) {
-      const match = /^([a-z]+)(?:\.([a-z-]+))?$/u.exec(selector); assert.ok(match, 'fixture supports tag/class selectors');
+      const match = /^([a-z][a-z0-9]*)(?:\.([a-z-]+))?$/u.exec(selector); assert.ok(match, 'fixture supports tag/class selectors');
       const found = [];
       const visit = node => { for (const item of node.children) {
         if (item.tagName === match[1].toUpperCase() && (!match[2] || item.className.split(/\s+/u).includes(match[2]))) found.push(item);
@@ -54,7 +55,7 @@ function client() {
     URLSearchParams, crypto: { randomUUID },
     location: { hash: '#pair=fixture', pathname: '/' }, history: { replaceState() {} },
     document: { getElementById: get, hidden: false, body,
-      createElement: tag => new Element(tag), createDocumentFragment: () => new Element() },
+      createElement: tag => new Element(tag), createTextNode: text => Object.assign(new Element('#text'), { textContent: text }), createDocumentFragment: () => new Element() },
     window: { innerHeight: 800, scrollY: 0, scrollTo() {} },
     EventSource: class { addEventListener() {} close() {} },
     fetch: (path, options) => {
@@ -67,6 +68,7 @@ function client() {
     },
   };
   vm.createContext(context);
+  if (parser) vm.runInContext(parserSource, context, { filename: 'actual-commonmark.js' });
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
   return { get, calls, pending, state, setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
     accept: () => pending.shift().resolve({ ok: true, status: 202, json: async () => ({ seq: 1 }) }),
@@ -388,4 +390,74 @@ test('successful account observation cannot overwrite a failed proactive proposa
   assert.equal(c.get('attention-last-row').hidden, true, 'a local-only observation is not presented as a mailbox/calendar read');
   c.state.proactive.attention.google_observed = true;
   c.state.proactive.mode = 'daily'; await c.refresh(); assert.equal(c.get('attention-last-row').hidden, true);
+});
+
+test('answers show paragraphs, emphasis, numbered steps and literal code without interpreting HTML or remote resources', async () => {
+  const c = client();
+  const text = '### 준비할 일\n\n**내일 오후 3시**까지 정해 주세요.\n확인한 근거입니다. [S1]\n\n7. 참석 인원 정하기\n9. `마이크` 필요 여부 확인\n\n- 첫 번째\n- 두 번째\n\n```html\n<img src="https://example.invalid/private">\n**literal code**\n```\n\n<script>bad()</script> ![image](https://example.invalid/track) [link](javascript:bad())';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '도와줘', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  assert.equal(contents(answer.querySelectorAll('h5')[0]), '준비할 일');
+  assert.equal(contents(answer.querySelectorAll('strong')[0]), '내일 오후 3시');
+  assert.equal(answer.querySelectorAll('ol')[0].getAttribute('start'), '7');
+  assert.equal(answer.querySelectorAll('ol')[0].children.length, 2);
+  assert.equal(answer.querySelectorAll('ul')[0].children.length, 2);
+  assert.equal(contents(answer.querySelectorAll('pre')[0]), '<img src="https://example.invalid/private">\n**literal code**\n');
+  assert.equal(answer.querySelectorAll('pre')[0].querySelectorAll('strong').length, 0);
+  for (const tag of ['img', 'script', 'a', 'iframe', 'style']) assert.equal(answer.querySelectorAll(tag).length, 0);
+  assert.ok(contents(answer).includes('<script>bad()</script> ![image](https://example.invalid/track) [link](javascript:bad())'));
+  assert.equal(c.state.turns[0].answer.text, text, 'stored and downloadable text is not rewritten');
+});
+
+test('unclosed fenced code remains visible and quotations retain their structure', async () => {
+  const c = client();
+  c.state.turns = [{ seq: 1, state: 'answered', text: '도와줘', answer: { text: '> 인용\n\n~~~text\n<tag>\n- literal list\n**literal**', sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  assert.equal(contents(answer.querySelectorAll('blockquote')[0]), '인용');
+  assert.equal(contents(answer.querySelectorAll('pre')[0]), '<tag>\n- literal list\n**literal**\n');
+  assert.equal(answer.querySelectorAll('li').length, 0);
+  assert.equal(answer.querySelectorAll('strong').length, 0);
+});
+
+test('code delimiters, nested work lists and spaced fence info preserve their meaning', async () => {
+  const c = client();
+  const text = '``printf `whoami` ``\n\n- 회의 A\n  - 준비 A\n    - 세부 A\n- 회의 B\n\n``` python\nprint("ready")\n```\n\n**뒤에 오는 경고**';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '도와줘', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  assert.equal(contents(answer.querySelectorAll('code')[0]), 'printf `whoami` ');
+  const outer = answer.querySelectorAll('ul')[0];
+  assert.equal(outer.children.length, 2);
+  assert.equal(outer.children[0].querySelectorAll('ul').length, 2);
+  assert.equal(outer.children[1].querySelectorAll('ul').length, 0);
+  assert.equal(contents(answer.querySelectorAll('pre')[0]), 'print("ready")\n');
+  assert.equal(contents(answer.querySelectorAll('strong')[0]), '뒤에 오는 경고');
+  assert.equal(answer.querySelectorAll('pre')[0].querySelectorAll('strong').length, 0);
+});
+
+test('links, images and HTML remain inert while their readable content is preserved', async () => {
+  const c = client();
+  const text = '[링크](javascript:bad()) ![그림](https://example.invalid/tracking.png)\n\n<img src=x onerror=bad()>\n\n안내 <b onclick="bad()">본문</b>';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '도와줘', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  for (const tag of ['a', 'img', 'b', 'script', 'iframe']) assert.equal(answer.querySelectorAll(tag).length, 0);
+  assert.match(contents(answer), /링크 \(javascript:bad\(\)\)/);
+  assert.match(contents(answer), /그림 \(https:\/\/example.invalid\/tracking.png\)/);
+  assert.match(contents(answer), /<img src=x onerror=bad\(\)>/);
+  assert.match(contents(answer), /<b onclick="bad\(\)">본문<\/b>/);
+});
+
+test('missing formatting script falls back to the complete original answer', async () => {
+  const c = client({ parser: false }), text = '## 그대로\n\n**내용**\n\n``` python\nprint("보존")';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '도와줘', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  assert.equal(answer.querySelectorAll('p')[0].textContent, text);
 });

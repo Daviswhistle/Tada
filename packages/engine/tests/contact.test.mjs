@@ -290,8 +290,13 @@ test('visible browser assets do not interpret model text as HTML or keep bearer 
     const res = await network.call('/'); assert.equal(res.status, 200);
     assert.ok(res.headers.get('content-security-policy').includes("frame-ancestors 'none'"));
     assert.ok(res.headers.get('cache-control').includes('no-store'));
+    const html = await res.text();
+    assert.ok(html.indexOf('src="/commonmark.js"') < html.indexOf('src="/app.js"'));
+    const parser = await network.call('/commonmark.js');
+    assert.equal(parser.status, 200); assert.match(parser.headers.get('content-type'), /text\/javascript/);
+    assert.match(await parser.text(), /commonmark/);
+    assert.match(await (await network.call('/third-party-notices.txt')).text(), /John MacFarlane/);
     const js = await (await network.call('/app.js')).text();
-    assert.ok(js.includes('textContent = turn.answer.text'));
     assert.equal(js.includes('innerHTML'), false); assert.equal(js.includes('localStorage'), false);
   } finally { await network.host.close(); await service.close(); env.close(); }
 });

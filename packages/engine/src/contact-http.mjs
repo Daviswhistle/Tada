@@ -13,6 +13,8 @@ const headers = {
 };
 const assets = new Map([
   ['/', ['text/html; charset=utf-8', new URL('../../../apps/contact/index.html', import.meta.url)]],
+  ['/commonmark.js', ['text/javascript; charset=utf-8', new URL('../../../node_modules/commonmark/dist/commonmark.min.js', import.meta.url)]],
+  ['/third-party-notices.txt', ['text/plain; charset=utf-8', new URL('../../../apps/contact/third-party-notices.txt', import.meta.url)]],
   ['/app.js', ['text/javascript; charset=utf-8', new URL('../../../apps/contact/app.js', import.meta.url)]],
   ['/app.css', ['text/css; charset=utf-8', new URL('../../../apps/contact/app.css', import.meta.url)]],
 ]);
