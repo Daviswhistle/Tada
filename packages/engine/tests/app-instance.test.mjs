@@ -159,3 +159,25 @@ test('relative TLS paths reopen the same instance after absolute background laun
     assert.equal(runs, 1); assert.equal(reopened.url, app.url);
   } finally { await reopened?.close(); await app?.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+test('browser launch failure closes its new host and lease; a failed reopen preserves the existing owner', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'tada-browser-failed-')), data = join(root, 'conversation'), os = protector();
+  const instance = options => acquireAppInstance(options, { protector: os });
+  const signals = ['SIGINT', 'SIGTERM'].map(name => process.listenerCount(name));
+  let app, failedURL;
+  const run = async (_args, { ui }) => { ui.ready('http://127.0.0.1:8787/#entry=fixture'); await ui.wait(); };
+  try {
+    await assert.rejects(startApp(['--data', data], { instance, run, open: async url => { failedURL = url; return false; } }), /CONTACT_APP_BROWSER_UNAVAILABLE/);
+    assert.deepEqual(['SIGINT', 'SIGTERM'].map(name => process.listenerCount(name)), signals);
+    await assert.rejects(fetch(new URL(failedURL).origin));
+    app = await startApp(['--data', data], { instance, run, open: async () => true });
+    await assert.rejects(startApp(['--data', data], { instance, run, open: async () => false }), /CONTACT_APP_BROWSER_UNAVAILABLE/);
+    assert.equal((await fetch(new URL(app.url).origin)).status, 200);
+  } finally { await app?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an unavailable browser also closes the failure screen', async () => {
+  let failedURL;
+  await assert.rejects(startApp([], { instance: async () => { throw Error('CONTACT_OS_PROTECTION_FAILED'); }, open: async url => { failedURL = url; return false; } }), /CONTACT_APP_BROWSER_UNAVAILABLE/);
+  await assert.rejects(fetch(new URL(failedURL).origin));
+});

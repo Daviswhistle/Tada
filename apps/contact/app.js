@@ -72,7 +72,7 @@ const errors = {
   CONTACT_BROWSER_DISPLAY_UNAVAILABLE: '현재 실행 환경에서 화면을 열 수 없어요. 데스크톱에 로그인한 뒤 Tada를 다시 열어 주세요.',
   CONTACT_BROWSER_COMMAND_FAILED: '브라우저 화면이 바뀌어 작업을 마치지 못했어요. 현재 페이지를 확인해 주세요.',
   CONTACT_BROWSER_OBSERVATION_FAILED: '이 화면은 읽거나 입력할 수 없어요. 일반 웹 페이지의 입력란을 공유해 주세요.',
-  CONTACT_BROWSER_UNAVAILABLE: '이 컴퓨터에서 Chrome을 찾지 못했어요. Chrome을 설치한 뒤 Tada를 다시 열어 주세요.',
+  CONTACT_BROWSER_UNAVAILABLE: '이 컴퓨터에서 지원하는 브라우저를 찾지 못했어요. Chrome을 설치한 뒤 다시 열어 주세요. Windows에서는 Edge도 사용할 수 있어요.',
   CONTACT_BROWSER_DISCONNECTED: '전용 브라우저 연결이 끝났어요. 창을 다시 열고 필요한 탭을 공유해 주세요.',
   CONTACT_BROWSER_TARGET_CHANGED: '공유한 페이지나 입력란이 바뀌었어요. 현재 탭을 다시 공유해 주세요.',
   CONTACT_BROWSER_EFFECT_UNRESOLVED: '앞선 입력 결과를 확인하지 못해 같은 사이트의 새 입력을 멈췄어요. 브라우저에서 실제 상태를 확인해 주세요.',

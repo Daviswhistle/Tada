@@ -32,13 +32,14 @@ export async function startApp(args = process.argv.slice(2), { open = openAppBro
   const show = async url => {
     if (backgroundMode) return;
     process.stdout.write(`Tada를 열고 있어요. 창이 열리지 않으면 아래 주소를 여세요.\n${url}\n`);
-    await open(url);
+    if (await open(url) === false) throw Error('CONTACT_APP_BROWSER_UNAVAILABLE');
   };
   const showFailure = async error => {
     if (backgroundMode) throw error;
     error.retryable = false;
     const setup = await serveSetup({ run: async () => { throw error; } });
-    await show(setup.url); return setup;
+    try { await show(setup.url); return setup; }
+    catch (failure) { await setup.close(); throw failure; }
   };
   let slot;
   try { slot = await instance(options, backgroundMode ? { reopen: false, timeoutMs: Infinity } : undefined); }
@@ -55,12 +56,15 @@ export async function startApp(args = process.argv.slice(2), { open = openAppBro
     await slot.publish(setup.url);
   } catch (error) { await setup?.close(); slot.close(); return showFailure(error); }
   let closing;
-  const close = () => closing ??= (async () => { await setup.close(); slot.close(); })();
+  const close = () => closing ??= (async () => {
+    process.off('SIGINT', shutdown); process.off('SIGTERM', shutdown);
+    try { await setup.close(); } finally { slot.close(); }
+  })();
   const shutdown = () => { void close(); };
   process.once('SIGINT', shutdown); process.once('SIGTERM', shutdown);
   setup.start();
-  await show(setup.url);
-  return { ...setup, async close() { process.off('SIGINT', shutdown); process.off('SIGTERM', shutdown); await close(); } };
+  try { await show(setup.url); } catch (error) { await close(); throw error; }
+  return { ...setup, close };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   startApp().catch(() => { process.stderr.write('Tada를 열지 못했어요. 실행 설정을 확인해 주세요.\n'); process.exitCode = 1; });

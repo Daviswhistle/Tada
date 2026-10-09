@@ -5,9 +5,19 @@ import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import { tmpdir, release } from 'node:os';
-import { join } from 'node:path';
+import { join, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
 export const BROWSER_CONSENT = 'shared_browser_text_input_v1';
+export function browserCandidates(platform = process.platform, env = process.env) {
+  if (platform === 'win32') {
+    const roots = [...new Set([env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA].filter(Boolean))];
+    return roots.flatMap(root => [win32.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      win32.join(root, 'Microsoft', 'Edge', 'Application', 'msedge.exe')]);
+  }
+  if (platform === 'darwin') return ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'];
+  return ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
+}
+
 export function browserURL(value) {
   try {
     const u = new URL(value);
@@ -126,8 +136,7 @@ export class SharedBrowser extends EventEmitter {
     super(); this.#headless = headless; this.#env = { ...process.env };
     if (process.platform === 'linux' && /microsoft/iu.test(release()) && !this.#env.DISPLAY
         && existsSync('/mnt/wslg/.X11-unix/X0') && statSync('/mnt/wslg/.X11-unix/X0').isSocket()) this.#env.DISPLAY = ':0';
-    this.#executable = executable ?? ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
-      process.platform === 'darwin' ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : ''].find(p => p && existsSync(p));
+    this.#executable = executable ?? browserCandidates().find(p => existsSync(p));
   }
   get available() { return !!this.#executable; }
   get grant() { return this.#grant ? structuredClone(this.#grant) : null; }

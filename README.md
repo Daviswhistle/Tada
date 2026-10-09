@@ -10,11 +10,13 @@ Tada is being built as a personal AI assistant you can delegate to in ordinary l
 
 ## Open Tada
 
+The [Windows portable build](docs/windows-portable.md) bundles Node and the native read broker. Its `Tada.exe` entry opens the same setup without requiring the user to install developer tools. This path is being qualified separately from a signed installer, automatic startup and live account acceptance.
+
 On the currently supported Windows/WSL development host, run `npm start`. Tada opens a browser window, connects an existing ChatGPT subscription through its official login, and continues into the same saved conversation. No extra Tada password, terminal consent input, model number or device name is required. Connection failures can be retried in the window. Model choice is available on screen and saved for later starts.
 
 The conversation now puts your message and the assistant's answer first. Account details and notifications are in Settings; saved work is expandable. Suggestions fill a draft without sending it, interrupted requests can be brought back for editing, and uncertain message admission preserves the draft and checks the same request before sending again.
 
-This remains a development build requiring the repository's Node dependencies. It is not a signed installer. The optional background service operates only while its host is running. The new browser entry reuses the existing contact runtime, encrypted records and limits. It does not add general computer actions; live checks below qualify only their observed scopes. The advanced `npm run contact` entry remains available; `npm start -- --provider ollama --model YOUR_INSTALLED_LOCAL_MODEL` uses an explicitly selected installed local model. See [the experience and verification scope](docs/experience-2026-10-08.md).
+The repository entry requires Node dependencies; the Windows portable build bundles its runtime. Both remain development builds, without a signed installer. The optional background service operates only while its host is running. The new browser entry reuses the existing contact runtime, encrypted records and limits. It does not add general computer actions; live checks below qualify only their observed scopes. The advanced `npm run contact` entry remains available; `npm start -- --provider ollama --model YOUR_INSTALLED_LOCAL_MODEL` uses an explicitly selected installed local model. See [the experience and verification scope](docs/experience-2026-10-08.md).
 
 The same conversation now supports [saved documents](docs/contact-documents.md): create a short Markdown/text document, download it, and revise it in a later message while preserving earlier versions. These are encrypted conversation results, not arbitrary filesystem changes or external publication. A bounded real subscription and Google check is recorded below; broad product and device acceptance remains incomplete.
 

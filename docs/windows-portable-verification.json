@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "date": "2026-10-10",
+  "scope": "Windows 11 x64 portable launch and native regression qualification; not product release acceptance",
+  "base_commit": "587f230ba53ff2476b87a0d677b03f81b5742082",
+  "artifact": {
+    "archive_bytes": 37294457,
+    "archive_sha256": "c166c04ad7ad70f51c43f54dd4cfc36c6eed6498d81ed8eb077fe3904f0917d6",
+    "launcher_sha256": "ff2ffacbe0b1cba621c8f348b4ea8252f61afd841c9bfc8a22248a7d8ca1960e",
+    "manifest_sha256": "33a5afab16fe2ddbba6f25ad8aa19f4769b7da16161ed8e3a62ea5e13e3e57fc",
+    "files": 1006,
+    "archive_roundtrip_verified": true,
+    "native_extracted_verify_exit": 0,
+    "runtime_parity_with_acceptance": "All previous bundle files are identical; only .node-version was added; launcher uses unchanged C# source with updated embedded manifest."
+  },
+  "native_acceptance": {
+    "platform": "win32",
+    "node": "v24.21.0",
+    "checks": [
+      "embedded manifest and bundled runtime verified",
+      "changed, missing, additional files, manifest and junction rejected",
+      "bundled native read broker reads scoped fixture and rejects traversal without developer runtimes",
+      "fresh Windows DPAPI storage reaches subscription consent without developer tools or inherited Node options",
+      "native Chrome shared textbox verified",
+      "native Edge shared textbox verified",
+      "same and relocated bundles reopen one host and preserve protected storage key",
+      "restart from relocated bundle preserves protected key and reacquires ownership"
+    ],
+    "passed": true
+  },
+  "validation": {
+    "npm_ci_ignore_scripts": "passed",
+    "npm_check": {
+      "passed": 1078,
+      "failed": 0,
+      "skipped": 0
+    },
+    "cargo_fmt_check": "passed on Linux",
+    "cargo_clippy_workspace_all_targets_locked_deny_warnings": "passed on Linux",
+    "cargo_test_workspace_locked": "passed on Linux and Windows",
+    "cargo_test_agentd_process_fixtures": "passed on Linux and Windows",
+    "native_broker_build": "Rust 1.98.1, MSVC14.51, CRT static; PE dependencies kernel32, ntdll, api-ms-win-core-synch only",
+    "native_launcher_build": "Framework64 csc with warnings as errors; bundled Node24.21.0",
+    "screenshot": "native Windows Chrome setup consent screen inspected at 1280x900; no account connected",
+    "trailing_output_separator": "Full native build with an output path ending in a backslash passed; ZIP is outside the payload, every entry name and byte matches, and runtime manifest equals the recorded artifact."
+  },
+  "retained_failures_and_resolution": [
+    "Initial native build copy lacked contract schemas; copied required source assets and rebuilt successfully.",
+    "Initial native test copy lacked shared fixtures, then the pinned .node-version; added required source assets and reran the affected complete native suites. The package also now contains .node-version.",
+    "Initial package guard used an old markdown-it browser asset path; corrected against the installed package and actual HTTP asset route.",
+    "Initial external ZIP attempt could not represent upstream Unix-epoch timestamps; the build script now creates ZIP entries with a valid fixed timestamp.",
+    "Independent review reproduced a trailing-output-separator ZIP path bug; normalize the output path and reject drive/share roots, then rerun a complete native build and archive comparison with a trailing separator."
+  ],
+  "limitations": [
+    "Native checks ran on the current Windows host with an isolated PATH, not a newly installed independent Windows machine.",
+    "First-run checks stop at subscription consent; no new account or real inference was invoked.",
+    "No installer signing, login startup, update/restore, physical phone delivery or public Google OAuth qualification is claimed.",
+    "The WSL production journal and account profiles were not migrated or changed."
+  ]
+}
