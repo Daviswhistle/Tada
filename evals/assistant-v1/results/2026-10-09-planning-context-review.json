@@ -1,0 +1,45 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-planning-context.json",
+  "report_sha256": "c6fb77cfa1a7896d3b2f0511958dc0c3f18ec634b9943c63bc773073cad3eb0d",
+  "observed_requests": 20,
+  "unknown_requests": 0,
+  "cases": [
+    {
+      "case": "A13",
+      "variant": 1,
+      "verdict": "passed",
+      "reason": "Discovered meeting and sources; retrieved prior small-change preference and applied it to recommendations without asserting unobserved effects."
+    },
+    {
+      "case": "A13",
+      "variant": 2,
+      "verdict": "passed",
+      "reason": "Prior rejected price-cut decision reconciled with current time, agenda and documents; equipment completion grounded in observed thread."
+    },
+    {
+      "case": "A14",
+      "variant": 1,
+      "verdict": "passed",
+      "reason": "Paged work, applied customer priority, separated customer acceptance from mere sent review request; preserved stored work."
+    },
+    {
+      "case": "A14",
+      "variant": 2,
+      "verdict": "passed",
+      "reason": "Separated accepted old work from new request/deadline; retrieved owner-only priority decision and asked only that choice."
+    }
+  ],
+  "full_suite_denominator": 16,
+  "currently_passed_cases": [
+    "A10",
+    "A13",
+    "A14",
+    "A15",
+    "A16"
+  ],
+  "other_cases": "not_run_on_current_subscription_route",
+  "primary_concurred": true,
+  "scope": "Real selected subscription, synthetic connected sources. No live Gmail/phone/external sending/release qualification."
+}

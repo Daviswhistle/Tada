@@ -1,0 +1,36 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "release_acceptance_audit",
+  "report": "evals/assistant-v1/results/2026-10-09-planning-first.json",
+  "report_sha256": "71acadc4dff710f73f512389b68beffbfe1ed0210076cdc8e4bdf095e403999b",
+  "observed_requests": 19,
+  "unknown_requests": 0,
+  "cases": [
+    {
+      "case": "A13",
+      "variant": 1,
+      "verdict": "failed",
+      "reason": "Relevant prior user preference was available but never retrieved; current documents alone do not satisfy conversation continuity."
+    },
+    {
+      "case": "A13",
+      "variant": 2,
+      "verdict": "failed",
+      "reason": "Correct current agenda and time, but no relevant prior conversation retrieval."
+    },
+    {
+      "case": "A14",
+      "variant": 1,
+      "verdict": "blocked",
+      "reason": "Fixture records require customer receipt; message sender is a colleague. Cautious completion-candidate response is not a product failure. History tool requirement was excessive because work details contain the priority."
+    },
+    {
+      "case": "A14",
+      "variant": 2,
+      "verdict": "blocked",
+      "reason": "Same fixture receipt attribution ambiguity. New request/deadline and user-only priority choice correctly separated."
+    }
+  ],
+  "case_credit_added": 0,
+  "primary_concurred": true
+}
