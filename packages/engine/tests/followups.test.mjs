@@ -534,6 +534,9 @@ test('actual CLI startup and reopen accept contact v5 with Telegram instead of r
   mkdirSync(join(code, 'packages/providers/src'), { recursive: true });
   cpSync(fileURLToPath(new URL('../src', import.meta.url)), join(code, 'packages/engine/src'), { recursive: true });
   cpSync(fileURLToPath(new URL('../../../apps/contact', import.meta.url)), join(code, 'apps/contact'), { recursive: true });
+  const parserDirectory = join(code, 'node_modules/markdown-it/dist/browser');
+  mkdirSync(parserDirectory, { recursive: true });
+  cpSync(fileURLToPath(new URL('../../../node_modules/markdown-it/dist/browser/markdown-it.umd.min.js', import.meta.url)), join(parserDirectory, 'markdown-it.umd.min.js'));
   // Copy product sources unchanged, replace only the not-exercised native read
   // adapter and inference endpoint in this private test tree. This proves CLI
   // wiring, not real Ollama capability or physical terminal behavior.

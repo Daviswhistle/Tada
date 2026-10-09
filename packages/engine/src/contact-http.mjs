@@ -13,7 +13,7 @@ const headers = {
 };
 const assets = new Map([
   ['/', ['text/html; charset=utf-8', new URL('../../../apps/contact/index.html', import.meta.url)]],
-  ['/commonmark.js', ['text/javascript; charset=utf-8', new URL('../../../node_modules/commonmark/dist/commonmark.min.js', import.meta.url)]],
+  ['/markdown.js', ['text/javascript; charset=utf-8', new URL('../../../node_modules/markdown-it/dist/browser/markdown-it.umd.min.js', import.meta.url)]],
   ['/third-party-notices.txt', ['text/plain; charset=utf-8', new URL('../../../apps/contact/third-party-notices.txt', import.meta.url)]],
   ['/app.js', ['text/javascript; charset=utf-8', new URL('../../../apps/contact/app.js', import.meta.url)]],
   ['/app.css', ['text/css; charset=utf-8', new URL('../../../apps/contact/app.css', import.meta.url)]],
@@ -43,6 +43,9 @@ export function validateContactAddress({ origin, bind = '127.0.0.1', port, tls }
 }
 export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, mobile = null, background = null, messaging = () => store.messagingStatus() }) {
   const url = validateContactAddress({ origin, bind, port, tls });
+  // Hold one matching UI version for this host's lifetime, including its parser.
+  // Updating files on disk cannot mix old HTML with a new client or missing bundle.
+  const loadedAssets = new Map([...assets].map(([path, [type, file]]) => [path, [type, readFileSync(file)]]));
   const cookieName = url.protocol === 'https:' ? '__Host-tada' : 'tada_local';
   const pairing = new Map();
   const streams = new Set();
@@ -71,9 +74,9 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         return send(res, 403, { error: 'CONTACT_ORIGIN_REJECTED' });
       }
       const target = new URL(req.url, origin);
-      if (req.method === 'GET' && assets.has(target.pathname) && !target.search) {
-        const [type, file] = assets.get(target.pathname);
-        res.writeHead(200, { ...headers, 'Content-Type': type }); res.end(readFileSync(file)); return;
+      if (req.method === 'GET' && loadedAssets.has(target.pathname) && !target.search) {
+        const [type, content] = loadedAssets.get(target.pathname);
+        res.writeHead(200, { ...headers, 'Content-Type': type }); res.end(content); return;
       }
       if (req.method === 'POST' && req.headers.origin !== origin) return send(res, 403, { error: 'CONTACT_ORIGIN_REQUIRED' });
       if (req.method === 'POST' && target.pathname === '/api/pair' && !target.search) {

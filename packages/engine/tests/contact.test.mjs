@@ -1,4 +1,6 @@
 import test from 'node:test';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -291,14 +293,34 @@ test('visible browser assets do not interpret model text as HTML or keep bearer 
     assert.ok(res.headers.get('content-security-policy').includes("frame-ancestors 'none'"));
     assert.ok(res.headers.get('cache-control').includes('no-store'));
     const html = await res.text();
-    assert.ok(html.indexOf('src="/commonmark.js"') < html.indexOf('src="/app.js"'));
-    const parser = await network.call('/commonmark.js');
+    assert.ok(html.indexOf('src="/markdown.js"') < html.indexOf('src="/app.js"'));
+    const parser = await network.call('/markdown.js');
     assert.equal(parser.status, 200); assert.match(parser.headers.get('content-type'), /text\/javascript/);
-    assert.match(await parser.text(), /commonmark/);
-    assert.match(await (await network.call('/third-party-notices.txt')).text(), /John MacFarlane/);
+    assert.match(await parser.text(), /markdownit/);
+    assert.match(await (await network.call('/third-party-notices.txt')).text(), /Vitaly Puzrin/);
     const js = await (await network.call('/app.js')).text();
     assert.equal(js.includes('innerHTML'), false); assert.equal(js.includes('localStorage'), false);
   } finally { await network.host.close(); await service.close(); env.close(); }
+});
+
+test('a running host serves one matching asset snapshot while disk files are updated', async () => {
+  const env = setup(); const service = new ContactService(env.store, { chat: async () => response('unused') }, noSources);
+  const network = await serverFor(env.store, service); let replacement;
+  const originalRead = fs.readFileSync;
+  try {
+    const paths = ['/', '/app.js', '/app.css', '/markdown.js', '/third-party-notices.txt'];
+    const before = await Promise.all(paths.map(async path => (await network.call(path)).text()));
+    // Model a package update without changing the checkout or other test files.
+    fs.readFileSync = (file, ...args) => file instanceof URL && (/\/apps\/contact\//u.test(file.pathname) || file.pathname.endsWith('/markdown-it.umd.min.js'))
+      ? Buffer.from('replacement asset') : originalRead(file, ...args);
+    syncBuiltinESMExports();
+    assert.deepEqual(await Promise.all(paths.map(async path => (await network.call(path)).text())), before);
+    replacement = await serverFor(env.store, service);
+    for (const path of paths) assert.equal(await (await replacement.call(path)).text(), 'replacement asset');
+  } finally {
+    fs.readFileSync = originalRead; syncBuiltinESMExports();
+    await replacement?.host.close(); await network.host.close(); await service.close(); env.close();
+  }
 });
 
 test('checkpoint restores genuine evidence and current host tools, not prior privileged system text', async () => {

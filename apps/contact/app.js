@@ -103,48 +103,75 @@ const stateText = { queued: '접수했어요. 앞선 대화에 이어 처리할�
   cancelled: '이 요청은 취소했어요.', interrupted: 'Tada가 멈춰 답변을 끝내지 못했어요. 요청은 남아 있어요.',
   failed: '이번 요청의 답변을 완료하지 못했어요. 앞선 대화는 보존했어요.' };
 function renderAnswer(parent, text) {
-  // CommonMark supplies structure only. We create a fixed set of DOM elements;
-  // model HTML and link/image destinations remain inert, selectable text.
+  // The parser supplies tokens, never executable HTML. Only this allowlist
+  // creates elements; model links/images remain inert, selectable text.
   const fragment = document.createDocumentFragment();
   try {
-    const walker = new globalThis.commonmark.Parser().parse(text).walker();
-    const containers = [fragment];
-    const tags = { paragraph: 'p', block_quote: 'blockquote', item: 'li',
-      emph: 'em', strong: 'strong', link: 'span', image: 'span' };
-    let event;
-    while ((event = walker.next())) {
-      const node = event.node;
-      if (node.type === 'document') continue;
-      if (!event.entering) {
-        if (node.type === 'link' || node.type === 'image') {
-          containers.at(-1).append(document.createTextNode(` (${node.destination})`));
+    const parser = globalThis.markdownit({ html: false, linkify: false, typographer: false });
+    const tags = { paragraph: 'p', blockquote: 'blockquote', list_item: 'li',
+      bullet_list: 'ul', ordered_list: 'ol', em: 'em', strong: 'strong', s: 's',
+      link: 'span', table: 'table', thead: 'thead', tbody: 'tbody', tr: 'tr', th: 'th', td: 'td' };
+    function appendTokens(tokens, parentNode) {
+      const stack = [{ node: parentNode, suffix: '' }];
+      for (const token of tokens) {
+        if (token.hidden) continue;
+        const target = stack.at(-1).node;
+        if (token.type === 'inline') { appendTokens(token.children ?? [], target); continue; }
+        if (token.nesting === -1) {
+          if (stack.length === 1) throw Error('Unbalanced answer structure');
+          const ending = stack.pop();
+          if (ending.suffix) ending.node.append(document.createTextNode(ending.suffix));
+          continue;
         }
-        containers.pop(); continue;
+        if (token.nesting === 1) {
+          const kind = token.type.replace(/_open$/u, '');
+          const tag = kind === 'heading' && /^h[1-6]$/u.test(token.tag)
+            ? `h${Math.min(6, Number(token.tag.slice(1)) + 2)}` : tags[kind];
+          if (!tag) throw Error('Unsupported answer structure');
+          const element = document.createElement(tag);
+          if (tag === 'ol') {
+            const start = token.attrGet('start');
+            if (start !== null && /^\d{1,9}$/u.test(start)) element.setAttribute('start', start);
+          }
+          if (tag === 'th' || tag === 'td') {
+            const alignment = { 'text-align:left': 'left', 'text-align:center': 'center', 'text-align:right': 'right' }[token.attrGet('style')];
+            if (alignment) element.className = `align-${alignment}`;
+            if (tag === 'th') element.setAttribute('scope', 'col');
+          }
+          if (tag === 'table') {
+            const wrapper = document.createElement('div'); wrapper.className = 'answer-table';
+            wrapper.setAttribute('role', 'region'); wrapper.setAttribute('aria-label', '표 — 넓으면 좌우로 스크롤할 수 있어요'); wrapper.setAttribute('tabindex', '0');
+            wrapper.append(element);
+            const hint = document.createElement('p'); hint.className = 'table-scroll-hint'; hint.textContent = '표를 좌우로 넘겨 나머지 내용을 볼 수 있어요.'; target.append(hint, wrapper);
+          } else target.append(element);
+          stack.push({ node: element, suffix: kind === 'link' ? ` (${token.attrGet('href') ?? ''})` : '' });
+          continue;
+        }
+        if (['text', 'html_inline', 'html_block'].includes(token.type)) {
+          target.append(document.createTextNode(token.content)); continue;
+        }
+        if (token.type === 'softbreak') { target.append(document.createTextNode('\n')); continue; }
+        if (['code_inline', 'code_block', 'fence'].includes(token.type)) {
+          const code = document.createElement('code'); code.textContent = token.content;
+          if (token.type === 'code_inline') target.append(code);
+          else { const pre = document.createElement('pre'); pre.append(code); target.append(pre); }
+          continue;
+        }
+        if (token.type === 'image') {
+          const label = document.createElement('span'); appendTokens(token.children ?? [], label);
+          label.append(document.createTextNode(` (${token.attrGet('src') ?? ''})`)); target.append(label); continue;
+        }
+        if (token.type === 'hardbreak' || token.type === 'hr') {
+          target.append(document.createElement(token.type === 'hr' ? 'hr' : 'br')); continue;
+        }
+        throw Error('Unsupported answer structure');
       }
-      const target = containers.at(-1);
-      if (node.type === 'text' || node.type === 'html_inline' || node.type === 'html_block') {
-        target.append(document.createTextNode(node.literal)); continue;
-      }
-      if (node.type === 'softbreak') { target.append(document.createTextNode('\n')); continue; }
-      if (node.type === 'code' || node.type === 'code_block') {
-        const code = document.createElement('code'); code.textContent = node.literal;
-        if (node.type === 'code_block') {
-          const pre = document.createElement('pre'); pre.append(code); target.append(pre);
-        } else target.append(code);
-        continue;
-      }
-      const tag = tags[node.type] ?? (node.type === 'list' ? (node.listType === 'ordered' ? 'ol' : 'ul')
-        : node.type === 'heading' ? `h${Math.min(6, node.level + 2)}`
-        : node.type === 'thematic_break' ? 'hr' : node.type === 'linebreak' ? 'br' : null);
-      if (!tag) throw Error('Unsupported answer structure');
-      const element = document.createElement(tag);
-      if (tag === 'ol') element.setAttribute('start', String(node.listStart));
-      target.append(element);
-      if (node.isContainer) containers.push(element);
+      if (stack.length !== 1) throw Error('Unbalanced answer structure');
     }
+    appendTokens(parser.parse(text, {}), fragment);
     parent.append(fragment);
   } catch {
-    // Even a missing parser or an unusual answer must not hide the conversation.
+    // Preserve the whole answer even if the parser is unavailable or fails.
     const paragraph = document.createElement('p'); paragraph.textContent = text; parent.append(paragraph);
   }
 }

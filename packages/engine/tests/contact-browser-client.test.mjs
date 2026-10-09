@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../../apps/contact/app.js', import.meta.url), 'utf8');
-const parserSource = readFileSync(new URL('../../../node_modules/commonmark/dist/commonmark.min.js', import.meta.url), 'utf8');
+const parserSource = readFileSync(new URL('../../../node_modules/markdown-it/dist/browser/markdown-it.umd.min.js', import.meta.url), 'utf8');
 function client({ parser = true } = {}) {
   const elements = new Map();
   let focused = null, offline = false;
@@ -52,7 +52,7 @@ function client({ parser = true } = {}) {
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
-    URLSearchParams, crypto: { randomUUID },
+    URLSearchParams, atob, crypto: { randomUUID },
     location: { hash: '#pair=fixture', pathname: '/' }, history: { replaceState() {} },
     document: { getElementById: get, hidden: false, body,
       createElement: tag => new Element(tag), createTextNode: text => Object.assign(new Element('#text'), { textContent: text }), createDocumentFragment: () => new Element() },
@@ -68,7 +68,7 @@ function client({ parser = true } = {}) {
     },
   };
   vm.createContext(context);
-  if (parser) vm.runInContext(parserSource, context, { filename: 'actual-commonmark.js' });
+  if (parser) vm.runInContext(parserSource, context, { filename: 'actual-markdown.js' });
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
   return { get, calls, pending, state, setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
     accept: () => pending.shift().resolve({ ok: true, status: 202, json: async () => ({ seq: 1 }) }),
@@ -407,7 +407,7 @@ test('answers show paragraphs, emphasis, numbered steps and literal code without
   assert.equal(contents(answer.querySelectorAll('pre')[0]), '<img src="https://example.invalid/private">\n**literal code**\n');
   assert.equal(answer.querySelectorAll('pre')[0].querySelectorAll('strong').length, 0);
   for (const tag of ['img', 'script', 'a', 'iframe', 'style']) assert.equal(answer.querySelectorAll(tag).length, 0);
-  assert.ok(contents(answer).includes('<script>bad()</script> ![image](https://example.invalid/track) [link](javascript:bad())'));
+  for (const visible of ['<script>bad()</script>', 'image (https://example.invalid/track)', '[link](javascript:bad())']) assert.ok(contents(answer).includes(visible));
   assert.equal(c.state.turns[0].answer.text, text, 'stored and downloadable text is not rewritten');
 });
 
@@ -418,7 +418,7 @@ test('unclosed fenced code remains visible and quotations retain their structure
   const answer = c.get('messages').querySelectorAll('div.answer')[0];
   const contents = element => element.textContent + element.children.map(contents).join('');
   assert.equal(contents(answer.querySelectorAll('blockquote')[0]), '인용');
-  assert.equal(contents(answer.querySelectorAll('pre')[0]), '<tag>\n- literal list\n**literal**\n');
+  assert.equal(contents(answer.querySelectorAll('pre')[0]), '<tag>\n- literal list\n**literal**');
   assert.equal(answer.querySelectorAll('li').length, 0);
   assert.equal(answer.querySelectorAll('strong').length, 0);
 });
@@ -448,7 +448,7 @@ test('links, images and HTML remain inert while their readable content is preser
   const answer = c.get('messages').querySelectorAll('div.answer')[0];
   const contents = element => element.textContent + element.children.map(contents).join('');
   for (const tag of ['a', 'img', 'b', 'script', 'iframe']) assert.equal(answer.querySelectorAll(tag).length, 0);
-  assert.match(contents(answer), /링크 \(javascript:bad\(\)\)/);
+  assert.ok(contents(answer).includes('[링크](javascript:bad())'));
   assert.match(contents(answer), /그림 \(https:\/\/example.invalid\/tracking.png\)/);
   assert.match(contents(answer), /<img src=x onerror=bad\(\)>/);
   assert.match(contents(answer), /<b onclick="bad\(\)">본문<\/b>/);
@@ -505,4 +505,51 @@ test('related-mail access is an explicit on-screen choice, reflects revocation, 
   assert.equal(c.get('related-mail-toggle').getAttribute('aria-pressed'), 'false');
   assert.equal(c.get('message').value, '아직 쓰는 중인 메시지');
   c.state.google.pending = true; await c.refresh(); assert.equal(c.get('related-mail-toggle').disabled, true);
+});
+
+
+test('planning tables retain headers, emphasis, escaped pipes and citations with safe scroll regions', async () => {
+  const c = client();
+  const text = '| 우선 | 할 일 | 기한 |\n| :--- | :---: | ---: |\n| **1** | 승인 확인 [S1] | 오늘 17시 |\n| 2 | `a\\|b` 확인 | 내일 |';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '이번 주 정리', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  const region = answer.querySelectorAll('div.answer-table')[0];
+  assert.equal(region.getAttribute('tabindex'), '0'); assert.equal(region.getAttribute('role'), 'region');
+  assert.equal(region.querySelectorAll('table').length, 1);
+  assert.deepEqual(region.querySelectorAll('th').map(contents), ['우선', '할 일', '기한']);
+  assert.ok(region.querySelectorAll('th').every(cell => cell.getAttribute('scope') === 'col'));
+  assert.equal(region.querySelectorAll('th')[1].className, 'align-center');
+  assert.equal(region.querySelectorAll('th')[2].className, 'align-right');
+  assert.deepEqual(region.querySelectorAll('td').map(contents), ['1', '승인 확인 [S1]', '오늘 17시', '2', 'a|b 확인', '내일']);
+  assert.equal(contents(region.querySelectorAll('strong')[0]), '1');
+  assert.equal(contents(region.querySelectorAll('code')[0]), 'a|b');
+  assert.equal(c.state.turns[0].answer.text, text);
+});
+
+test('table contents cannot create active HTML, remote resources or event attributes', async () => {
+  const c = client();
+  const text = '| 자료 | 내용 |\n| --- | --- |\n| [메일](https://example.invalid/private) | <img src=x onerror=bad()> |\n| ![그림](https://example.invalid/track) | [실행](javascript:bad()) |';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '정리', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  assert.equal(answer.querySelectorAll('table').length, 1);
+  for (const tag of ['a', 'img', 'script', 'iframe', 'style', 'input']) assert.equal(answer.querySelectorAll(tag).length, 0);
+  for (const value of ['메일 (https://example.invalid/private)', '<img src=x onerror=bad()>', '그림 (https://example.invalid/track)', '[실행](javascript:bad())']) assert.ok(contents(answer).includes(value));
+  const visit = node => { for (const [key] of node.attributes) assert.ok(!/^on|^(?:href|src|style|id)$/u.test(key)); for (const child of node.children) visit(child); };
+  visit(answer);
+});
+
+test('table-like code stays code and malformed separators do not lose text', async () => {
+  const c = client();
+  const text = '```text\n| a | b |\n| --- | --- |\n| 1 | 2 |\n```\n\n| 제목 | 내용 |\n| 잘못된 구분 | 선 |\n| 원문 | 유지 |';
+  c.state.turns = [{ seq: 1, state: 'answered', text: '정리', answer: { text, sources: [] } }];
+  await c.refresh();
+  const answer = c.get('messages').querySelectorAll('div.answer')[0];
+  const contents = element => element.textContent + element.children.map(contents).join('');
+  assert.equal(answer.querySelectorAll('table').length, 0);
+  assert.equal(contents(answer.querySelectorAll('pre')[0]), '| a | b |\n| --- | --- |\n| 1 | 2 |\n');
+  assert.ok(contents(answer).includes('| 원문 | 유지 |'));
 });
