@@ -119,7 +119,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         res.end(backup.bytes); return;
       }
       if (req.method === 'GET' && /^\/api\/mail\/mail-[a-f0-9-]{36}$/u.test(target.pathname) && !target.search) {
-        return send(res, 200, { mail: store.mailAction(target.pathname.split('/').at(-1)) });
+        return send(res, 200, { mail: store.readMailAction(target.pathname.split('/').at(-1)) });
       }
       if (req.method === 'POST' && ['/api/mail/edit', '/api/mail/discard', '/api/mail/send', '/api/mail/reconcile'].includes(target.pathname) && !target.search) {
         const data = await readBody(req, 49152);
@@ -162,7 +162,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
         const startup = background ? await background.status() : null; store.assertDevice(device);
-        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.usage(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), browser: service.browserStatus(device), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.historicalUsage(), recovery: store.recoveryStatus(), continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), browser: service.browserStatus(device), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
       }
       if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
         const data = await readBody(req); object(data, ['enabled', 'consent']);

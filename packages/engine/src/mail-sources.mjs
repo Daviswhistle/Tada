@@ -41,12 +41,12 @@ export class MailSources {
     let result, prepared;
     if (name === 'list_mail_actions') {
       const page = this.#store.mailActions(args.before);
-      result = { ...page, records: page.records.map(r => ({ id: r.id, turn: r.turn, revision: r.revision, state: r.state, created_at: new Date(r.created).toISOString(), send_attempted_at: r.attempt ? new Date(r.attempt.at).toISOString() : null, subject: [...r.draft.subject].slice(0, 120).join(''), first_recipient: r.draft.to[0], recipient_count: r.draft.to.length + r.draft.cc.length + r.draft.bcc.length, result: r.result })) };
+      result = { ...page, records: page.records.map(r => ({ id: r.id, ...(r.recovery ? {recovery:r.recovery} : {}), turn: r.turn, revision: r.revision, state: r.state, created_at: new Date(r.created).toISOString(), send_attempted_at: r.attempt ? new Date(r.attempt.at).toISOString() : null, subject: [...r.draft.subject].slice(0, 120).join(''), first_recipient: r.draft.to[0], recipient_count: r.draft.to.length + r.draft.cc.length + r.draft.bcc.length, result: r.result })) };
       while (result.records.length > 1 && budget && !budget.fits(result)) { result.records.pop(); result.next_before = result.records.at(-1).turn; }
     } else if (name === 'read_mail_action') {
-      let record = this.#store.mailAction(args.id);
+      let record = this.#store.readMailAction(args.id);
       let status = { state: 'saved', attempted: false };
-      if (['ACCEPTED', 'UNCERTAIN'].includes(record.state)) {
+      if (!record.recovery && ['ACCEPTED', 'UNCERTAIN'].includes(record.state)) {
         status = { state: 'unavailable', attempted: false };
         if (this.#reconcile) {
           try {
@@ -55,7 +55,7 @@ export class MailSources {
           } catch {
             // A busy/offline reader never turns saved uncertainty into a resend.
             // Authority/cancellation is checked again before admitting any data.
-            record = this.#store.mailAction(args.id);
+            record = this.#store.readMailAction(args.id);
           }
         }
       }

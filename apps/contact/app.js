@@ -315,7 +315,7 @@ function render() {
   const nearEnd = window.innerHeight + window.scrollY >= document.body.scrollHeight - 200;
   const old = JSON.parse(rendered || '[]');
   if (known && document.hidden && globalThis.Notification?.permission === 'granted'
-      && list.some(t => t.origin !== 'owner_edit' && t.state === 'answered' && !old.some(o => o.seq === t.seq && o.state === 'answered'))) {
+      && list.some(t => !t.recovery && t.origin !== 'owner_edit' && t.state === 'answered' && !old.some(o => o.seq === t.seq && o.state === 'answered'))) {
     try { new Notification('Tada', { body: '새 답변이 준비됐어요.', tag: 'tada-answer' }); }
     catch { /* Some mobile browsers require a service worker. Keep the answer visible. */ }
   }
@@ -325,6 +325,7 @@ function render() {
   for (const turn of list) {
     const article = document.createElement('article'); article.className = 'turn';
     const user = document.createElement('div'); user.className = ['proactive', 'owner_edit'].includes(turn.origin) ? 'eyebrow' : 'user'; user.textContent = turn.origin === 'owner_edit' ? '직접 수정했어요' : turn.origin === 'proactive' ? (turn.answer?.calendar_reminder ? '일정 알림' : '먼저 챙겨봤어요') : turn.text; article.append(user);
+    if (turn.recovery) article.append(element('p', `복원한 기록 · ${new Date(turn.recovery.snapshot_at).toLocaleString('ko-KR')} 당시 상태 · 이전 작업은 다시 실행하지 않아요.`, 'muted'));
     if (turn.answer) {
       if (turn.answer.mail_action_id) {
         const card = document.createElement('div'); card.className = 'document-card';
@@ -388,11 +389,11 @@ function render() {
         };
         status.append(settings);
       }
-      if (['queued', 'running'].includes(turn.state)) {
+      if (!turn.recovery && ['queued', 'running'].includes(turn.state)) {
         const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = '취소';
         cancel.onclick = () => api('/api/cancel', { seq: turn.seq }).then(() => refresh()).catch(e => notice(e.message)); status.append(cancel);
       }
-      if (turn.origin !== 'proactive' && ['failed', 'interrupted'].includes(turn.state)) {
+      if (!turn.recovery && turn.origin !== 'proactive' && ['failed', 'interrupted'].includes(turn.state)) {
         const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = '이 요청 다시 작성';
         retry.onclick = () => {
           if ($('send').disabled) { notice('접수 확인이 끝나면 다시 작성할 수 있어요. 잠시만 기다려 주세요.'); return; }
@@ -403,6 +404,7 @@ function render() {
         };
         status.append(retry);
       }
+      if (turn.recovery) status.textContent = `백업 당시 상태: ${{queued:'접수됨',running:'진행 중',failed:'실패',interrupted:'중단됨',cancelled:'취소됨'}[turn.state] ?? turn.state} · 복원 후 실행하지 않음`;
       article.append(status);
     }
     fragment.append(article);
@@ -542,7 +544,8 @@ function workCard(item) {
   if (item.waiting_for) card.append(element('p', `기다리는 것: ${item.waiting_for} · 외부 회신을 자동 조회하지는 않습니다.`, 'muted'));
   card.append(element('p', when(item.notify_at, item.timezone), 'muted'));
   if (item.notification_status === 'suspended_device') card.append(element('p', '이 일을 확정한 기기의 접근권이 만료·해제돼 알림은 중지됐어요. 기록은 남아 있어요. 다시 챙기려면 현재 기기에서 변경을 맡겨 주세요.', 'muted'));
-  if (reviewsAvailable && item.id && ['open', 'waiting'].includes(item.state) && item.notify_at) {
+  if (item.recovery) card.append(element('p', '복원한 업무 기록 · 알림과 자동 확인은 실행되지 않아요. 다시 맡기려면 새 요청으로 말씀해 주세요.', 'muted'));
+  if (!item.recovery && reviewsAvailable && item.id && ['open', 'waiting'].includes(item.state) && item.notify_at) {
     if (!item.review && Date.parse(item.notify_at) > Date.now()) {
       const button = element('button', '이 시각에 직접 확인하고 알려줘'); button.type = 'button';
       button.onclick = async () => {
@@ -964,8 +967,8 @@ function renderBrowser(state) {
     if (action.resolved || !['UNCERTAIN', 'ACKNOWLEDGED', 'DISPATCHING'].includes(action.state)) continue;
     const box = element('div', '', 'browser-action');
     box.append(element('p', `${action.field || '입력란'} · 요청한 내용: ${action.requested}`, 'muted'));
-    box.append(element('p', `${action.origin} · ${action.state === 'DISPATCHING' ? '입력 결과를 확인하고 있어요.' : action.verdict === 'APPLIED_MISMATCH' ? '입력은 적용됐지만 요청한 값과 달라요.' : '입력 결과가 불확실해 새 입력을 멈췄어요.'}`));
-    if (action.state !== 'DISPATCHING') {
+    box.append(element('p', `${action.origin} · ${action.recovery ? (action.verdict === 'APPLIED_MISMATCH' ? '백업 당시 입력은 적용됐지만 요청한 값과 달랐어요. 현재 사이트 내용을 확인해 주세요.' : '백업 당시 결과가 미확인 상태입니다. 현재 사이트 내용을 확인해 주세요.') : action.state === 'DISPATCHING' ? '입력 결과를 확인하고 있어요.' : action.verdict === 'APPLIED_MISMATCH' ? '입력은 적용됐지만 요청한 값과 달라요.' : '입력 결과가 불확실해 새 입력을 멈췄어요.'}`));
+    if (action.recovery || action.state !== 'DISPATCHING') {
       box.append(element('p', '사이트에서 실제 내용을 먼저 확인해 주세요. 아래 버튼은 이전 결과를 성공으로 바꾸거나 같은 입력을 반복하지 않고, 새로 부탁하는 작업을 허용합니다.', 'muted'));
       const button = element('button', '실제 상태를 확인했어요 · 새 작업 허용'); button.type = 'button'; button.disabled = browserBusy;
       button.onclick = () => browserTask(async () => renderBrowser(await api('/api/browser/resolve', { id: action.id, consent: 'checked_browser_effect_allow_new_work_v1' })));
@@ -1002,6 +1005,13 @@ function updateMailControls() {
     for (const name of ['mail-send-note', 'mail-permission', 'mail-unsaved', 'mail-reply']) $(name).hidden = true;
     $('mail-reload').disabled = mailBusy || !mailTarget;
     $('mail-status').textContent = mailBusy ? '메일 내용을 불러오고 있어요.' : '최신 상태 확인을 눌러 메일을 다시 불러와 주세요.';
+    return;
+  }
+  if (mailRecord.recovery) {
+    for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).readOnly = true;
+    for (const name of ['mail-save','mail-discard','mail-send','mail-reconcile','mail-connect','mail-send-note','mail-permission','mail-unsaved']) $(name).hidden = true;
+    $('mail-reload').disabled = mailBusy;
+    $('mail-status').textContent = `복원한 메일 기록 · 백업 당시 상태: ${mailRecord.state === 'DISPATCHING' ? '발송 요청 중 · 결과 미확인' : mailStates[mailRecord.state]} 복원 후 발송하거나 다시 조회하지 않았어요.`;
     return;
   }
   $('mail-connect').hidden = false;

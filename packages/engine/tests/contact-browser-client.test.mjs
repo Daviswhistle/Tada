@@ -1130,3 +1130,34 @@ test('unexpected or missing recovery metadata is rejected before offering the ba
   c.respond('/api/records/backup', () => backupResponse()); await c.get('backup-create').onclick();
   assert.equal(c.get('backup-result').hidden, true); assert.match(c.get('backup-status').textContent, /復|복구/u);
 });
+
+test('restored running requests and reminders show historical state without execution controls', async () => {
+  const c=client(), recovery={quarantined:true,snapshot_at:1700000000000,generation:'synthetic'};
+  c.state.turns=[{seq:1,request_id:'synthetic-old',text:'옛 요청',state:'running',answer:null,recovery}];
+  c.state.followups={available:true,reviews_available:true,items:[{id:'old-work',title:'옛 업무',details:'기록',state:'open',notify_at:'2099-01-01T00:00:00Z',timezone:'Asia/Seoul',recovery}],proposals:[],notices:[]};
+  await c.refresh();
+  assert.equal(c.get('messages').querySelectorAll('button').length,0);
+  assert.ok(c.get('messages').querySelectorAll('div').some(n=>n.textContent.includes('복원 후 실행하지 않음')));
+  assert.equal(c.get('followup-items').querySelectorAll('button').length,0);
+});
+test('restored mail cards remain read-only even with current send authority',async()=>{
+  const {c,record}=await mailFixture();
+  c.handle(`/api/mail/${record.id}`,()=>({mail:{...record,recovery:{quarantined:true,snapshot_at:1700000000000,generation:'old'}}}));
+  await c.get('mail-reload').onclick();
+  for(const name of ['mail-save','mail-discard','mail-send','mail-reconcile','mail-connect']) assert.equal(c.get(name).hidden,true);
+  assert.equal(c.get('mail-body').readOnly,true);assert.match(c.get('mail-status').textContent,/복원한 메일 기록/u);
+  assert.equal(c.calls.filter(x=>x.path==='/api/mail/send').length,0);
+});
+test('a restored dispatching browser effect exposes owner acknowledgement without pretending it is running',async()=>{
+  const c=client();c.state.browser={available:true,shared:null,actions:[{id:'old-action',turn:1,origin:'https://example.test',field:'제목',requested:'과거 내용',state:'DISPATCHING',verdict:'NOT_OBSERVED',resolved:false,recovery:{quarantined:true,snapshot_at:1700000000000}}]};
+  await c.refresh();
+  assert.ok(c.get('browser-actions').querySelectorAll('p').some(n=>n.textContent.includes('백업 당시 결과가 미확인')));
+  assert.ok(c.get('browser-actions').querySelectorAll('button').some(b=>b.textContent.includes('실제 상태를 확인')));
+});
+test('a restored applied mismatch preserves its known effect while requiring a current site check',async()=>{
+ const c=client();c.state.browser={available:true,shared:null,actions:[{id:'old-action',turn:1,origin:'https://example.test',field:'제목',requested:'과거 내용',state:'ACKNOWLEDGED',verdict:'APPLIED_MISMATCH',resolved:false,recovery:{quarantined:true,snapshot_at:1700000000000}}]};
+ await c.refresh();const paragraphs=c.get('browser-actions').querySelectorAll('p');
+ assert.ok(paragraphs.some(n=>n.textContent.includes('입력은 적용됐지만 요청한 값과 달랐어요')));
+ assert.ok(paragraphs.some(n=>n.textContent.includes('현재 사이트 내용을 확인')));
+ assert.ok(!paragraphs.some(n=>n.textContent.includes('결과가 미확인')));
+});

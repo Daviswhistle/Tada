@@ -136,7 +136,7 @@ test('checkpoint public citations reject unsafe URLs and unknown citation fields
 });
 
 test('long-running public research budgets persisted citations before model continuation and restores every checkpoint', async () => {
- const journal=new Map(),store={assertTurnAuthority(){},documentEditContext:()=>'',turn:id=>journal.get(id)};
+ const journal=new Map(),store={assertTurnAuthority(){},documentEditContext:()=>'',readTurn:id=>journal.get(id)};
  let checkpoint=new ConversationAssistant({},noSources).checkpoint(),compacted=false,priorCount=0;
  for(let seq=1;seq<=70;seq++){
   const citations=Array.from({length:3},(_,i)=>({url:`https://example.org/reports/${seq}/${i}`,title:'Public source title '.repeat(28),start:0,end:5}));

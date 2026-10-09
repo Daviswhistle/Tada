@@ -55,7 +55,7 @@ export class ContactService extends EventEmitter {
   browserStatus(device) {
     const grant = this.#browser?.grant;
     return { available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device } : null,
-      actions: [...new Map([...this.#store.browserActions().slice(0,10), ...this.#store.browserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved })) };
+      actions: [...new Map([...this.#store.readBrowserActions().slice(0,10), ...this.#store.readBrowserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved || !!r.recovery?.acknowledged, ...(r.recovery ? {recovery:r.recovery} : {}) })) };
   }
   async openBrowser(device) { this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE'); await this.#browser.open(); if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); this.#store.assertDevice(device); return this.browserStatus(device); }
   async browserTabs(device) { this.#store.assertDevice(device); if (!this.#browser) return []; const tabs = await this.#browser.tabs(); this.#store.assertDevice(device); return tabs; }
@@ -178,7 +178,10 @@ export class ContactService extends EventEmitter {
           if (event.kind === 'tool_call' && typeof event.name === 'string' && /^[a-z_]{1,64}$/u.test(event.name) && attemptedTools.length < 24) attemptedTools.push(event.name);
         }, { continuing, requestLimit: continuing ? Number.MAX_SAFE_INTEGER : 64 });
         const prior = this.#store.checkpoint();
-        assistant.restore(prior.value ?? assistant.checkpoint(), this.#store.usage());
+        // Keep historical citation IDs reserved without importing old model
+        // context, usage, tool grants or owner instructions.
+        const checkpointStart = prior.value ?? assistant.checkpoint();
+        assistant.restore({ ...checkpointStart, nextEvidence: Math.max(checkpointStart.nextEvidence, this.#store.recoveredEvidenceNext()) }, this.#store.usage());
         for (const stopped of this.#store.stoppedSince(prior.through, job.seq)) {
           if (stopped.origin !== 'proactive') assistant.noteStopped(stopped.text, stopped.state);
         }
@@ -232,7 +235,7 @@ export class ContactService extends EventEmitter {
           answer.notice = [answer.notice, notice].filter(Boolean).join('\n\n');
           checkpoint.history.push({ role: 'assistant', content: `Local mail draft ${mail.id} saved for owner review; not sent. Use read_mail_action for its current state.` });
         }
-        const browserActions = this.#store.browserActions().filter(r => r.turn === job.seq);
+        const browserActions = this.#store.readBrowserActions().filter(r => r.turn === job.seq);
         if (browserActions.length) {
           const verified = browserActions.filter(r => r.action.state === 'VERIFIED').length;
           const unresolved = browserActions.filter(r => ['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(r.action.state)).length;

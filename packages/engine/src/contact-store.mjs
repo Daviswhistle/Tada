@@ -1,6 +1,7 @@
 // Host-owned contact journal. Raw context never goes into a browser checkpoint.
 // Separate from the existing action ledger: documents are conversation results,
 // never an authority to overwrite arbitrary files or publish externally.
+import { RecoveredRecords, recoveryGroups } from './contact-recovery.mjs';
 import { DatabaseSync, backup } from 'node:sqlite';
 import { BACKUP_COLUMNS, MAX_BACKUP_BYTES, validateBackupSnapshot } from './contact-backup.mjs';
 import { validBrowserActions, beginBrowserAction, browserUncertain, finishBrowserAction } from './browser-actions.mjs';
@@ -14,6 +15,9 @@ import { googleScopesMatch, validGoogleCredential, validGoogleDisconnect, validR
 import { MAIL_SEND_CONSENT, MAIL_UPGRADE_CONSENT, validMailAction, validMailDraft, mailDigest, mailId, prepareMailAction, startMailAction, finishMailAction } from './mail-actions.mjs';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
+// JSON member order is not archive identity; include every value canonically.
+const recoveryDigest = value => hash(JSON.stringify(value, (_key, v) => v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.keys(v).sort().map(k => [k,v[k]])) : v));
 const counter = value => Number.isSafeInteger(value) && value >= 0;
 const TOKEN = /^[A-Za-z0-9_-]{43}$/u;
 const ID = /^[a-zA-Z0-9_-]{16,80}$/u;
@@ -65,6 +69,13 @@ CREATE INDEX mail_actions_state ON mail_actions(state,turn);
 PRAGMA user_version=6;
 `;
 const SCHEMA_V6 = SCHEMA_V5 + MAIL_SCHEMA;
+const RECOVERY_SCHEMA = `
+CREATE TABLE restored_manifest(singleton INTEGER PRIMARY KEY CHECK(singleton=1),payload TEXT NOT NULL) STRICT;
+CREATE TABLE restored_records(generation INTEGER NOT NULL,kind TEXT NOT NULL,position INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(generation,kind,position)) STRICT;
+CREATE TABLE restored_browser_ack(id TEXT PRIMARY KEY,payload TEXT NOT NULL) STRICT;
+PRAGMA user_version=7;
+`;
+const SCHEMA_V7 = SCHEMA_V6 + RECOVERY_SCHEMA;
 
 
 const telegramId = value => typeof value === 'string' && /^[1-9][0-9]{0,15}$/u.test(value)
@@ -118,12 +129,14 @@ function prepare(root, initialize) {
 }
 
 export class ContactStore {
-  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0;
-  constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false, mail = false }) {
+  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0; #recovered = null;
+  constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false, mail = false, recovery = null }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
         || passphrase.length > 1024 || typeof route !== 'string' || !/^[a-f0-9]{64}$/u.test(route)) {
       throw new Error('CONTACT_SETUP_REQUIRED');
     }
+    if (recovery !== null && !initialize) throw Error('CONTACT_RECOVERY_REQUIRES_NEW_STORE');
+    const recovered = recovery === null ? null : new RecoveredRecords(recoveryGroups(recovery));
     const root = resolve(directory); this.#root = root;
     prepare(root, initialize);
     try {
@@ -141,17 +154,18 @@ export class ContactStore {
         this.#key = scryptSync(passphrase, salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
         this.#db.exec('BEGIN IMMEDIATE');
         try {
-          const schema = mail ? SCHEMA_V6 : assistance ? SCHEMA_V5 : reviews ? SCHEMA_V4 : followups ? SCHEMA_V3 : SCHEMA_V2;
-          this.#db.exec(schema); this.#version = mail ? 6 : assistance ? 5 : reviews ? 4 : followups ? 3 : 2;
+          const schema = recovered ? SCHEMA_V7 : mail ? SCHEMA_V6 : assistance ? SCHEMA_V5 : reviews ? SCHEMA_V4 : followups ? SCHEMA_V3 : SCHEMA_V2;
+          this.#db.exec(schema); this.#version = recovered ? 7 : mail ? 6 : assistance ? 5 : reviews ? 4 : followups ? 3 : 2;
           this.#db.prepare('INSERT INTO identity VALUES(1,?,?,?,?,?)').run(this.#id, salt,
             this.#seal('identity', { id: this.#id, route }), route, hash(schema));
+          if (recovered) this.#saveRecovered(recovered);
           this.#db.exec('COMMIT');
         } catch (error) { this.#db.exec('ROLLBACK'); throw error; }
       } else {
         this.#version = this.#db.prepare('PRAGMA user_version').get().user_version;
-        if (![1, 2, 3, 4, 5, 6].includes(this.#version)) throw new Error('CONTACT_SCHEMA_UNSUPPORTED');
+        if (![1, 2, 3, 4, 5, 6, 7].includes(this.#version)) throw new Error('CONTACT_SCHEMA_UNSUPPORTED');
         const identity = this.#db.prepare('SELECT * FROM identity WHERE singleton=1').get();
-        if (!identity || identity.route !== route || identity.schema_hash !== hash(this.#version === 1 ? SCHEMA : this.#version === 2 ? SCHEMA_V2 : this.#version === 3 ? SCHEMA_V3 : this.#version === 4 ? SCHEMA_V4 : this.#version === 5 ? SCHEMA_V5 : SCHEMA_V6)) throw new Error('CONTACT_ROUTE_CHANGED');
+        if (!identity || identity.route !== route || identity.schema_hash !== hash(this.#version === 1 ? SCHEMA : this.#version === 2 ? SCHEMA_V2 : this.#version === 3 ? SCHEMA_V3 : this.#version === 4 ? SCHEMA_V4 : this.#version === 5 ? SCHEMA_V5 : this.#version === 6 ? SCHEMA_V6 : SCHEMA_V7)) throw new Error('CONTACT_ROUTE_CHANGED');
         this.#id = identity.id;
         this.#key = scryptSync(passphrase, identity.salt, 32, { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
         const proof = this.#open('identity', identity.proof);
@@ -159,6 +173,7 @@ export class ContactStore {
       }
       if (this.#db.prepare('PRAGMA quick_check').get().quick_check !== 'ok'
           || this.#db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('CONTACT_STORE_INVALID');
+      if (this.#version >= 7) this.#loadRecovered();
       // Authenticate ciphertext before making any recovery change.
       this.checkpoint();
       for (const row of this.#db.prepare('SELECT * FROM turns').iterate()) this.#turn(row);
@@ -201,11 +216,68 @@ export class ContactStore {
       throw new Error('CONTACT_STORE_UNAVAILABLE');
     }
   }
+  #saveRecovered(recovered) {
+    const groups = recovered.groups(), manifest = { version: 1, groups: [] };
+    for (const [generation, group] of groups.entries()) {
+      const { records, ...header } = group;
+      manifest.groups.push({ header, sha256: recoveryDigest(group) });
+      for (const [kind, rows] of Object.entries(records)) for (const [position, row] of rows.entries()) {
+        this.#db.prepare('INSERT INTO restored_records VALUES(?,?,?,?)').run(generation,kind,position,
+          this.#seal(`restored:${generation}:${kind}:${position}`,row));
+      }
+    }
+    this.#db.prepare('INSERT INTO restored_manifest VALUES(1,?)').run(this.#seal('restored:manifest',manifest));
+    for (const name of ['turns','requests']) {
+      const maximum = recovered.maximum(name);
+      if (!Number.isSafeInteger(maximum) || maximum >= Number.MAX_SAFE_INTEGER - 1000000) throw Error('CONTACT_RECOVERY_INVALID');
+      this.#db.prepare('INSERT INTO sqlite_sequence(name,seq) VALUES(?,?)').run(name,maximum);
+    }
+  }
+  #loadRecovered() {
+    const row = this.#db.prepare('SELECT payload FROM restored_manifest WHERE singleton=1').get();
+    if (!row) throw Error('CONTACT_RECOVERY_INVALID');
+    const manifest = this.#open('restored:manifest',row.payload);
+    if (!manifest || Object.keys(manifest).sort().join(',') !== 'groups,version' || manifest.version !== 1 || !Array.isArray(manifest.groups) || !manifest.groups.length) throw Error('CONTACT_RECOVERY_INVALID');
+    const groups = manifest.groups.map(g => ({ ...g.header, records: Object.fromEntries(Object.keys(BACKUP_COLUMNS).map(k => [k,[]])) }));
+    for (const r of this.#db.prepare('SELECT * FROM restored_records ORDER BY generation,kind,position').iterate()) {
+      const rows = groups[r.generation]?.records[r.kind];
+      if (!rows || r.position !== rows.length) throw Error('CONTACT_RECOVERY_INVALID');
+      rows.push(this.#open(`restored:${r.generation}:${r.kind}:${r.position}`,r.payload));
+    }
+    // Canonical table order is the export order, not SQLite's lexical kind order.
+    for (const [i,g] of groups.entries()) if (recoveryDigest(g) !== manifest.groups[i].sha256) throw Error('CONTACT_RECOVERY_INVALID');
+    this.#recovered = new RecoveredRecords(groups);
+    for (const name of ['turns','requests']) {
+      const seq = this.#db.prepare('SELECT seq FROM sqlite_sequence WHERE name=?').get(name)?.seq;
+      if (!Number.isSafeInteger(seq) || seq < this.#recovered.maximum(name)) throw Error('CONTACT_RECOVERY_INVALID');
+    }
+    for (const row of this.#db.prepare('SELECT id FROM restored_browser_ack').iterate()) this.#restoredBrowserAck(row.id);
+  }
+  recoveredEvidenceNext() { this.#check(); return this.#recovered?.nextEvidence() ?? 1; }
+  isRecoveredEvidence(evidence) { this.#check(); return this.#recovered?.hasEvidence(evidence) ?? false; }
+  recoveryStatus() {
+    this.#check();
+    return this.#recovered ? { restored: true, turns: this.#recovered.rows('turns').length, carries_authority: false } : { restored: false };
+  }
+  readTurn(seq) { return this.turn(seq) ?? this.#recovered?.turn(seq) ?? null; }
+  #readTurns(before, limit = 100, answered = false) {
+    const current = this.#db.prepare(`SELECT * FROM turns WHERE seq<? ${answered ? "AND state='answered'" : ''} ORDER BY seq DESC LIMIT ?`).all(before,limit).map(r => this.#turn(r));
+    if (current.length === limit || !this.#recovered) return current;
+    const prior = this.#recovered.rows('turns').filter(r => r.seq < before && (!answered || r.state === 'answered')).sort((a,b) => b.seq-a.seq).slice(0,limit-current.length).map(r => this.#recovered.turn(r.seq));
+    return [...current,...prior];
+  }
+  historicalUsage() {
+    const active = this.usage(), prior = this.#recovered?.usage();
+    if (!prior) return active;
+    const total = Object.fromEntries(Object.keys(active).map(k => [k,active[k]+prior[k]]));
+    if (!Object.values(total).every(counter)) throw Error('CONTACT_USAGE_OVERFLOW');
+    return total;
+  }
   exportRecords(device, connection = { provider: null, google_client: null }) {
     return this.#tx(() => {
       this.#device(device);
       const records = Object.fromEntries(Object.keys(BACKUP_COLUMNS).map(name => [name, []]));
-      const result = { version: 1, created_at: Date.now(), source: { journal_id: this.#id, schema_version: this.#version,
+      const result = { version: this.#version >= 7 ? 2 : 1, ...(this.#version >= 7 ? { recovered: this.#recovered.groups() } : {}), created_at: Date.now(), source: { journal_id: this.#id, schema_version: this.#version,
         route: this.#db.prepare('SELECT route FROM identity WHERE singleton=1').get().route }, connection: structuredClone(connection), records };
       let bytes = Buffer.byteLength(JSON.stringify(result)), count = 0;
       const add = (name, row) => {
@@ -235,7 +307,7 @@ export class ContactStore {
   }
   #seal(aad, value) {
     const plain = Buffer.from(JSON.stringify(value));
-    if (plain.length > 262144) throw new Error('CONTACT_CONTEXT_LIMIT');
+    if (plain.length > (aad === 'restored:manifest' ? MAX_BACKUP_BYTES : 262144)) throw new Error('CONTACT_CONTEXT_LIMIT');
     const nonce = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.#key, nonce);
     cipher.setAAD(Buffer.from(`${this.#id}:${aad}`));
@@ -243,7 +315,7 @@ export class ContactStore {
   }
   #open(aad, sealed) {
     try {
-      if (typeof sealed !== 'string' || sealed.length > 400000) throw new Error();
+      if (typeof sealed !== 'string' || sealed.length > (aad === 'restored:manifest' ? Math.ceil((MAX_BACKUP_BYTES + 28) / 3) * 4 : 400000)) throw new Error();
       const bytes = Buffer.from(sealed, 'base64');
       if (bytes.length < 28) throw new Error();
       const decipher = createDecipheriv('aes-256-gcm', this.#key, bytes.subarray(0, 12));
@@ -306,6 +378,7 @@ export class ContactStore {
     if (!ID.test(requestId) || typeof text !== 'string' || !text.trim() || Buffer.byteLength(JSON.stringify(text)) > 4096) throw new Error('CONTACT_MESSAGE_INVALID');
     return this.#tx(() => {
       this.#device(device);
+      if (this.#recovered?.hasRequest(requestId)) throw Error('CONTACT_REQUEST_ID_REUSED');
       const old = this.#db.prepare('SELECT * FROM turns WHERE request_id=?').get(requestId);
       if (old) {
         if (this.#turn(old).origin === 'owner_edit' || this.#turn(old).text !== text) throw new Error('CONTACT_REQUEST_ID_REUSED');
@@ -358,8 +431,9 @@ export class ContactStore {
       // Validate one link without recursively reading an arbitrarily long chain.
       // Startup separately authenticates and validates every retained turn.
       const rowParent = this.#db.prepare('SELECT * FROM turns WHERE seq=?').get(d.based_on);
-      const parent = rowParent?.answer ? this.#open(`answer:${rowParent.request_id}`, rowParent.answer) : null;
-      if (rowParent?.state !== 'answered' || ![1, 2].includes(parent?.document?.version)
+      const archivedParent = rowParent ? null : this.#recovered?.turn(d.based_on);
+      const parent = rowParent?.answer ? this.#open(`answer:${rowParent.request_id}`, rowParent.answer) : archivedParent?.answer;
+      if ((rowParent ?? archivedParent)?.state !== 'answered' || ![1, 2].includes(parent?.document?.version)
           || parent.document.id !== d.based_on || parent.document.root !== d.root
           || parent.document.revision + 1 !== d.revision || parent.document.format !== d.format
           || JSON.stringify(parent.sources) !== JSON.stringify(answer.sources)) throw Error('CONTACT_DOCUMENT_INVALID');
@@ -371,9 +445,9 @@ export class ContactStore {
   }
   document(id) {
     if (!Number.isSafeInteger(id) || id < 1) throw Error('CONTACT_DOCUMENT_INVALID');
-    const turn = this.turn(id);
+    const turn = this.readTurn(id);
     return turn?.state === 'answered' && turn.answer?.document
-      ? { ...turn.answer.document, content: turn.answer.text, sources: turn.answer.sources } : null;
+      ? { ...turn.answer.document, content: turn.answer.text, sources: turn.answer.sources, ...(turn.recovery ? { recovery: turn.recovery } : {}) } : null;
   }
   latestDocument(id) {
     const original = this.document(id); if (!original) return null;
@@ -381,7 +455,8 @@ export class ContactStore {
       const doc = this.#turn(row).answer?.document;
       if (doc?.root === original.root) return this.document(doc.id);
     }
-    return original;
+    const prior = this.#recovered?.rows('turns').filter(r => r.answer?.document?.root === original.root).sort((a,b) => b.seq-a.seq)[0];
+    return prior ? this.document(prior.seq) : original;
   }
   documentEditContext(before) {
     this.#check();
@@ -404,6 +479,7 @@ export class ContactStore {
       // documents at startup, before recovery or model execution. Never write v2
       // into v1-v4 stores accepted by readers from before document validation.
       if (this.#version < 5) throw Error('CONTACT_DOCUMENT_EDIT_UPGRADE_REQUIRED');
+      if (this.#recovered?.hasRequest(requestId)) throw Error('CONTACT_REQUEST_ID_REUSED');
       const existing = this.#db.prepare('SELECT * FROM turns WHERE request_id=?').get(requestId);
       if (existing) {
         const old = this.#turn(existing), doc = old.answer?.document;
@@ -426,40 +502,40 @@ export class ContactStore {
   documentPage(before = null) {
     this.#check();
     if (before !== null && (!Number.isSafeInteger(before) || before < 1)) throw Error('CONTACT_DOCUMENT_INVALID');
-    const rows = this.#db.prepare("SELECT * FROM turns WHERE state='answered' AND seq<? ORDER BY seq DESC LIMIT 100").all(before ?? Number.MAX_SAFE_INTEGER);
-    const docs = []; let cursor = before ?? Number.MAX_SAFE_INTEGER;
-    for (const row of rows) {
-      cursor = row.seq; const doc = this.#turn(row).answer?.document;
-      if (doc) { const { id, root, based_on, title, format, revision } = doc; docs.push({ id, root, based_on, title, format, revision }); }
+    const rows = this.#readTurns(before ?? Number.MAX_SAFE_INTEGER, 101, true);
+    const docs = []; let cursor = before ?? Number.MAX_SAFE_INTEGER, scanned = 0;
+    for (const turn of rows.slice(0,100)) {
+      scanned++; cursor = turn.seq; const doc = turn.answer?.document;
+      if (doc) { const {id,root,based_on,title,format,revision} = doc; docs.push({id,root,based_on,title,format,revision,...(turn.recovery ? {recovery:turn.recovery} : {})}); }
       if (docs.length === 10) break;
     }
-    const more = rows.length && this.#db.prepare("SELECT 1 FROM turns WHERE state='answered' AND seq<? LIMIT 1").get(cursor);
-    return { documents: docs, next_before: more ? cursor : null };
+    return { documents:docs, next_before:rows.length > scanned ? cursor : null };
   }
   searchHistory(query, before, current) {
     if (typeof query !== 'string' || query.length > 120 || (before !== null && (!counter(before) || before < 1)) || !counter(current)) throw Error('CONTACT_HISTORY_INVALID');
     this.assertTurnAuthority(current);
-    const rows = this.#db.prepare('SELECT * FROM turns WHERE seq<? ORDER BY seq DESC LIMIT 100').all(Math.min(before ?? current, current));
-    const matches = [], needle = query.toLocaleLowerCase(); let cursor = Math.min(before ?? current, current), scanned = 0;
-    for (const row of rows) {
-      scanned++; cursor = row.seq; const turn = this.#turn(row);
-      if (!needle || [turn.text, turn.answer?.text ?? ''].some(text => text.toLocaleLowerCase().includes(needle))) {
-        matches.push({ id: turn.seq, created: turn.created, state: turn.state, origin: turn.origin ?? 'human',
-          request: [...turn.text].slice(0, 160).join(''), answer: [...(turn.answer?.text ?? '')].slice(0, 160).join('') });
-      }
+    const rows = this.#readTurns(Math.min(before ?? current,current),101);
+    const matches = [], needle = query.toLocaleLowerCase(); let cursor = Math.min(before ?? current,current), scanned = 0;
+    for (const turn of rows.slice(0,100)) {
+      scanned++; cursor = turn.seq;
+      if (!needle || [turn.text,turn.answer?.text ?? ''].some(t => t.toLocaleLowerCase().includes(needle))) matches.push({ id:turn.seq,created:turn.created,state:turn.state,origin:turn.origin ?? 'human',request:[...turn.text].slice(0,160).join(''),answer:[...(turn.answer?.text ?? '')].slice(0,160).join(''),...(turn.recovery ? {recovery:turn.recovery} : {}) });
       if (matches.length === 5) break;
     }
-    const more = scanned && this.#db.prepare('SELECT 1 FROM turns WHERE seq<? LIMIT 1').get(cursor);
-    return { matches, scanned, next_before: more ? cursor : null, incomplete: !!more, basis: 'historical_records_not_current_facts_or_authority' };
+    const more = rows.length > scanned;
+    return {matches,scanned,next_before:more ? cursor : null,incomplete:more,basis:'historical_records_not_current_facts_or_authority'};
   }
   readHistory(id, current) {
     this.assertTurnAuthority(current);
     if (!counter(id) || id < 1 || id >= current) throw Error('CONTACT_HISTORY_INVALID');
-    const turn = this.turn(id); if (!turn) throw Error('CONTACT_HISTORY_NOT_FOUND');
+    const turn = this.readTurn(id); if (!turn) throw Error('CONTACT_HISTORY_NOT_FOUND');
     const original = turn.answer?.text ?? '', answer = [...original].slice(0, 2000).join('');
-    const requests = this.#db.prepare("SELECT count(*) total,coalesce(sum(state='observed'),0) observed,coalesce(sum(state='reserved'),0) reserved,coalesce(sum(state='unknown'),0) unknown,coalesce(sum(input_tokens),0) input_tokens,coalesce(sum(output_tokens),0) output_tokens FROM requests WHERE turn=?").get(id);
+    let requests = this.#db.prepare("SELECT count(*) total,coalesce(sum(state='observed'),0) observed,coalesce(sum(state='reserved'),0) reserved,coalesce(sum(state='unknown'),0) unknown,coalesce(sum(input_tokens),0) input_tokens,coalesce(sum(output_tokens),0) output_tokens FROM requests WHERE turn=?").get(id);
+    if (turn.recovery) {
+      const rows = this.#recovered.rows('requests').filter(r => r.turn === id), usage = this.#recovered.usage(id);
+      requests = {total:rows.length,observed:rows.filter(r => r.state === 'observed').length,reserved:rows.filter(r => r.state === 'reserved').length,unknown:rows.filter(r => r.state === 'unknown').length,input_tokens:usage.input_tokens,output_tokens:usage.output_tokens};
+    }
     if (!Object.values(requests).every(counter)) throw Error('CONTACT_USAGE_OVERFLOW');
-    return { id, created: turn.created, state: turn.state, origin: turn.origin ?? 'human', request: turn.text,
+    return { id, ...(turn.recovery ? {recovery:turn.recovery} : {}), created: turn.created, state: turn.state, origin: turn.origin ?? 'human', request: turn.text,
       answer, truncated: answer !== original, document_id: turn.answer?.document?.id ?? null,
       execution: { result_accepted: turn.state === 'answered', stop_reason: turn.error ?? null, model_requests: { ...requests }, scope: 'model_inference_not_external_action_receipts' },
       current_request_allowance: this.requestAllowance(current),
@@ -479,7 +555,7 @@ export class ContactStore {
     if (parent) {
       const newer = this.#db.prepare("SELECT * FROM turns WHERE state='answered' AND seq>? ORDER BY seq DESC").all(based_on)
         .some(row => this.#turn(row).answer?.document?.root === parent.root);
-      if (newer) throw Error('CONTACT_DOCUMENT_STALE');
+      if (newer || this.latestDocument(based_on).id !== based_on) throw Error('CONTACT_DOCUMENT_STALE');
     }
     const revision = (parent?.revision ?? 0) + 1; if (!Number.isSafeInteger(revision)) throw Error('CONTACT_DOCUMENT_INVALID');
     return { version: 1, id: seq, root: parent?.root ?? seq, revision, based_on, title: title.trim(), format };
@@ -488,9 +564,9 @@ export class ContactStore {
   page(before = Number.MAX_SAFE_INTEGER) {
     this.#check();
     if (!counter(before)) throw new Error('CONTACT_CURSOR_INVALID');
-    const rows = this.#db.prepare('SELECT * FROM turns WHERE seq<? ORDER BY seq DESC LIMIT 51').all(before);
+    const rows = this.#readTurns(before,51);
     const more = rows.length > 50;
-    return { turns: rows.slice(0, 50).reverse().map(row => this.#turn(row)), next_before: more ? rows[49].seq : null };
+    return { turns: rows.slice(0, 50).reverse(), next_before: more ? rows[49].seq : null };
   }
   checkpoint() {
     this.#check();
@@ -952,7 +1028,12 @@ export class ContactStore {
     if (!['active', 'all'].includes(status) || !counter(offset) || (!this.continuingUseEnabled() && offset > 1000)) throw new Error('CONTACT_FOLLOWUP_INVALID');
     const condition = status === 'active' ? "WHERE state IN('open','waiting')" : '';
     const rows = this.#db.prepare(`SELECT * FROM followups ${condition} ORDER BY updated DESC,id LIMIT 6 OFFSET ?`).all(offset);
-    return { pending: this.#db.prepare("SELECT * FROM followup_proposals WHERE state='pending' ORDER BY created,id LIMIT 8").all().map(row => { const p = this.#proposal(row); return { id: p.id, title: p.spec.title, target: p.spec.target, status: 'pending_owner_confirmation' }; }), items: rows.slice(0, 5).map(row => this.#commitment(row)), next_offset: rows.length > 5 ? offset + 5 : null,
+    const items = rows.map(row => this.#commitment(row));
+    if (status === 'all' && items.length < 6 && this.#recovered) {
+      const count = this.#db.prepare('SELECT count(*) n FROM followups').get().n;
+      items.push(...this.#recovered.rows('followups').sort((a,b) => b.updated-a.updated || a.id.localeCompare(b.id)).slice(Math.max(0,offset-count),Math.max(0,offset-count)+6-items.length).map(r => ({...r.payload,id:r.id,version:r.version,origin_turn:r.origin_turn,owner_device:r.device,updated:r.updated,review:null,notification_status:'restored_inactive',completion_basis:r.state === 'done' ? r.payload.approval_basis ?? 'owner_confirmation' : null,recovery:this.#recovered.metadata('followups',r.id)})));
+    }
+    return { pending: this.#db.prepare("SELECT * FROM followup_proposals WHERE state='pending' ORDER BY created,id LIMIT 8").all().map(row => { const p = this.#proposal(row); return { id: p.id, title: p.spec.title, target: p.spec.target, status: 'pending_owner_confirmation' }; }), items: items.slice(0,5), next_offset: items.length > 5 ? offset+5 : null,
       note: 'These are owner-requested work records, admitted by individual confirmation or personal-work delegation. Waiting does not imply external monitoring. Done means the owner marked it done, not independent outcome verification.' };
   }
   followupState() {
@@ -975,7 +1056,7 @@ export class ContactStore {
     const ids = new Set(), operations = new Set();
     for (const proposal of proposals) {
       if (!proposal || Object.keys(proposal).sort().join(',') !== 'id,spec,timezone'
-          || !isFollowupId(proposal.id) || ids.has(proposal.id)) throw new Error('CONTACT_FOLLOWUP_INVALID');
+          || !isFollowupId(proposal.id) || ids.has(proposal.id) || this.#recovered?.row('followup_proposals',proposal.id) || this.#recovered?.row('followups',proposal.id)) throw new Error('CONTACT_FOLLOWUP_INVALID');
       ids.add(proposal.id);
       const spec = validateFollowupProposal(proposal.spec, text);
       followupTimezone(proposal.timezone);
@@ -1258,12 +1339,18 @@ export class ContactStore {
     if (!mailId(id)) throw Error('CONTACT_MAIL_INVALID');
     return this.#mailRow(this.#db.prepare('SELECT * FROM mail_actions WHERE id=?').get(id));
   }
+  readMailAction(id) {
+    this.#check();
+    const old = this.#recovered?.row('mail_actions',id);
+    return old ? {...old.payload,recovery:this.#recovered.metadata('mail_actions',id)} : this.mailAction(id);
+  }
   mailActions(before = null) {
     this.#check(); if (this.#version < 6) return { records: [], next_before: null };
     if (!(before === null || Number.isSafeInteger(before) && before > 0)) throw Error('CONTACT_MAIL_INVALID');
     const rows = this.#db.prepare('SELECT * FROM mail_actions WHERE turn<? ORDER BY turn DESC LIMIT 21').all(before ?? Number.MAX_SAFE_INTEGER);
-    const records = rows.slice(0, 20).map(row => this.#mailRow(row));
-    return { records, next_before: rows.length > 20 ? records.at(-1).turn : null };
+    const records = rows.map(row => this.#mailRow(row));
+    if (records.length < 21 && this.#recovered) records.push(...this.#recovered.rows('mail_actions').filter(r => r.turn < (before ?? Number.MAX_SAFE_INTEGER)).sort((a,b) => b.turn-a.turn).slice(0,21-records.length).map(r => this.readMailAction(r.id)));
+    return { records:records.slice(0,20), next_before:records.length > 20 ? records[19].turn : null };
   }
   prepareMail(seq, draft) {
     this.assertTurnAuthority(seq);
@@ -1273,7 +1360,7 @@ export class ContactStore {
   assertPreparedMail(seq, record) {
     this.#check(); if (this.#version < 6) throw Error('CONTACT_MAIL_UPGRADE_REQUIRED');
     this.assertTurnAuthority(seq);
-    if (!validMailAction(record) || record.turn !== seq || record.device !== this.turn(seq).device
+    if (!validMailAction(record) || this.#recovered?.row('mail_actions',record.id) || record.turn !== seq || record.device !== this.turn(seq).device
         || record.state !== 'DRAFT' || record.revision !== 1 || this.proactiveForTurn(seq) || this.reviewForTurn(seq)) throw Error('CONTACT_MAIL_INVALID');
     const account = this.assertGoogleAuthority(record.device, this.googleEpoch());
     if (account.email !== record.draft.account) throw Error('CONTACT_MAIL_ACCOUNT_CHANGED');
@@ -1354,6 +1441,20 @@ export class ContactStore {
       : "SELECT name FROM assistance_settings WHERE name GLOB 'browser_action:*' ORDER BY rowid DESC LIMIT 20";
     return this.#db.prepare(query).all().map(row => this.#setting(row.name).records[0]);
   }
+  #restoredBrowserAck(id) {
+    if (this.#version < 7) return null;
+    const row = this.#db.prepare('SELECT payload FROM restored_browser_ack WHERE id=?').get(id);
+    if (!row) return null;
+    const v = this.#open(`restored-browser-ack:${id}`,row.payload);
+    if (!v || Object.keys(v).sort().join(',') !== 'at,device,id' || v.id !== id || !isFollowupId(v.device) || !counter(v.at)) throw Error('CONTACT_RECOVERY_INVALID');
+    return v;
+  }
+  readBrowserActions(pendingOnly = false) {
+    const current = this.browserActions(pendingOnly);
+    const prior = (this.#recovered?.rows('browser_actions') ?? []).map(r => ({...r.payload.records[0],recovery:{...this.#recovered.metadata('browser_actions',r.name),acknowledged:!!this.#restoredBrowserAck(r.payload.records[0].action.action_id)}}))
+      .filter(r => !pendingOnly || ['DISPATCHING','UNCERTAIN','ACKNOWLEDGED'].includes(r.action.state) && !r.resolved && !r.recovery.acknowledged);
+    return pendingOnly ? [...current,...prior] : [...current,...prior.sort((a,b) => b.created-a.created)].slice(0,20);
+  }
   #browserAction(id) {
     if (typeof id !== 'string' || !/^browser-[a-f0-9-]{36}$/u.test(id)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
     for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) {
@@ -1368,7 +1469,7 @@ export class ContactStore {
     for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) this.#db.prepare('DELETE FROM assistance_settings WHERE name=?').run(`browser_action:${state}:${record.action.action_id}`);
     this.#saveSetting(`browser_action:${record.action.state}:${record.action.action_id}`, next);
   }
-  browserBlocked(origin, turn = Infinity) { return this.browserActions(true).some(r => r.origin === origin && (!r.resolved || turn <= r.turn)); }
+  browserBlocked(origin, turn = Infinity) { return this.readBrowserActions(true).some(r => r.origin === origin && (!r.resolved || turn <= r.turn)); }
   admitBrowserAction(seq, grant, observation, ref, value) {
     return this.#tx(() => {
       this.assertTurnAuthority(seq); this.assertDevice(grant.device);
@@ -1390,6 +1491,12 @@ export class ContactStore {
     return this.#tx(() => {
       this.assertDevice(device);
       if (consent !== 'checked_browser_effect_allow_new_work_v1') throw Error('CONTACT_BROWSER_CONSENT_REQUIRED');
+      const prior = this.readBrowserActions(true).find(r => r.action.action_id === id && r.recovery);
+      if (prior) {
+        this.#db.prepare('INSERT INTO restored_browser_ack VALUES(?,?) ON CONFLICT(id) DO NOTHING').run(id,this.#seal(`restored-browser-ack:${id}`,{id,device,at:Date.now()}));
+        return;
+      }
+      if (this.#restoredBrowserAck(id)) return;
       const record = this.#browserAction(id);
       if (!['UNCERTAIN','ACKNOWLEDGED'].includes(record.action.state)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
       if (!record.resolved) record.resolved = { device, at: Date.now() };

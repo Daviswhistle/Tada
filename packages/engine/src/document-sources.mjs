@@ -70,7 +70,7 @@ export class DocumentSources {
         return value;
       };
       if (name !== 'read_history' || result.state !== 'answered') return admit(result);
-      const prior = this.#store.turn(args.id);
+      const prior = this.#store.readTurn(args.id);
       const sources = prior.answer.sources.filter(source => source.source === 'ChatGPT public web research');
       if (!sources.length) return admit(result);
       // Restore only receipts from an explicitly read, accepted report. Original
@@ -92,7 +92,7 @@ export class DocumentSources {
       const doc = this.#store.document(args.id); if (!doc) throw Error('CONTACT_DOCUMENT_NOT_FOUND');
       const { id, root, based_on, title, format, revision, content, sources } = doc;
       const result = { id, root, based_on, title, format, revision, content, sources, latest_id: this.#store.latestDocument(id).id,
-        author: doc.author ?? 'assistant', source_basis: doc.author === 'owner' ? 'inherited_references_not_verification_of_owner_edits' : 'saved_document_snapshot_not_live_external_observation' };
+        ...(doc.recovery ? {recovery:doc.recovery} : {}), author: doc.author ?? 'assistant', source_basis: doc.author === 'owner' ? 'inherited_references_not_verification_of_owner_edits' : 'saved_document_snapshot_not_live_external_observation' };
       if (Buffer.byteLength(JSON.stringify(result)) > 32768 || budget && !budget.fits(result)) throw Error('ASSISTANT_SOURCE_LIMIT');
       this.#documents.set(doc.id, { sha256: doc.sha256, sources: doc.sources });
       return result;
@@ -114,7 +114,7 @@ export class DocumentSources {
           && doc.sources.some(s => JSON.stringify(s) === JSON.stringify(evidence))) return true;
     }
     for (const [id, snapshot] of this.#historyReports) {
-      const prior = this.#store.turn(id);
+      const prior = this.#store.readTurn(id);
       if (prior?.state === 'answered' && JSON.stringify(prior.answer) === snapshot
           && evidence.source === 'ChatGPT public web research'
           && prior.answer.sources.some(source => JSON.stringify(source) === JSON.stringify(evidence))) return true;
@@ -130,12 +130,12 @@ export class DocumentSources {
     // request. Recheck its exact receipt in this journal, never current pages.
     const priorReport = evidence.source === 'ChatGPT public web research' && /^report-([1-9][0-9]*)$/u.exec(evidence.path);
     if (priorReport && Number(priorReport[1]) < this.#job.seq) {
-      const prior = this.#store.turn(Number(priorReport[1]));
+      const prior = this.#store.readTurn(Number(priorReport[1]));
       if (prior?.state === 'answered' && prior.answer?.sources?.some(source => sameWebReceipt(source, evidence))) {
         this.#verifiedWeb = true; return true;
       }
     }
-    if (this.#history && this.recallEvidence(evidence, signal)) { this.#verifiedSnapshot = true; return true; }
+    if ((this.#history || this.#store.isRecoveredEvidence?.(evidence)) && this.recallEvidence(evidence, signal)) { this.#verifiedSnapshot = true; return true; }
     return this.#base.verify(evidence, signal);
   }
   prepared() { return this.#prepared ? structuredClone(this.#prepared) : null; }

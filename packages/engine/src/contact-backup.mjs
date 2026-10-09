@@ -29,21 +29,33 @@ export const BACKUP_COLUMNS = Object.freeze({
   mail_actions: 'id,turn,state,payload',
   browser_actions: 'name,payload',
 });
+export function backupRecordGroups(value) {
+  return [...(value.recovered ?? []), value.version === 2 ? { ...value, recovered: [] } : value];
+}
 export function validateBackupSnapshot(value) {
-  if (!shape(value, 'version,created_at,source,connection,records') || value.version !== 1 || !integer(value.created_at)
+  if (!shape(value, value?.version === 2 ? 'version,created_at,source,connection,records,recovered' : 'version,created_at,source,connection,records') || ![1,2].includes(value.version) || !integer(value.created_at)
       || !shape(value.source, 'journal_id,schema_version,route') || !uuid(value.source.journal_id)
-      || ![1,2,3,4,5,6].includes(value.source.schema_version) || !hex(value.source.route)
+      || !(value.version === 2 ? [7] : [1,2,3,4,5,6]).includes(value.source.schema_version) || !hex(value.source.route)
       || !shape(value.connection, 'provider,google_client') || !shape(value.records, Object.keys(BACKUP_COLUMNS).join(','))) fail();
+  if (value.version === 2) {
+    if (!Array.isArray(value.recovered)) fail();
+    for (const prior of value.recovered) {
+      if (!(prior?.version === 1 || prior?.version === 2 && Array.isArray(prior.recovered) && prior.recovered.length === 0)) fail();
+      validateBackupSnapshot(prior);
+    }
+  }
+  if (Buffer.byteLength(JSON.stringify(value)) > MAX_BACKUP_BYTES || Buffer.byteLength(JSON.stringify(backupRecordGroups(value))) > MAX_BACKUP_BYTES) throw Error('CONTACT_BACKUP_TOO_LARGE');
   const provider = value.connection.provider, client = value.connection.google_client;
   if (provider !== null && (!shape(provider, 'kind,subject,label,model') || !['chatgpt-subscription', 'ollama-local'].includes(provider.kind)
       || !(provider.subject === null || text(provider.subject, 512)) || !(provider.label === null || text(provider.label, 320)) || !text(provider.model, 256))) fail();
   if (client !== null && (!shape(client, 'client_id,client_secret') || !text(client.client_id, 200)
       || !/^[A-Za-z0-9._-]{10,200}\.apps\.googleusercontent\.com$/u.test(client.client_id) || !text(client.client_secret, 4096))) fail();
-  let count = 0;
+  let count = (value.recovered ?? []).reduce((total, prior) => total + Object.values(prior.records).reduce((sum, rows) => sum + rows.length, 0), 0);
+  if (count > 200000) throw Error('CONTACT_BACKUP_TOO_LARGE');
   for (const [name, fields] of Object.entries(BACKUP_COLUMNS)) {
     const rows = value.records[name];
     if (!Array.isArray(rows) || rows.length > 100000) fail();
-    for (const row of rows) { if (!shape(row, fields) || ++count > 200000) fail(); }
+    for (const row of rows) { if (!shape(row, fields)) fail(); if (++count > 200000) throw Error('CONTACT_BACKUP_TOO_LARGE'); }
   }
   // These are archive records, not replay commands. Full domain/lineage checks
   // must also precede any future import into a live store.
@@ -138,8 +150,9 @@ export async function openRecordBackup(bytes, { recoveryCode = null, protector }
 }
 export function backupSummary(snapshot) {
   validateBackupSnapshot(snapshot);
+  const groups = [snapshot, ...(snapshot.recovered ?? [])];
   return { created_at: snapshot.created_at, account: snapshot.connection.provider?.label ?? null, model: snapshot.connection.provider?.model ?? null,
-    turns: snapshot.records.turns.length, documents: snapshot.records.turns.filter(t => t.answer?.document).length,
-    work: snapshot.records.followups.length, mail: snapshot.records.mail_actions.length,
+    turns: groups.reduce((n,g) => n + g.records.turns.length, 0), documents: groups.reduce((n,g) => n + g.records.turns.filter(t => t.answer?.document).length, 0),
+    work: groups.reduce((n,g) => n + g.records.followups.length, 0), mail: groups.reduce((n,g) => n + g.records.mail_actions.length, 0),
     carries_authority: false, restore_status: 'records_only_requires_reconnection_and_quarantine' };
 }
