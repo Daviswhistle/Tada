@@ -14,7 +14,7 @@ export class WindowsBackgroundApp {
     this.#launcher = join(root, 'Tada.exe');
     // Run registration only supports the installed launcher's fixed default
     // route. Never silently discard CLI account, provider, model or source args.
-    this.#available = platform === 'win32' && this.#managed && basename(versions) === 'versions' && /^[0-9a-f]{64}(?:-[0-9a-f]{32})?$/u.test(basename(payload))
+    this.#available = platform === 'win32' && this.#managed && basename(versions) === 'versions' && /^(?:[0-9a-f]{32}|[0-9a-f]{64}(?:-[0-9a-f]{32})?)$/u.test(basename(payload))
       && !!env.LOCALAPPDATA && resolve(options.data) === resolve(env.LOCALAPPDATA, 'Tada', 'conversation')
       && options.provider === 'chatgpt' && !options.askPassphrase && !options.telegram && !options.logout
       && !options.login && !options.upgrade && options.roots.length === 0

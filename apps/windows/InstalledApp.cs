@@ -46,25 +46,35 @@ static class InstalledApp {
         var pointer = Path.Combine(root, "current.txt");
         if (new FileInfo(pointer).Length > 256) throw new IOException("Invalid installed version");
         var text = File.ReadAllText(pointer);
-        var match = Regex.Match(text, "\\ATada installed version 1\n([0-9a-f]{64}(?:-[0-9a-f]{32})?)\n([0-9a-f]{64})\n\\z");
-        if (!match.Success) throw new IOException("Invalid installed version");
+        var match = Regex.Match(text, "\\ATada installed version 2\n([0-9a-f]{32})\n([0-9a-f]{64})\n([0-9a-f]{64})\n\\z");
+        string manifest;
+        if (match.Success) manifest = match.Groups[3].Value;
+        else {
+            match = Regex.Match(text, "\\ATada installed version 1\n([0-9a-f]{64}(?:-[0-9a-f]{32})?)\n([0-9a-f]{64})\n\\z");
+            if (!match.Success) throw new IOException("Invalid installed version");
+            manifest = match.Groups[1].Value.Split('-')[0];
+        }
         var payload = Path.Combine(root, "versions", match.Groups[1].Value); Root(payload);
-        if (Hash(Path.Combine(payload, "bundle.json")) != match.Groups[1].Value.Split('-')[0] || Hash(Path.Combine(payload, "Tada.exe")) != match.Groups[2].Value) throw new IOException("Installed version changed");
+        if (Hash(Path.Combine(payload, "bundle.json")) != manifest || Hash(Path.Combine(payload, "Tada.exe")) != match.Groups[2].Value) throw new IOException("Installed version changed");
         return payload;
     }
-    internal static int VerifyPayload(string payload) {
-        var start = new ProcessStartInfo(Path.Combine(payload, "Tada.exe"), "--verify") { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = payload };
-        using (var child = Process.Start(start)) {
-            if (!child.WaitForExit(30000)) { child.Kill(); child.WaitForExit(); throw new IOException("Verification timed out"); }
-            return child.ExitCode;
-        }
-    }
-    static bool Reusable(string payload, string source) {
+    static bool Reusable(string payload, string source, Action<string> verify) {
         try {
             var executable = Path.Combine(payload, "Tada.exe"); Root(executable);
-            // Check known executable bytes BEFORE asking it to verify the rest.
-            return Hash(executable) == Hash(Path.Combine(source, "Tada.exe")) && VerifyPayload(payload) == 0;
+            // Only the trusted installer verifies bytes; never execute a copy
+            // merely to discover whether it is safe or wait on a child timeout.
+            if (Hash(executable) != Hash(Path.Combine(source, "Tada.exe"))) return false;
+            verify(payload); return true;
         } catch (IOException) { return false; } catch (UnauthorizedAccessException) { return false; }
+    }
+    static void CheckCopyPaths(string source, string destination) {
+        if (destination.Length >= 248) throw new PathTooLongException("Installation path too long");
+        foreach (var path in Directory.EnumerateFileSystemEntries(source)) {
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked source");
+            var target = Path.Combine(destination, Path.GetFileName(path));
+            if (Directory.Exists(path)) CheckCopyPaths(path, target);
+            else if (target.Length >= 260) throw new PathTooLongException("Installation path too long");
+        }
     }
     static void CopyTree(string source, string destination) {
         if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0) throw new IOException("Linked source");
@@ -82,11 +92,14 @@ static class InstalledApp {
             if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
         } finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
-    internal static void Install(string source, string requestedRoot, bool shortcut) {
+    internal static void Install(string source, string requestedRoot, bool shortcut, Action<string> verify) {
+        if (verify == null) throw new ArgumentNullException("verify");
         var root = Root(requestedRoot);
         var sourceRoot = Root(source);
         if (root.Equals(sourceRoot, StringComparison.OrdinalIgnoreCase) || root.StartsWith(sourceRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
             || sourceRoot.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new IOException("Install source overlaps destination");
+        // Include the longer staging path before creating any installation state.
+        CheckCopyPaths(source, Path.Combine(root, "versions", ".staging-" + new String('0', 32)));
         if (!Directory.Exists(root)) {
             Directory.CreateDirectory(root);
             File.WriteAllText(Path.Combine(root, "installed.txt"), Marker(root), new UTF8Encoding(false));
@@ -99,18 +112,19 @@ static class InstalledApp {
             var versions = Path.Combine(root, "versions"); Directory.CreateDirectory(versions); Root(versions);
             // A repair gets a new immutable copy. Never move or delete an old
             // payload: it may still be running, or useful for recovery.
-            var destination = Path.Combine(versions, id + "-" + Guid.NewGuid().ToString("N"));
+            var destination = Path.Combine(versions, Guid.NewGuid().ToString("N"));
             bool reusable = false;
             try {
                 var previous = Current(root);
-                if (Path.GetFileName(previous).Split('-')[0] == id && Reusable(previous, source)) { destination = previous; reusable = true; }
+                if (Hash(Path.Combine(previous, "bundle.json")) == id && Path.GetFileName(previous).Length == 32 && Reusable(previous, source, verify)) { destination = previous; reusable = true; }
             } catch (IOException) {} catch (UnauthorizedAccessException) {}
             if (!reusable) {
                 var staging = Path.Combine(versions, ".staging-" + Guid.NewGuid().ToString("N"));
                 try {
                     CopyTree(source, staging);
-                    if (!Reusable(staging, source)) throw new IOException("Staged payload invalid");
+                    if (!Reusable(staging, source, verify)) throw new IOException("Staged payload invalid");
                     Directory.Move(staging, destination);
+                    if (!Reusable(destination, source, verify)) throw new IOException("Installed payload invalid");
                 } finally { if (Directory.Exists(staging)) Directory.Delete(staging, true); }
             }
             var bootstrap = Path.Combine(root, "Tada.exe");
@@ -125,7 +139,7 @@ static class InstalledApp {
             if (!File.Exists(bootstrap)) File.Copy(incoming, bootstrap, false);
             // Existing host keeps its payload/lease. A new launch reopens it safely.
             CreateShortcut(root, shortcut ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "Tada.lnk") : Path.Combine(root, "Tada.lnk"));
-            AtomicText(Path.Combine(root, "current.txt"), "Tada installed version 1\n" + Path.GetFileName(destination) + "\n" + Hash(Path.Combine(destination, "Tada.exe")) + "\n");
+            AtomicText(Path.Combine(root, "current.txt"), "Tada installed version 2\n" + Path.GetFileName(destination) + "\n" + Hash(Path.Combine(destination, "Tada.exe")) + "\n" + id + "\n");
         }
     }
     static void CreateShortcut(string root, string link) {

@@ -14,6 +14,7 @@ const installed = join(root, '설치 위치'), data = join(root, '대화 기록'
 const shell = join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const run = (file, args) => spawnSync(file, args, { encoding: 'utf8', timeout: 45000, windowsHide: true });
+const install = (file, directory) => { const result = run(file, ['--install-root', directory]); assert.equal(result.status, 0, result.stderr || result.error?.message); };
 const ps = code => execFileSync(shell, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from("[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); $ProgressPreference='SilentlyContinue'; " + code, 'utf16le').toString('base64')], { encoding: 'utf8', windowsHide: true }).trim();
 const q = value => "'" + value.replaceAll("'", "''") + "'";
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
@@ -22,11 +23,11 @@ const children = []; let registered = false, startupName;
 try {
   const installer = join(bundle, 'Tada.exe');
   const initialInstaller = previousInput ? join(resolve(previousInput), 'Tada.exe') : installer;
-  assert.equal(run(initialInstaller, ['--install-root', installed]).status, 0);
+  install(initialInstaller, installed);
   const bootstrap = join(installed, 'Tada.exe'), pointer = readFileSync(join(installed, 'current.txt'), 'utf8');
   assert.equal(run(bootstrap, ['--verify']).status, 0);
   const version = pointer.split('\n')[1]; let payload = join(installed, 'versions', version);
-  assert.equal(run(initialInstaller, ['--install-root', installed]).status, 0);
+  install(initialInstaller, installed);
   assert.equal(readFileSync(join(installed, 'current.txt'), 'utf8'), pointer);
   report.checks.push('native installation and repeat installation preserve one verified payload and atomic version pointer');
   const occupied = join(root, '사용 중'); mkdirSync(occupied); writeFileSync(join(occupied, 'personal.txt'), 'keep');
@@ -42,20 +43,42 @@ try {
       const before = readFileSync(join(installed, 'current.txt'), 'utf8');
       const damaged = join(installed, 'versions', before.split('\n')[1]);
       writeFileSync(join(damaged, damage), 'damaged test payload');
-      assert.equal(run(installer, ['--install-root', installed]).status, 0);
+      install(installer, installed);
       const after = readFileSync(join(installed, 'current.txt'), 'utf8'); assert.notEqual(after, before);
       assert.equal(readFileSync(join(damaged, damage), 'utf8'), 'damaged test payload');
       assert.equal(run(bootstrap, ['--verify']).status, 0);
-      assert.equal(run(installer, ['--install-root', installed]).status, 0);
+      install(installer, installed);
       assert.equal(readFileSync(join(installed, 'current.txt'), 'utf8'), after, 'healthy repair copy is reused');
     }
     writeFileSync(bootstrap, 'damaged bootstrap');
-    assert.equal(run(installer, ['--install-root', installed]).status, 0); assert.equal(run(bootstrap, ['--verify']).status, 0);
+    install(installer, installed); assert.equal(run(bootstrap, ['--verify']).status, 0);
     payload = join(installed, 'versions', readFileSync(join(installed, 'current.txt'), 'utf8').split('\n')[1]);
     report.checks.push('HTML, native runtime, payload launcher and reserved bootstrap corruption repaired; old copies preserved and healthy repaired copy reused');
   }
   const startup = action => { const result = run(bootstrap, ['--startup-' + action]); assert.equal(result.status, 0, result.stderr); return JSON.parse(result.stdout); };
   if (!previousInput) {
+    const activePointer = readFileSync(join(installed, 'current.txt'), 'utf8');
+    assert.match(activePointer, /^Tada installed version 2\n[0-9a-f]{32}\n[0-9a-f]{64}\n[0-9a-f]{64}\n$/u);
+    for (const changed of [
+      activePointer.replace('version 2', 'version 3'),
+      activePointer.replace(/[^\n]+\n$/u, '0'.repeat(64) + '\n'),
+      activePointer.replace(/^(Tada installed version 2\n[^\n]+\n)[^\n]+/u, '$1' + '0'.repeat(64)),
+      activePointer + 'unexpected\n',
+      activePointer.replace(/^(Tada installed version 2\n)[^\n]+/u, '$1../escape'),
+    ]) {
+      writeFileSync(join(installed, 'current.txt'), changed);
+      assert.equal(run(bootstrap, ['--startup-status']).status, 1);
+    }
+    writeFileSync(join(installed, 'current.txt'), activePointer);
+    assert.equal(run(bootstrap, ['--verify']).status, 0);
+    const longer = join(root, '설치 경로가 조금 긴 사용자 폴더');
+    install(installer, longer);
+    assert.equal(run(join(longer, 'Tada.exe'), ['--verify']).status, 0);
+    const tooLong = join(root, 'x'.repeat(105));
+    const rejected = run(installer, ['--install-root', tooLong]);
+    assert.equal(rejected.status, 1); assert.match(rejected.stderr, /PathTooLongException/u);
+    assert.equal(existsSync(tooLong), false);
+    report.checks.push('short v2 copy names retain both full SHA-256 bindings, reject invalid pointers, and verify final long-user-path installations; unsupported paths leave no partial install');
     const link = join(installed, 'Tada.lnk');
     const target = ps(`$s=New-Object -ComObject WScript.Shell; $l=$s.CreateShortcut(${q(link)}); $l.TargetPath`);
     assert.equal(target, bootstrap);
@@ -84,7 +107,7 @@ try {
   const url = new URL(instance.url), headers = { Authorization: 'Bearer ' + new URLSearchParams(url.hash.slice(1)).get('setup') };
   await until(async () => (await fetch(url.origin + '/state', { headers }).then(r => r.json())).stage === 'consent');
   if (previousInput) {
-    assert.equal(run(installer, ['--install-root', installed]).status, 0);
+    install(installer, installed);
     const next = readFileSync(join(installed, 'current.txt'), 'utf8'); assert.notEqual(next, pointer);
     assert.equal(existsSync(payload), true); assert.equal(run(bootstrap, ['--verify']).status, 0);
     report.checks.push('installing a new payload retains the running previous version and changes only the next-launch pointer');
@@ -98,6 +121,18 @@ try {
   };
   let firstNode = childNode(direct.pid); assert.ok(firstNode);
   const currentPayload = join(installed, 'versions', readFileSync(join(installed, 'current.txt'), 'utf8').split('\n')[1]);
+  // Exercise the same adapter used by Settings, not only native startup flags.
+  const { WindowsBackgroundApp } = await import(pathToFileURL(join(currentPayload, 'packages/engine/src/windows-background-app.mjs')).href);
+  const fixtureLocal = join(root, 'fixture-local-appdata');
+  const settingsStartup = new WindowsBackgroundApp(contactOptions(['--data', join(fixtureLocal, 'Tada/conversation')]), {
+    node: join(currentPayload, 'node/node.exe'), platform: 'win32', env: { LOCALAPPDATA: fixtureLocal, TADA_WINDOWS_SUPERVISED: '1' },
+  });
+  assert.equal((await settingsStartup.status(true)).available, true);
+  registered = true;
+  assert.equal((await settingsStartup.configure(true, 'same_assistant_background_v1', () => {})).enabled, true);
+  assert.equal((await settingsStartup.status(true)).enabled, true);
+  assert.equal((await settingsStartup.configure(false, null, () => {})).enabled, false); registered = false;
+  report.checks.push('Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration');
   const duplicate = spawn(join(currentPayload, 'Tada.exe'), ['--background', '--data', data], { stdio: 'ignore', windowsHide: true }); children.push(duplicate);
   await until(() => duplicate.exitCode !== null); assert.equal(duplicate.exitCode, 0);
   assert.equal(alive(firstNode), true); assert.equal((await acquireAppInstance(options)).url, instance.url);
@@ -128,6 +163,8 @@ try {
   report.checks.push('nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination');
   const final = await acquireAppInstance(options); assert.equal(final.existing, false); final.close();
   report.passed = true;
+} catch (error) {
+  report.passed = false; report.error = error.message; throw error;
 } finally {
   for (const child of children) if (child.exitCode === null && !child.killed) child.kill();
   if (registered && startupName) {

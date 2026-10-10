@@ -27,7 +27,7 @@ static class InstallPrompt {
                 busy = true; install.Enabled = once.Enabled = false; message.Text = "Tada를 준비하고 있어요. 잠시만 기다려 주세요.\n기존 대화와 계정 연결은 그대로 유지합니다.";
                 Task.Factory.StartNew(() => {
                     try {
-                        InstalledApp.Install(source, InstalledApp.DefaultRoot, true);
+                        InstalledApp.Install(source, InstalledApp.DefaultRoot, true, Launcher.Verify);
                         Process.Start(new ProcessStartInfo(Path.Combine(InstalledApp.DefaultRoot, "Tada.exe")) { UseShellExecute = true });
                         form.BeginInvoke(new Action(() => { busy = false; form.Close(); }));
                     } catch {

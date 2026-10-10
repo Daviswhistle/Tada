@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { join, resolve } from 'node:path';
 import { WindowsBackgroundApp } from '../src/windows-background-app.mjs';
 import { contactOptions } from '../src/contact-cli.mjs';
-const local = '/fixture/local', data = local + '/Tada/conversation';
+const local = resolve('/fixture/local'), data = join(local, 'Tada/conversation');
 const options = () => contactOptions(['--data', data]);
-const config = run => ({ node: local + '/Tada/app/versions/' + 'a'.repeat(64) + '/node/node.exe', platform: 'win32',
+const config = run => ({ node: join(local, 'Tada/app/versions', 'a'.repeat(64), 'node/node.exe'), platform: 'win32',
   env: { LOCALAPPDATA: local, TADA_WINDOWS_SUPERVISED: '1' }, run });
 test('installed startup registers only the existing route and disables without stopping or handing off', async () => {
   const calls = []; let registered = false, checked = 0, prepared = 0;
   const app = new WindowsBackgroundApp(options(), config(async (file, args) => {
-    assert.equal(file, local + '/Tada/app/Tada.exe'); calls.push(args[0]);
+    assert.equal(file, join(local, 'Tada/app/Tada.exe')); calls.push(args[0]);
     if (args[0] === '--startup-enable') registered = true;
     if (args[0] === '--startup-disable') registered = false;
     return JSON.stringify({ registered });
@@ -50,7 +51,32 @@ test('a slow Windows startup query does not block conversation state reads', asy
 });
 
 test('an installed repair generation keeps the same fixed startup entry', async () => {
-  const fixture = config(async (file) => { assert.equal(file, local + '/Tada/app/Tada.exe'); return '{"registered":true}'; });
-  fixture.node = fixture.node.replace('/' + 'a'.repeat(64) + '/', '/' + 'a'.repeat(64) + '-' + 'b'.repeat(32) + '/');
+  const fixture = config(async (file) => { assert.equal(file, join(local, 'Tada/app/Tada.exe')); return '{"registered":true}'; });
+  fixture.node = fixture.node.replace('a'.repeat(64), 'a'.repeat(64) + '-' + 'b'.repeat(32));
   assert.equal((await new WindowsBackgroundApp(options(), fixture).status(true)).enabled, true);
+});
+
+for (const name of ['b'.repeat(32), 'a'.repeat(64), 'a'.repeat(64) + '-' + 'b'.repeat(32)]) test(`installed ${name.length}-character version keeps on-screen startup management`, async () => {
+  const calls = []; let registered = true;
+  const fixture = config(async (file, args) => {
+    assert.equal(file, join(local, 'Tada/app/Tada.exe')); calls.push(args[0]);
+    if (args[0] === '--startup-enable') registered = true;
+    if (args[0] === '--startup-disable') registered = false;
+    return JSON.stringify({ registered });
+  });
+  fixture.node = fixture.node.replace('a'.repeat(64), name);
+  const app = new WindowsBackgroundApp(options(), fixture);
+  assert.equal((await app.status(true)).available, true);
+  assert.equal((await app.configure(false, null, () => {})).enabled, false);
+  assert.equal((await app.configure(true, 'same_assistant_background_v1', () => {})).enabled, true);
+  assert.ok(calls.includes('--startup-disable')); assert.ok(calls.includes('--startup-enable'));
+});
+test('unsupported version names cannot reach startup registration', async () => {
+  for (const name of ['a'.repeat(31), 'a'.repeat(33), 'a'.repeat(32) + '-extra', 'A'.repeat(32), 'release']) {
+    const fixture = config(async () => { assert.fail('invalid layout dispatched'); });
+    fixture.node = fixture.node.replace('a'.repeat(64), name);
+    const app = new WindowsBackgroundApp(options(), fixture);
+    assert.equal((await app.status(true)).available, false);
+    await assert.rejects(app.configure(true, 'same_assistant_background_v1', () => {}), /CONTACT_BACKGROUND_UNAVAILABLE/u);
+  }
 });

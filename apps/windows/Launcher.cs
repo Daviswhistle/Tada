@@ -79,13 +79,13 @@ static class Launcher {
             Verify(root);
             if (verify) return 0;
             if (installOnly || args.Length == 1 && args[0] == "--install") {
-                InstalledApp.Install(root, installOnly ? args[1] : InstalledApp.DefaultRoot, !installOnly);
+                InstalledApp.Install(root, installOnly ? args[1] : InstalledApp.DefaultRoot, !installOnly, Verify);
                 if (!installOnly) Process.Start(new ProcessStartInfo(Path.Combine(InstalledApp.DefaultRoot, "Tada.exe")) { UseShellExecute = true });
                 return 0;
             }
             if (args.Length == 0) {
                 var versions = Path.GetDirectoryName(root);
-                bool installed = Path.GetFileName(versions) == "versions" && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(root), "\\A[0-9a-f]{64}(?:-[0-9a-f]{32})?\\z");
+                bool installed = Path.GetFileName(versions) == "versions" && System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(root), "\\A(?:[0-9a-f]{32}|[0-9a-f]{64}(?:-[0-9a-f]{32})?)\\z");
                 if (installed) InstalledApp.CheckRoot(Path.GetDirectoryName(versions));
                 else if (InstallPrompt.Show(root)) return 0;
             }
@@ -106,7 +106,8 @@ static class Launcher {
                 if (host.ExitCode != 0) throw new IOException("Application failed");
                 return 0;
             }
-        } catch {
+        } catch (Exception error) {
+            if (installOnly) Console.Error.WriteLine("Tada install failed: " + error.GetType().Name + " (" + error.HResult.ToString("X8") + ")");
             if (!verify && !installOnly && !background) MessageBox.Show("Tada를 열지 못했어요.\n\n압축 파일을 새 폴더에 모두 풀고 Tada.exe를 다시 열어 주세요. 브라우저가 열리지 않으면 Windows의 기본 브라우저 설정도 확인해 주세요.\n\n저장된 대화와 계정 연결은 지우지 않습니다.", "Tada", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }

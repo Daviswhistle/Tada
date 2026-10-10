@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-10",
+  "base_commit": "13c74c0a9bb766f4c5b1e7c9dc9d5fda9d577009",
+  "scope": "Native Windows installation repair and v1-to-v2 compatibility, not full product release acceptance",
+  "artifact": {
+    "files": 1019,
+    "zip_bytes": 37386153,
+    "zip_sha256": "52ecdbe74eace39dc1c3d4961dac3266331187e17520d137aa8e729a89566e7c",
+    "manifest_sha256": "ed7866191360f96bb6c8c8c15570f9a2ac6d767588b31b8f0c17837d70aff5f7",
+    "launcher_sha256": "a680b59c10e9599fc4ae0b31f5e48cded0c0f17bb942d0da939371277c55af8a",
+    "all_archive_entries_exact": true
+  },
+  "native_windows": {
+    "installed": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "HTML, native runtime, payload launcher and reserved bootstrap corruption repaired; old copies preserved and healthy repaired copy reused",
+        "short v2 copy names retain both full SHA-256 bindings, reject invalid pointers, and verify final long-user-path installations; unsupported paths leave no partial install",
+        "the same shortcut creator targets the stable bootstrap in an isolated shortcut location",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration",
+        "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+        "actual foreground setup recovered its crash into a visible replacement onboarding screen",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "upgrade_from_bundle17_v1": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "installing a new payload retains the running previous version and changes only the next-launch pointer",
+        "Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration",
+        "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "installation_failure_boundaries": {
+      "passed": true,
+      "checks": 34
+    },
+    "launcher_recovery": {
+      "checks": [
+        "first exit=1 attempts=1",
+        "started exit=0 attempts=2",
+        "onboarding exit=0 attempts=2",
+        "normal exit=0 attempts=1",
+        "background exit=1 attempts=4"
+      ],
+      "passed": true
+    },
+    "settings_adapter_tests": {
+      "linux_passed": 9,
+      "windows_passed": 9,
+      "skipped": 0,
+      "scope": "All supported version-name layouts, on-screen enable/disable, malformed layouts and authority checks; native package tests separately exercise the real bootstrap and registry"
+    },
+    "portable": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "embedded manifest and bundled runtime verified",
+        "changed, missing, additional files, manifest and junction rejected",
+        "bundled native read broker reads scoped fixture and rejects traversal without developer runtimes",
+        "fresh Windows DPAPI storage reaches subscription consent without developer tools or inherited Node options",
+        "native Chrome shared textbox verified",
+        "native Edge shared textbox verified",
+        "same and relocated bundles reopen one host and preserve protected storage key",
+        "restart from relocated bundle preserves protected key and reacquires ownership"
+      ],
+      "passed": true
+    }
+  },
+  "validation": {
+    "bundle_build": "Passed with native csc warnings as errors and embedded-manifest verification",
+    "archive": "Every ZIP entry and manifest byte verified",
+    "generate_check": "Passed",
+    "typecheck": "Passed",
+    "focused_bundle_tests": 2,
+    "unchanged_runtime": "C# source is unchanged since bundle18 safety and launcher recovery checks. The WindowsBackgroundApp installation-name guard changed; full npm check passed with 1470 tests and zero skipped, including compiled Rust broker integration. Final test-only path portability edits passed on both Linux and Windows. Rust, dependency and shared contract source remain unchanged; preceding required native/Rust checks are retained.",
+    "npm_run_check": {
+      "passed": 1470,
+      "failed": 0,
+      "skipped": 0,
+      "log": "tada-install-repair-full2.log"
+    },
+    "source_parity": "Exact file sets and bytes match the checkout for all 79 runtime/schema/UI source files in the bundle; compiled Windows source matches the staged build input."
+  },
+  "retained_failures": [
+    "Bundle17 installed acceptance exited 1 repairing the damaged fixed bootstrap when three native acceptance processes ran concurrently. The old installer suppressed its exception. Two isolated diagnostic repetitions of all four corruption repairs then passed; the original cause remains unconfirmed, not attributed to timeout as fact.",
+    "A longer isolated installation reproduced success from installation followed by failed launch: final version paths exceeded legacy .NET path lengths although shorter staging paths had verified. All file hashes were intact. Bundle18 uses a versioned short copy ID plus separate full SHA-256 bindings, preflights path lengths and verifies final paths before selecting them.",
+    "Trusted in-process verification replaces the 30-second child-verifier dependency; changed/unknown bytes remain rejected. No Windows long-path settings were changed.",
+    "Independent CRA found that WindowsBackgroundApp still accepted only the old 64-character version names, hiding Settings startup controls for v2 installs. The guard now supports all three layouts. Positive/negative tests passed on Linux and Windows; final native install and v1-to-v2 upgrade checks use the actual Settings adapter to enable, inspect and disable the unique test registration."
+  ],
+  "limitations": [
+    "Current Windows 11 x64 host, not a clean independent machine or actual Windows-login run",
+    "No owner installation, record migration, account/model request, external message or publishing",
+    "No signing, physical phone receipt, or overall release acceptance is claimed"
+  ],
+  "previous_artifact_before_review_amendment": {
+    "files": 1019,
+    "zip_bytes": 37386155,
+    "zip_sha256": "4607a20ee5c3046cdba69e8597af2149091466d047c0939744c5a928d7eba752",
+    "manifest_sha256": "467e53c41e963993d7fe71488b7805746ecf64026f480a05ba1ee8e689cf4fbf",
+    "launcher_sha256": "3af000d4fc40ced568cb3174409250a5fb728ab5394695294071e4a58b5c460c",
+    "all_archive_entries_exact": true
+  }
+}
