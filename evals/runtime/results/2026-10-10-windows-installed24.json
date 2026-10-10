@@ -1,0 +1,18 @@
+{
+  "platform": "win32",
+  "node": "v24.21.0",
+  "checks": [
+    "native installation and repeat installation preserve one verified payload and atomic version pointer",
+    "occupied, linked and overlapping installation paths rejected without altering existing files",
+    "HTML, native runtime, payload launcher and reserved bootstrap corruption repaired; old copies preserved and healthy repaired copy reused",
+    "short v2 copy names retain both full SHA-256 bindings, reject invalid pointers, and verify final long-user-path installations; unsupported paths leave no partial install",
+    "the same shortcut creator targets the stable bootstrap in an isolated shortcut location",
+    "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+    "Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration",
+    "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+    "actual foreground setup recovered its crash into a visible replacement onboarding screen",
+    "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+    "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+  ],
+  "passed": true
+}
