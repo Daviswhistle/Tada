@@ -191,3 +191,16 @@ test('a rejected erase keeps its specific recovery explanation visible through u
  c.get('privacy-confirmed').checked=true;await c.get('privacy-confirm').onclick();await c.poll();assert.equal(c.get('privacy-feedback').hidden,false);assert.match(c.get('privacy-feedback').textContent,/알 수 없는 파일/u);assert.equal(c.get('privacy-close').hidden,false);assert.equal(c.navigations.length,0);
  c.render({stage:'erase_pending',revision:'completed-after-error',erase_phase:'done'});assert.equal(c.get('privacy-resume').hidden,true);assert.equal(c.get('privacy-fresh').hidden,false);
 });
+
+test('optional update is an explicit choice and later returns to the continuing conversation',async()=>{
+ const c=await client({hash:'#setup='+token+'&upgrade=1',state:{stage:'ready',revision:'a',upgrade_available:true,url:'http://127.0.0.1:9001/'}});
+ assert.equal(c.navigations.length,0);assert.equal(c.get('update-panel').hidden,false);assert.equal(c.get('ready').hidden,true);
+ c.get('update-later').onclick();assert.deepEqual(c.navigations,['http://127.0.0.1:9001/']);assert.equal(c.calls.filter(x=>x.path==='/action').length,0);
+ const normal=await client({hash:'#setup='+token,state:{stage:'ready',revision:'a',upgrade_available:true,url:'http://127.0.0.1:9001/'}});
+ assert.equal(normal.get('update-panel').hidden,true);assert.deepEqual(normal.navigations,['http://127.0.0.1:9001/']);
+});
+test('optional update progress does not redirect until a new ready runtime finishes it',async()=>{
+ const c=await client({hash:'#setup='+token+'&upgrade=1',state:{stage:'ready',revision:'a',upgrade_available:true,url:'http://127.0.0.1:9001/'}});
+ c.render({stage:'updating',revision:'b',upgrade_available:false});assert.equal(c.get('update-panel').hidden,true);assert.equal(c.navigations.length,0);
+ c.render({stage:'ready',revision:'c',upgrade_available:false,url:'http://127.0.0.1:9002/'});assert.deepEqual(c.navigations,['http://127.0.0.1:9002/']);
+});

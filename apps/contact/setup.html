@@ -7,6 +7,10 @@
 <div id="model" hidden><p id="model-default" class="model-default"></p><details class="quiet-details"><summary>다른 모델 선택</summary><label for="models" class="sr-only">계정에서 사용할 수 있는 모델</label><select id="models"></select></details><button id="model-next" class="primary" type="button">대화 시작하기 →</button><p class="setup-note">선택은 저장됩니다. 다음부터는 바로 대화를 이어가세요.</p></div>
 <div id="error" hidden><button id="restore-abandon" class="text-button" type="button" hidden>복원 취소하고 기존 대화로 돌아가기</button><button id="retry" class="primary" type="button">다시 열기</button><button id="upgrade" class="primary" type="button" hidden>기록 백업하고 업데이트</button></div>
 <div id="ready" hidden><a id="continue" class="primary">대화로 가기 →</a></div>
+<section id="update-panel" class="restore-panel" hidden aria-labelledby="update-title">
+<h2 id="update-title">대화와 연결을 유지하며 업데이트</h2><p>진행 중인 일을 마친 뒤 기존 기록의 백업을 이 컴퓨터에 보관하고, 메일 초안과 발송 결과를 저장할 수 있도록 준비합니다. 업데이트 중에는 잠시 연결이 끊깁니다.</p><p>업데이트만으로 메일을 보내거나 Google 발송 권한이 켜지지는 않습니다.</p>
+<button id="update-confirm" class="primary" type="button">기록 백업하고 업데이트</button><button id="update-later" class="text-button" type="button">지금은 대화 계속하기</button>
+</section>
 <button id="restore-cancel" class="text-button" type="button" hidden>복원 취소하고 기존 대화로 돌아가기</button>
 <button id="restore-open" class="text-button" type="button" hidden>백업에서 기록 복원</button>
 <section id="restore-panel" class="restore-panel" hidden aria-labelledby="restore-title">

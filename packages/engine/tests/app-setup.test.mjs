@@ -284,3 +284,33 @@ test('uncertain runtime cleanup keeps erase blocked until a clean app restart',a
  const c=await client(async ui=>{ui.ready('http://127.0.0.1:9001/');await ui.wait();throw Error('CONTACT_APP_CLOSE_FAILED');},{privacy,prepareErase:async()=>{prepared++;}});
  try{await c.action(await c.until('ready'),'erase',{id:randomUUID(),consent:ERASE_CONSENT});const state=await c.until('erase_pending');assert.equal(state.retryable,false);assert.equal(prepared,0);assert.equal((await c.action(state,'resume_erase')).status,409);assert.equal(privacy.status().phase,'requested');}finally{await c.host.close();rmSync(root,{recursive:true,force:true});}
 });
+
+test('optional record update waits for work and runtime cleanup; stale and duplicate actions cannot start another migration',async()=>{
+ let runs=0,prepares=0,releaseWork,releaseCleanup,cleaned=false;
+ const work=new Promise(r=>releaseWork=r),cleanup=new Promise(r=>releaseCleanup=r);
+ const c=await client(async ui=>{
+  runs++;if(runs===1){const url=ui.recordUpdate(async()=>{prepares++;await work;});assert.match(url(),/#upgrade=1$/u);ui.ready('http://127.0.0.1:8787/#pair=old');await ui.wait();await cleanup;cleaned=true;}
+  else{assert.equal(ui.upgrade,true);assert.equal(cleaned,true);ui.ready('http://127.0.0.1:8787/#pair=new');await ui.wait();}
+ });
+ try{
+  const ready=await c.until('ready');assert.equal(ready.upgrade_available,true);
+  assert.equal((await c.action(ready,'upgrade',false)).status,409);assert.equal(prepares,0);
+  assert.equal((await c.action(ready,'upgrade',true)).status,202);
+  const updating=await c.until('updating');assert.equal(updating.upgrade_available,false);assert.equal(runs,1);
+  assert.equal((await c.action(ready,'upgrade',true)).status,409);
+  assert.equal((await c.action(updating,'upgrade',true)).status,409);
+  releaseWork();await turn();assert.equal(runs,1);releaseCleanup();
+  const next=await c.until('ready');assert.equal(next.upgrade_available,false);assert.equal(runs,2);assert.equal(prepares,1);
+  assert.equal((await c.action(next,'upgrade',true)).status,409);
+ }finally{releaseWork();releaseCleanup();await c.host.close();}
+});
+test('runtime cleanup failure blocks optional record migration and retry',async()=>{
+ let runs=0;
+ const c=await client(async ui=>{runs++;ui.recordUpdate(async()=>{});ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();throw Error('CONTACT_APP_CLOSE_FAILED');});
+ try{const ready=await c.until('ready');assert.equal((await c.action(ready,'upgrade',true)).status,202);const error=await c.until('error');assert.equal(error.retryable,false);assert.equal(runs,1);assert.equal((await c.action(error,'retry')).status,409);}finally{await c.host.close();}
+});
+test('closing while an optional update drains prevents a later restart',async()=>{
+ let runs=0,release;const work=new Promise(r=>release=r);
+ const c=await client(async ui=>{runs++;ui.recordUpdate(()=>work);ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();});
+ const ready=await c.until('ready');await c.action(ready,'upgrade',true);const closing=c.host.close();release();await closing;assert.equal(runs,1);
+});

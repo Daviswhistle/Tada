@@ -139,7 +139,8 @@ const errors = {
   CONTACT_MAIL_CONSENT_REQUIRED: '받는 사람과 내용을 확인한 뒤 이 내용으로 보내기를 눌러 주세요.',
   CONTACT_MAIL_ACCOUNT_CHANGED: '초안을 만든 Google 계정과 현재 계정이 달라요. 초안의 계정을 다시 연결해 주세요.',
   CONTACT_MAIL_REPLY_READ_REQUIRED: '답장할 원본 메일을 이번 대화에서 먼저 읽어야 해요. 원본을 확인해 답장 초안을 다시 요청해 주세요.',
-  CONTACT_MAIL_UPGRADE_REQUIRED: 'Tada를 다시 열고 기록 백업·업데이트를 마치면 메일 초안을 이어 쓸 수 있어요.',
+  CONTACT_MAIL_UPGRADE_REQUIRED: '설정의 내 기록에서 기록 업데이트를 선택하면 메일 초안·발송을 준비할 수 있어요. 대화와 메일 읽기는 계속 사용할 수 있습니다.',
+  CONTACT_APP_UPDATE_UNAVAILABLE: '이 실행 방식에서는 기록 업데이트 화면을 열 수 없어요. Tada 시작 화면에서 다시 열어 주세요.',
   CONTACT_MAIL_NOT_FOUND: '이 메일 기록을 찾지 못했어요. 대화에서 다시 확인해 주세요.',
   CONTACT_GOOGLE_NOT_CONFIGURED: '이 Tada에서는 아직 Google 연결을 준비하지 못했어요. 계정이나 연결 키를 직접 입력할 필요는 없습니다.',
   CONTACT_GOOGLE_CONSENT_REQUIRED: 'Google에서 읽을 항목과 선택한 모델로의 전송 안내를 확인해 주세요.',
@@ -188,6 +189,11 @@ function clearBackup() {
   $('backup-status').textContent = '';
 }
 $('backup-code-saved').onclick = () => { backupCodePending = false; $('backup-code-saved').hidden = true; $('backup-create').disabled = false; };
+$('records-update').onclick=async()=>{
+  $('records-update').disabled=true;
+  try{const result=await api('/api/records/update',{});if(!/^http:\/\/127\.0\.0\.1:[0-9]+\/#upgrade=1$/u.test(result.url))throw Error('업데이트 화면을 열지 못했어요. Tada를 다시 열어 주세요.');location.assign(result.url);}
+  catch(error){notice(error.message);}finally{$('records-update').disabled=false;}
+};
 $('records-privacy').onclick = async () => {
   $('records-privacy').disabled=true;
   try{const result=await api('/api/records/privacy',{});if(!/^http:\/\/127\.0\.0\.1:[0-9]+\/#privacy=1$/u.test(result.url))throw Error('삭제 화면을 열지 못했어요. Tada를 다시 열어 주세요.');location.assign(result.url);}
@@ -439,6 +445,7 @@ async function refresh(older = false, quiet = false) {
   try {
     const result = await api(`/api/state${older && nextBefore ? `?before=${nextBefore}` : ''}`, undefined, { signal: controller.signal, handleAuthentication: false });
     if (generation !== requestGeneration) return;
+    $('records-update').hidden = result.record_update_available !== true;
     $('records-restore').hidden = result.record_restore_available !== true;
     $('records-privacy').hidden = result.record_erase_available !== true;
     if (documentEditing !== (result.document_editing === true)) { documentEditing = result.document_editing === true; rendered = ''; }
@@ -519,6 +526,7 @@ googleSection.append(element('h2', 'Gmail과 일정 연결'));
 const googleConsent = element('p', '최근 메일과 다가오는 일정을 읽고, 필요한 발췌를 선택한 Tada 모델로 전송해요. 먼저 챙겨보기를 따로 켜면 설정한 주기에 맞춰 같은 범위를 자동으로 살펴봅니다.', 'muted');
 googleConsent.id = 'google-consent'; googleSection.append(googleConsent);
 const googleStatus = element('p', '', 'muted'); googleStatus.id = 'google-status'; googleStatus.setAttribute('role', 'status'); googleStatus.tabIndex = -1; googleSection.append(googleStatus);
+const googleUpgrade=element('p','메일 읽기와 먼저 챙겨보기는 계속 사용할 수 있어요. 메일 초안·발송을 사용하려면 내 기록에서 기록 업데이트를 선택하세요.','muted');googleUpgrade.id='google-mail-upgrade';googleUpgrade.hidden=true;googleSection.append(googleUpgrade);
 const googleConnect = element('button', '내용을 확인하고 Google 연결'); googleConnect.id = 'google-connect'; googleConnect.type = 'button'; googleSection.append(googleConnect);
 const googleDisconnect = element('button', 'Google 연결 해제'); googleDisconnect.id = 'google-disconnect'; googleDisconnect.type = 'button'; googleDisconnect.hidden = true; googleSection.append(googleDisconnect);
 const googleDetails = document.createElement('details'); googleDetails.id = 'google-scope-details';
@@ -656,6 +664,7 @@ for (const [id, text] of [['suggest-plan', '새 프로젝트를 시작할 때 �
 let proactiveEnabled = false; let proactiveMode = 'daily';
 function renderGoogle(state) {
   mailGoogle = state; updateMailControls();
+  googleUpgrade.hidden=state?.mail?.ready!==false;
   googleSection.hidden = state?.available !== true;
   if (!state?.available) return;
   mailDisable.hidden = state.mail?.enabled !== true && state.mail?.connecting !== true;

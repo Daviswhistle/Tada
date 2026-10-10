@@ -89,10 +89,10 @@ const eraseError=error=>error?.message==='CONTACT_BACKGROUND_UNAVAILABLE'?'자�
 export async function serveSetup({ run, autoStart = true, autoRetry = false, retryDelays = [5000, 30000, 120000, 300000, 900000], records = null, privacy = null, prepareErase = async () => {} }) {
   if (typeof autoRetry !== 'boolean' || !Array.isArray(retryDelays) || !retryDelays.length || retryDelays.some(ms => !Number.isSafeInteger(ms) || ms < 1)) throw Error('CONTACT_SETUP_OPTIONS_INVALID');
   const secret = randomBytes(32).toString('base64url');
-  let erasePhase=null, eraseRequest=null, freshIntent=false;
+  let erasePhase=null, eraseRequest=null, freshIntent=false, upgradeRuntime=null;
   let runtimeView, restoreError=null, restoreRequest=null, origin, state = { stage: 'preparing', revision: randomUUID() }, task, controller, answer, entry, closed = false, retryTimer, attempts = 0, transitioning = false, recoveryTask = null, restoringRun = false, restoreAccount = null, cleanupFailed = false;
   const canCancelRestore = () => { try { return records?.canCancel() === true; } catch { return false; } };
-  const publish = (stage, fields = {}) => { state = { stage, revision: randomUUID(), restore_available: records?.available === true && !erasePhase && !freshIntent, erase_available: privacy?.available === true && !erasePhase, erase_phase:erasePhase, erase_request:eraseRequest, restoring: restoringRun, restore_account: restoreAccount, ...fields, ...(restoreError?{restore_error:restoreError}:{}), ...(restoreRequest?{restore_request:restoreRequest}:{}) }; };
+  const publish = (stage, fields = {}) => { state = { stage, revision: randomUUID(), upgrade_available: !!upgradeRuntime && !transitioning && !erasePhase, restore_available: records?.available === true && !erasePhase && !freshIntent, erase_available: privacy?.available === true && !erasePhase, erase_phase:erasePhase, erase_request:eraseRequest, restoring: restoringRun, restore_account: restoreAccount, ...fields, ...(restoreError?{restore_error:restoreError}:{}), ...(restoreRequest?{restore_request:restoreRequest}:{}) }; };
   const publishRuntime = (stage, fields = {}) => { runtimeView={stage,fields};if(!closed&&!transitioning)publish(stage,fields); };
   const start = (reauthorize = false, upgrade = false) => {
     if (task || closed || transitioning || cleanupFailed) return false;
@@ -105,7 +105,7 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
     const signal = controller.signal;
     signal.addEventListener('abort',()=>{entry=null;if(runtimeView?.stage==='ready')publishRuntime('preparing',{message:'진행 중인 작업을 정리하고 있어요.'});},{once:true});
     let retry = false, interactive = false;
-    entry = null; restoringRun = false; restoreAccount = null; publishRuntime('preparing');
+    entry = null; upgradeRuntime = null; restoringRun = false; restoreAccount = null; publishRuntime('preparing');
     const ask = (stage, fields = {}) => new Promise((resolve, reject) => {
       signal.throwIfAborted();
       interactive = true;
@@ -116,6 +116,11 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
     });
     const ui = {
       signal, reauthorize, upgrade,
+      recordUpdate: prepare => {
+        signal.throwIfAborted();
+        if(typeof prepare!=='function')throw Error('CONTACT_SETUP_OPTIONS_INVALID');
+        upgradeRuntime=prepare;return ()=>`${origin}/#upgrade=1`;
+      },
       recordRestore: (enabled, account = null) => { restoringRun=enabled;restoreAccount=account;publishRuntime(runtimeView.stage,runtimeView.fields); },
       consent: () => ask('consent'),
       login: url => { signal.throwIfAborted(); interactive = true; publishRuntime('login', { url }); },
@@ -228,6 +233,23 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
           finally {recoveryTask=null;}
         })();
         return send(res,202,{});
+      }
+      if(body.action==='upgrade' && body.value===true && state.stage==='ready' && upgradeRuntime && !transitioning && !recoveryTask && !cleanupFailed){
+        const prepare=upgradeRuntime;transitioning=true;clearTimeout(retryTimer);
+        publish('updating',{message:'진행 중인 일을 마친 뒤 원본을 백업하고 업데이트합니다.'});
+        recoveryTask=(async()=>{
+          try{
+            await prepare();controller.abort(new DOMException('Updating records','AbortError'));await task;
+            if(cleanupFailed)throw Error('CONTACT_APP_CLOSE_FAILED');
+            transitioning=false;if(!closed)start(false,true);
+          }catch(error){
+            if(controller?.signal.aborted)await task;transitioning=false;
+            if(!closed){
+              if(task&&!controller.signal.aborted&&!cleanupFailed)publish(runtimeView.stage,{...runtimeView.fields,message:setupError(error)});
+              else publish('error',{message:setupError(error),retryable:!task&&!cleanupFailed});
+            }
+          }finally{recoveryTask=null;}
+        })();return send(res,202,{});
       }
       if (body.action === 'retry' && body.value === null && state.stage === 'error' && state.retryable !== false && !task) start(state.reauthorize === true);
       else if (body.action === 'upgrade' && body.value === true && state.stage === 'error' && state.upgrade === true && !task) start(false, true);

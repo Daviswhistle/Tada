@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const storageKey = 'tada-setup';
 const validToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(value);
 const entryOptions = new URLSearchParams(location.hash.slice(1));
+let updateView=entryOptions.get('upgrade')==='1' && entryOptions.get('privacy')!=='1' && entryOptions.get('recover')!=='1';
 let privacyView=entryOptions.get('privacy')==='1',eraseSubmitted=null,freshSubmitted=false;
 let restoreView = entryOptions.get('recover') === '1', restoreSubmitted = false, sawRestoring = false, restorePreview = null, restoreController = null, restoreGeneration = 0;
 let token = entryOptions.get('setup');
@@ -25,7 +26,7 @@ function checkAuthorization(response){
   stopped=true;clearRestore();restoreView=false;
   for(const name of ['localStorage','sessionStorage']){try{window[name].removeItem(storageKey);}catch{}}
   const message='이 시작 화면의 연결이 만료됐어요. Tada를 다시 실행하면 저장된 계정으로 이어갈 수 있어요.';
-  privacyView=false;eraseSubmitted=null;freshSubmitted=false;
+  privacyView=false;updateView=false;eraseSubmitted=null;freshSubmitted=false;
   render({stage:'error',revision:'unauthorized',message,retryable:false});throw Object.assign(Error(message),{rejected:true});
 }
 async function request(path, body, accepted = () => {}) {
@@ -41,6 +42,7 @@ const copy = {
   login: ['계정 연결', '로그인을 기다리고 있어요.', '새 창에서 ChatGPT에 로그인해 주세요.'],
   model: ['연결됐어요', '이제 이야기해 볼까요?', '계정에서 사용할 수 있는 모델을 가져왔어요.'],
   ready: ['준비됐어요', '대화로 이어갈게요.', '다음부터도 같은 대화에서 만나요.'],
+  updating: ['기록 업데이트', '기록을 이어 쓸 준비를 하고 있어요.', '진행 중인 일을 마친 뒤 원본을 백업하고 업데이트합니다.'],
   restoring: ['기록 복원', '선택한 기록을 준비하고 있어요.', '진행 중인 작업을 정리하고 있습니다.'],
   erasing: ['기록 삭제', '기록과 연결을 삭제하고 있어요.', '진행 중인 일을 종료한 뒤 이 Tada의 기록을 지웁니다.'],
   erase_pending: ['기록 삭제', '삭제를 이어가 주세요.', '이전 비서의 실행은 멈춰 있습니다. 남은 삭제를 완료해 주세요.'],
@@ -78,15 +80,23 @@ function render(state) {
   $('restore-panel').hidden=!panel;
   $('setup-main').className=panel || state.restoring || state.stage==='restoring' ? 'setup-main setup-recovery' : 'setup-main';
   if(panel){$('step').textContent='내 기록';$('title').textContent='백업에서 이어가기';$('description').textContent='먼저 백업 내용을 확인한 뒤 복원을 선택하세요.';}
-  $('restore-open').hidden=state.restore_available!==true || panel || state.restoring || state.stage==='restoring';
+  $('restore-open').hidden=state.stage==='updating' || state.restore_available!==true || panel || state.restoring || state.stage==='restoring';
   if(panel && state.stage==='error' && restoreSubmitted && state.restore_request===restoreSubmitted){restoreSubmitted=false;restorePreview=null;$('restore-summary').hidden=true;$('restore-feedback').textContent=state.message ?? '복원을 시작하지 못했어요. 백업 내용을 다시 확인해 주세요.';}
   if(panel) for(const id of ['consent','login','model','ready','error'])$(id).hidden=true;
-  if (state.stage === 'ready') { $('continue').href = state.url; if(!restoreView&&!privacyView)location.replace(state.url); }
+  if (state.stage === 'ready') { $('continue').href = state.url; if(state.upgrade_available!==true)updateView=false; if(!restoreView&&!privacyView&&!updateView)location.replace(state.url); }
 
+  const updatePanel=updateView && state.stage==='ready' && state.upgrade_available===true;
+  $('update-panel').hidden=!updatePanel;
+  if(updatePanel){
+    for(const id of ['consent','login','model','ready','error','restore-open','privacy-open'])$(id).hidden=true;
+    $('step').textContent='기록 업데이트';$('title').textContent='메일 초안도 이어서 보관하세요.';
+    $('description').textContent='지금 대화와 메일 읽기는 그대로 사용할 수 있어요. 필요할 때 업데이트하세요.';
+    $('setup-main').className='setup-main setup-recovery';
+  }
   const deleting=!!state.erase_phase || ['erasing','erase_pending','erased'].includes(state.stage);
   const privacyPanel=privacyView && state.erase_available===true && !deleting;
   $('privacy-panel').hidden=!privacyPanel;$('privacy-progress').hidden=!deleting;
-  $('privacy-open').hidden=state.erase_available!==true || privacyPanel || restoreView || state.restoring || state.stage==='restoring';
+  $('privacy-open').hidden=state.stage==='updating' || updatePanel || state.erase_available!==true || privacyPanel || restoreView || state.restoring || state.stage==='restoring';
   $('privacy-close').hidden=!!eraseSubmitted;
   $('privacy-confirm').disabled=$('privacy-confirmed').checked!==true;
   $('privacy-resume').hidden=state.stage!=='erase_pending' || state.retryable===false || ['done','fresh'].includes(state.erase_phase);
@@ -118,7 +128,7 @@ async function act(action, value = null, onFailure = () => {}) {
 }
 function clearRestore(){$('restore-preview').disabled=false;restoreGeneration++;restoreController?.abort();restoreController=null;restorePreview=null;$('restore-file').value='';$('restore-code').value='';$('restore-summary').hidden=true;$('restore-feedback').textContent='';}
 function rerender(){if(current){const state=current;current=null;render(state);}}
-$('restore-open').onclick=()=>{restoreView=true;rerender();};
+$('restore-open').onclick=()=>{updateView=false;restoreView=true;rerender();};
 $('restore-close').onclick=()=>{restoreView=false;clearRestore();rerender();};
 $('restore-file').onchange=()=>{$('restore-preview').disabled=false;restoreGeneration++;restoreController?.abort();restorePreview=null;$('restore-summary').hidden=true;};
 $('restore-preview').onclick=async()=>{
@@ -151,9 +161,11 @@ $('models').onchange = () => { $('model-default').textContent = $('models').sele
 $('cancel-login').onclick = () => current?.restoring ? cancelRestore('cancel') : act('cancel');
 $('retry').onclick = () => act('retry');
 $('upgrade').onclick = () => act('upgrade', true);
+$('update-confirm').onclick=()=>act('upgrade',true);
+$('update-later').onclick=()=>{updateView=false;rerender();};
 poll();
 
-$('privacy-open').onclick=()=>{privacyView=true;restoreView=false;clearRestore();rerender();};
+$('privacy-open').onclick=()=>{updateView=false;privacyView=true;restoreView=false;clearRestore();rerender();};
 $('privacy-close').onclick=()=>{if(eraseSubmitted)return;privacyView=false;$('privacy-confirmed').checked=false;rerender();};
 $('privacy-confirmed').onchange=()=>{$('privacy-confirm').disabled=$('privacy-confirmed').checked!==true;};
 $('privacy-confirm').onclick=async()=>{

@@ -29,7 +29,7 @@ Optional: --provider chatgpt|ollama --model MODEL
           --login (reauthorize saved registration) --logout (stop and disconnect profile)
           --ask-passphrase (explicit legacy/manual encryption mode)
           --telegram (explicit private Telegram contact, same conversation)
-          --upgrade-contact (back up and upgrade an existing contact journal to v5)
+          --upgrade-contact (back up and upgrade an existing contact journal to v6)
           --timezone IANA_ZONE (display and resolve times, e.g. Asia/Seoul)
           --broker ABSOLUTE_READ_BROKER --allow-read DIRECTORY (repeatable)
           --endpoint http://127.0.0.1:11434
@@ -264,7 +264,9 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       for (const path of [messagingBackup, followupBackup, reviewBackup, assistanceBackup, mailBackup].filter(Boolean)) process.stdout.write(`이전 연락 기록 백업: ${path}\n`);
       process.stdout.write('연락 기록 v6 · 대화와 메일 초안·발송 결과를 이어서 보관합니다.\n');
     }
-    if (store.contactVersion < 6) throw new Error('CONTACT_MAIL_UPGRADE_REQUIRED');
+    if (store.contactVersion < 5) throw new Error('CONTACT_ASSISTANCE_UPGRADE_REQUIRED');
+    const recordUpdate = store.contactVersion === 5 && ui?.recordUpdate
+      ? ui.recordUpdate(() => service.stopWhenIdle()) : null;
     if (options.telegram) {
       if (store.contactVersion < 2) throw new Error('CONTACT_MESSAGING_UPGRADE_REQUIRED');
       if (!await telegramConsent(process.stdin, process.stdout)) throw new Error('CONTACT_TELEGRAM_CONSENT_REQUIRED');
@@ -290,7 +292,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       if (!portableGoogle) throw Error('CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED');
     }),
       handoff: async () => { await service.stopWhenIdle(); await background.handoff(); } } : null;
-    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, recovery: ui?.recovery ?? null, privacy: ui?.privacy ?? null, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
+    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, recovery: ui?.recovery ?? null, privacy: ui?.privacy ?? null, recordUpdate, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
     if (ui) {
       service.on('fault', () => ui.fail());
       ui.signal.throwIfAborted();

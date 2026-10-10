@@ -1194,3 +1194,10 @@ test('download exceptions never enable arbitrary relative paths or executable no
  c.state.turns=[{seq:1,state:'answered',text:'파일',answer:{text:'결과',sources:[],notice:paths.map((p,i)=>`[bad${i}](${p})`).join(' ')+' <img src=x onerror=bad()> ![image](https://example.invalid/track)'}}];
  await c.refresh();assert.equal(c.get('messages').querySelectorAll('a').length,0);assert.equal(c.get('messages').querySelectorAll('img').length,0);
 });
+
+test('v5 record update stays secondary while connected reading and ordinary conversation remain usable',async()=>{
+ const c=client();c.state.record_update_available=true;c.state.google={available:true,configured:true,connected:true,pending:false,has_credential:true,account:'owner@example.test',mail:{ready:false,enabled:false}};
+ await c.refresh();assert.equal(c.get('records-update').hidden,false);assert.equal(c.get('google-mail-upgrade').hidden,false);assert.match(c.get('google-mail-upgrade').textContent,/계속 사용할/u);assert.equal(c.get('google-connect').disabled,false);assert.equal(c.get('send').disabled,false);
+ assert.ok(c.calls.every(call=>call.path==='/api/state'));
+ c.state.record_update_available=false;c.state.google.mail.ready=true;await c.refresh();assert.equal(c.get('records-update').hidden,true);assert.equal(c.get('google-mail-upgrade').hidden,true);
+});

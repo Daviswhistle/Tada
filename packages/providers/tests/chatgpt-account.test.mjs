@@ -380,13 +380,22 @@ for (const version of [2, 3, 4, 5]) test(`browser recovery upgrades v${version} 
     const accepted = journal.submit(device.id, randomUUID(), 'Keep my original history'); journal.cancel(accepted.seq); journal.close();
     globalThis.fetch = env.fetcher;
     browser = await browserSetup(ui => main(['--data', data, '--chatgpt-profile', env.directory, '--port', String(port)], { ui, keyProvider: async () => passphrase }), nativeFetch);
-    const failed = await browser.until('error'); assert.equal(failed.upgrade, true); assert.equal(failed.retryable, false);
-    assert.match(failed.message, /원본을 백업/u);
-    assert.equal((await browser.action(failed, 'retry')).status, 409);
-    assert.equal((await browser.action(failed, 'upgrade', false)).status, 409);
-    journal = new ContactStore({ directory: data, passphrase, route }); assert.equal(journal.contactVersion, version); journal.close();
+    const view = await browser.until(version === 5 ? 'ready' : 'error');
+    if (version === 5) {
+      assert.equal(view.upgrade_available, true);
+      const { DatabaseSync } = await import('node:sqlite');
+      const db = new DatabaseSync(join(data, 'contact.sqlite'), { readOnly: true });
+      try { assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5); }
+      finally { db.close(); }
+    } else {
+      assert.equal(view.upgrade, true); assert.equal(view.retryable, false);
+      assert.match(view.message, /원본을 백업/u);
+      journal = new ContactStore({ directory: data, passphrase, route }); assert.equal(journal.contactVersion, version); journal.close();
+    }
+    assert.equal((await browser.action(view, 'retry')).status, 409);
+    assert.equal((await browser.action(view, 'upgrade', false)).status, 409);
     assert.equal(readdirSync(data).filter(name => name.startsWith('before-')).length, 0);
-    assert.equal((await browser.action(failed, 'upgrade', true)).status, 200);
+    assert.equal((await browser.action(view, 'upgrade', true)).status, version === 5 ? 202 : 200);
     await browser.until('ready'); await browser.host.close();
     journal = new ContactStore({ directory: data, passphrase, route });
     assert.equal(journal.contactVersion, 6); assert.equal(journal.id, id);
