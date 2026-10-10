@@ -790,7 +790,10 @@ function renderAssistance(result) {
   $('proactive-upgrade').hidden = proactiveMode === 'continuous' || !state?.mode;
   $('proactive-upgrade-info').hidden = proactiveMode === 'continuous' || !state?.mode;
   $('proactive-cadence').textContent = proactiveMode === 'continuous' ? '메일·일정 15분마다 · 시간 일정 30분 전 알림' : '하루 한 번 · 오전 9시~오후 9시';
-  $('proactive-budget').textContent = proactiveMode === 'continuous' ? '변화가 있을 때 하루 최대 4번 판단 · 모델 요청 최대 16회' : '현재 모델로 하루 최대 4회 요청';
+  const checksToday = state?.attention?.checks_today ?? 0;
+  const dailyBudgetSpent = proactiveMode === 'continuous' && checksToday >= 4;
+  const reminderStatus = result.google?.connected ? ' 메일·일정 확인과 일정 시각 알림은 계속됩니다.' : ' 대화에서 저장한 알림은 유지됩니다.';
+  $('proactive-budget').textContent = proactiveMode === 'continuous' ? `오늘 자동 판단 ${checksToday}/4회 · 모델 요청 하루 최대 16회` : '현재 모델로 하루 최대 4회 요청';
   $('proactive-last').textContent = state?.last ? new Intl.DateTimeFormat('ko-KR', { timeZone: state.timezone ?? undefined, month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(state.last.created) + ({ queued: ' · 대기', running: ' · 확인 중', failed: ' · 확인 실패', interrupted: ' · 중단', cancelled: ' · 취소', answered: ' · 처리 완료' }[state.last.state] ?? '') : '아직 확인 전';
   $('attention-last-row').hidden = proactiveMode !== 'continuous' || state?.attention?.google_observed !== true;
   $('attention-last').textContent = state?.attention?.observed_at ? new Intl.DateTimeFormat('ko-KR', { timeZone: state.timezone, month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(state.attention.observed_at) + (state.attention.error ? ' · 일부 확인 실패' : ' · 자료 확인 완료') : '아직 확인 전';
@@ -799,8 +802,9 @@ function renderAssistance(result) {
   $('proactive-toggle').setAttribute('aria-pressed', String(proactiveEnabled));
   $('proactive-toggle').textContent = proactiveEnabled ? '먼저 챙겨보기 끄기' : '먼저 챙겨보기 켜기';
   $('proactive-status').textContent = proactiveEnabled
-    ? (state.attention?.error ? '최근 자동 확인을 마치지 못했어요. 확인하지 못한 정보는 다음 주기에 다시 살펴봅니다. 현재 확인된 일정의 알림은 계속됩니다.'
-      : state.blocked_reason === 'usage_limit' ? (proactiveMode === 'continuous' ? '새 제안을 판단하는 AI 사용은 잠시 멈췄어요. 일정 확인과 시각 알림은 계속됩니다.' : '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.')
+    ? (state.attention?.error ? '최근 자동 확인을 마치지 못했어요. 메일·일정 변화를 놓쳤을 수 있어요. 다음 확인 때 다시 시도합니다.'
+      : state.blocked_reason === 'usage_limit' ? (proactiveMode === 'continuous' ? '새 제안을 판단하는 AI 사용은 잠시 멈췄어요.' + reminderStatus : '현재 Tada 사용 한도에 가까워 먼저 챙겨보기를 멈췄어요. 남은 한도는 직접 맡기는 대화에 남겨둡니다.')
+      : dailyBudgetSpent ? '오늘의 자동 판단 4회를 모두 사용했어요. 새 제안은 내일 오전 9시부터 다시 판단합니다.' + reminderStatus
       : state.last?.state === 'failed' || state.last?.state === 'interrupted' ? '최근 제안·알림 처리를 끝내지 못했어요. 기록은 보존했어요. 새로운 내용이 생기면 다음 확인 때 다시 챙깁니다.'
       : result.google?.connected ? '켜져 있어요. 메일과 일정을 확인하고, 가까워진 기한과 필요한 일을 먼저 알려드려요.'
       : '켜져 있어요. 맡긴 일과 대화에서 챙길 일을 먼저 찾아요.')
