@@ -64,3 +64,5 @@ Windows 실행기는 먼저 챙겨보기에서 새 제안이 완성되거나 일
 [트레이·명시 종료 검증](windows-tray-verification.json)은 창 다시 열기, 복구 대기 중 종료, 요청·알림·브라우저 입력의 종료 경합과 기록 보존을 구분해 기록한다.
 
 최신 [설치 복구 검증](windows-install-repair-verification.json)은 짧은 v2 설치 경로, v1에서의 실행 중 업데이트, 손상·잠금·최종 검증 실패와 동일 실행본의 휴대용 회귀를 별도로 기록한다.
+
+[데스크톱 알림 포함 실행본 검증](windows-desktop-notifications-build.json)은 수정된 전체 코드의 독립 검토와 동일한 실행본의 새 설치·실행 중 업데이트·Chrome/Edge 휴대용 검증을 연결한다. 실제 휴대폰 전달이나 서명된 공개 배포를 뜻하지 않는다.

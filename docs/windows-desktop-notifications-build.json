@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-10",
+  "implementation": "44065d639e19e4ead7ddcd86c643b29024dd3d91",
+  "scope": "Unsigned Windows 11 x64 build with private desktop notifications; isolated native installation/update/portable checks, not release or physical-phone acceptance",
+  "archive": {
+    "files": 1020,
+    "zip_bytes": 37390715,
+    "zip_sha256": "35bd0cdb115236dcddd9bdbc438b9e17be57482c8cc1413e59623f0cccb2d6e5",
+    "manifest_sha256": "c7fff31cac1e4aa6c3eaccb0c755e2a2a512f27c9edbf178c45a40cab9cbf2a6",
+    "launcher_sha256": "4fd1f4bedcd77fab96625dc33363a6b4e72af22b0b5e9f5f568553e01c9bc673",
+    "all_archive_entries_exact": true
+  },
+  "runtime_source_parity": {
+    "files": 80,
+    "exact_path_sets_and_bytes": true
+  },
+  "native": {
+    "fresh": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "HTML, native runtime, payload launcher and reserved bootstrap corruption repaired; old copies preserved and healthy repaired copy reused",
+        "short v2 copy names retain both full SHA-256 bindings, reject invalid pointers, and verify final long-user-path installations; unsupported paths leave no partial install",
+        "the same shortcut creator targets the stable bootstrap in an isolated shortcut location",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration",
+        "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+        "actual foreground setup recovered its crash into a visible replacement onboarding screen",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "upgrade": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "native installation and repeat installation preserve one verified payload and atomic version pointer",
+        "occupied, linked and overlapping installation paths rejected without altering existing files",
+        "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+        "installing a new payload retains the running previous version and changes only the next-launch pointer",
+        "Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration",
+        "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+        "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+        "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+      ],
+      "passed": true
+    },
+    "portable": {
+      "platform": "win32",
+      "node": "v24.21.0",
+      "checks": [
+        "embedded manifest and bundled runtime verified",
+        "changed, missing, additional files, manifest and junction rejected",
+        "bundled native read broker reads scoped fixture and rejects traversal without developer runtimes",
+        "fresh Windows DPAPI storage reaches subscription consent without developer tools or inherited Node options",
+        "native Chrome shared textbox verified",
+        "native Edge shared textbox verified",
+        "same and relocated bundles reopen one host and preserve protected storage key",
+        "restart from relocated bundle preserves protected key and reacquires ownership"
+      ],
+      "passed": true
+    }
+  },
+  "review": {
+    "outcome": "No unresolved findings in full amended native commit review",
+    "model": "gpt-6.1-sol",
+    "effort": "max",
+    "service_tier": "default",
+    "review_log": "tada-desktop-cra2.log",
+    "independent_node_tests": {
+      "passed": 1504,
+      "failed": 0,
+      "skipped": 11
+    },
+    "author_node_tests": {
+      "passed": 1515,
+      "failed": 0,
+      "skipped": 0
+    },
+    "native_node_tests": {
+      "passed": 261,
+      "failed": 0,
+      "skipped": 3
+    },
+    "native_skip_reason": "POSIX-only filesystem checks",
+    "native_tray": "7 actual Windows Forms checks passed; real BalloonTipShown and injected click, not a physical click"
+  },
+  "owner_host": {
+    "local_integration": "44065d639e19e4ead7ddcd86c643b29024dd3d91",
+    "journal_schema": 5,
+    "migration_performed": false,
+    "browser_entry_ready": true,
+    "existing_provider_google_and_proactive_settings_retained": true
+  },
+  "remaining_limits": [
+    "No physical phone/Telegram live delivery acceptance.",
+    "No new owner data migration or Google/mail permission expansion.",
+    "Windows notification display depends on OS settings and an awake running host.",
+    "Unsigned build; public OAuth eligibility, broader model/task/device security and original release gates remain separate."
+  ]
+}
