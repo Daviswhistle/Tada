@@ -7,8 +7,19 @@ export const ATTENTION_CONSENT = 'connected_attention_v2';
 export const ATTENTION_INTERVAL = 15 * 60_000;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const text = value => typeof value === 'string' ? [...value.replace(/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/gu, '')].slice(0, 200).join('') : '';
+const dayFormats = new Map();
 export function localDay(now, timezone) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  // Reuse only the formatter; format the supplied instant on every call so
+  // midnight, clock changes and daylight-saving transitions remain current.
+  let formatter = typeof timezone === 'string' ? dayFormats.get(timezone) : null;
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+    if (typeof timezone === 'string') {
+      if (dayFormats.size >= 16) dayFormats.delete(dayFormats.keys().next().value);
+      dayFormats.set(timezone, formatter);
+    }
+  }
+  const parts = formatter.formatToParts(now);
   return ['year', 'month', 'day'].map(key => parts.find(p => p.type === key).value).join('-');
 }
 export function localHour(now, timezone) {

@@ -350,9 +350,28 @@ export class ContactStore {
       return { id, token };
     });
   }
-  // Display invalidation only: includes writes from timers and recovery paths
+  // Display/scheduling invalidation: includes writes from timers and recovery paths
   // that need not emit an interactive service event. Never an authority token.
   changeCount() { this.#check(); return this.#db.prepare('SELECT total_changes() AS n').get().n; }
+  // Scheduling hint only. A changed journal or an active request bypasses it;
+  // every actual operation still checks its current authority at dispatch.
+  nextMaintenanceAt(now = Date.now()) {
+    this.#check();
+    if (!counter(now)) throw Error('CONTACT_FOLLOWUP_TIME_INVALID');
+    let next = Math.min(Number.MAX_SAFE_INTEGER, now + 15000);
+    const include = value => { if (value !== null && value !== undefined) next = Math.min(next, Math.max(now, value)); };
+    include(this.#db.prepare('SELECT min(expires) AS at FROM devices WHERE revoked=0 AND expires>?').get(now).at);
+    if (this.#version >= 3) {
+      include(this.#db.prepare("SELECT min(created+86400001) AS at FROM followup_proposals WHERE state='pending'").get().at);
+      include(this.#db.prepare("SELECT min(f.notify_at) AS at FROM followups f WHERE f.state IN('open','waiting') AND NOT EXISTS(SELECT 1 FROM followup_notices n WHERE n.commitment=f.id AND n.version=f.version)").get().at);
+    }
+    if (this.#version >= 4) include(this.#db.prepare("SELECT min(due) AS at FROM followup_reviews WHERE state='armed'").get().at);
+    if (this.#version >= 5) {
+      const grant = this.#setting('proactive');
+      if (grant?.enabled) include(grant.next_at);
+    }
+    return next;
+  }
   authenticate(token, now = Date.now()) {
     this.#check();
     if (typeof token !== 'string' || !TOKEN.test(token)) return null;

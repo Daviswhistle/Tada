@@ -365,6 +365,52 @@ test('running timer delivers a due notice with no browser and no additional mode
   } finally { await service.close(); env.close(); }
 });
 
+test('a reminder approved after an idle tick invalidates the maintenance hint', async () => {
+  const env = environment(), d = env.store.addDevice('phone'); let modelCalls = 0;
+  const service = new ContactService(env.store, { chat: async () => { modelCalls++; return reply('unused'); } }, noSources);
+  try {
+    service.start(); await service.idle(); await pause(1250);
+    const notify = iso(Date.now() + 3000);
+    await active(env, d.id, spec({ notify_at: notify }));
+    const deadline = Date.now() + 8000;
+    while (!env.store.followupState().notices.length && Date.now() < deadline) await pause(50);
+    const notices = env.store.followupState().notices;
+    assert.equal(notices.length, 1); assert.equal(modelCalls, 0);
+    assert.ok(Date.now() >= Date.parse(notify));
+    env.store.followupTick(); assert.equal(env.store.followupState().notices.length, 1);
+  } finally { await service.close(); env.close(); }
+});
+
+test('maintenance hint includes device expiry and does not defer an overdue reminder', async () => {
+  const env = environment(), now = Date.now();
+  try {
+    const d = env.store.addDevice('short-lived', now - 30 * 86400000 + 12000);
+    assert.equal(env.store.nextMaintenanceAt(now), now + 12000);
+    const notify = iso(now + 5000);
+    await active(env, d.id, spec({ notify_at: notify }));
+    assert.equal(env.store.nextMaintenanceAt(now), Date.parse(notify));
+    assert.equal(env.store.nextMaintenanceAt(now + 6000), now + 6000);
+    assert.throws(() => env.store.nextMaintenanceAt(NaN), /CONTACT_FOLLOWUP_TIME_INVALID/u);
+  } finally { env.close(); }
+});
+
+test('an idle service catches a forward clock jump once and tolerates clock reversal', async t => {
+  const now = Date.now(); t.mock.timers.enable({ apis: ['Date'], now });
+  const env = environment(), d = env.store.addDevice('phone');
+  const service = new ContactService(env.store, { chat: async () => { throw Error('unexpected idle inference'); } }, noSources);
+  try {
+    await active(env, d.id, spec({ notify_at: iso(now + 60000) }));
+    service.start(); await service.idle(); await pause(1250);
+    assert.equal(env.store.followupState().notices.length, 0);
+    t.mock.timers.setTime(now + 61000);
+    for (let i = 0; i < 80 && !env.store.followupState().notices.length; i++) await pause(50);
+    assert.equal(env.store.followupState().notices.length, 1);
+    t.mock.timers.setTime(now + 1000); await pause(1100);
+    t.mock.timers.setTime(now + 61000); await pause(1100);
+    assert.equal(env.store.followupState().notices.length, 1); assert.equal(service.stopped, false);
+  } finally { await service.close(); env.close(); }
+});
+
 test('no-contact-v3 source mode does not advertise work control, and paging preserves all work without oversized results', async () => {
   const env = environment(), d = env.store.addDevice('phone');
   try {

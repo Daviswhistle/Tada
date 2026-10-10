@@ -31,6 +31,7 @@ function failureDetails(error) {
 }
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
+  #maintenance = null;
   #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false; #mailOperations = new Map(); #backupConfig; #backupOperation = null;
   constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone, backup = {} } = {}) {
     super();
@@ -77,9 +78,14 @@ export class ContactService extends EventEmitter {
             try { this.#store.assertDevice(this.#active.device); }
             catch { this.#active.abort.abort(); this.#google?.deviceRevoked(this.#active.device); }
           }
+          const now = Date.now(), previous = this.#maintenance;
+          if (!this.#active && previous && now >= previous.checkedAt && now < previous.until
+              && performance.now() < previous.monotonicUntil && this.#store.changeCount() === previous.changes) return;
           this.#google?.sweepAuthority();
           this.checkAttention();
           if (this.tickFollowups()) { this.emit('change'); this.start(); }
+          const until = this.#store.nextMaintenanceAt(now);
+          this.#maintenance = { checkedAt: now, until, monotonicUntil: performance.now() + Math.max(0, until - now), changes: this.#store.changeCount() };
         }
         catch (error) { this.#stopped = true; clearInterval(this.#timer); this.#active?.abort.abort(); this.emit('fault', safeCode(error)); }
       }, 1000);
@@ -276,6 +282,7 @@ export class ContactService extends EventEmitter {
     if (!connection || typeof connection.connect !== 'function' || typeof connection.status !== 'function' || this.#google) throw Error('CONTACT_GOOGLE_SETUP_INVALID');
     this.#google = connection;
     connection.on('change', change => {
+      this.#maintenance = null;
       if (change?.authorityChanged) { this.#attentionAbort?.abort(); if (this.#active?.google) this.#active.abort.abort(); }
       this.emit('change');
     });

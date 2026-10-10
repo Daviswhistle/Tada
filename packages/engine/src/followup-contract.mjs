@@ -11,10 +11,16 @@ const exact = (object, keys) => object && typeof object === 'object' && !Array.i
   && Object.keys(object).sort().join(',') === [...keys].sort().join(',');
 const bounded = (value, bytes) => typeof value === 'string' && value.trim().length > 0
   && value.isWellFormed() && Buffer.byteLength(value) <= bytes && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/u.test(value);
+// Timezone identifiers are immutable within this process. Cache validation,
+// never the current time or any owner's authority, on the one-second timer.
+const checkedTimezones = new Set();
 export function followupTimezone(value) {
   if (typeof value !== 'string' || value.length > 100) throw new Error('CONTACT_TIMEZONE_INVALID');
+  if (checkedTimezones.has(value)) return value;
   try { new Intl.DateTimeFormat('en', { timeZone: value }).format(); }
   catch { throw new Error('CONTACT_TIMEZONE_INVALID'); }
+  if (checkedTimezones.size >= 16) checkedTimezones.delete(checkedTimezones.values().next().value);
+  checkedTimezones.add(value);
   return value;
 }
 export function followupInstant(value) {
