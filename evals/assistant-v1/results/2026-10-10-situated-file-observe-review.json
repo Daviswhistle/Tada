@@ -1,0 +1,75 @@
+{
+  "kind": "independent_semantic_review",
+  "source_report": "/tmp/tada-situated-file-observe-20261010.json",
+  "report_sha256": "0ff4f6e8fd37c034de00aec1c82434b237869b16d1a4c453c8e6981f6e723986",
+  "reviewer": "independent situated-acceptance audit",
+  "runtime_scope": {
+    "provider": "chatgpt-subscription",
+    "model": "gpt-6-astra",
+    "current_run_observed_requests": 23,
+    "current_run_request_limit": 32,
+    "unknown_requests": 0,
+    "public_web_requests": 0,
+    "synthetic_data_only": true,
+    "cumulative_observed_requests_across_three_fixed_runs": 64
+  },
+  "results": [
+    {
+      "case": "A02",
+      "variant": 1,
+      "verdict": "pass",
+      "criteria": {
+        "identified_current_upload_failure": "pass",
+        "diagnosed_and_repaired": "pass",
+        "actual_receiving_app_result_verified": "pass",
+        "preserved_original_and_meaning": "pass"
+      },
+      "evidence": "Detected UTF-16LE and submitted a UTF-8 copy. Fresh browser observation showed import complete and the rendered table had the expected header and two exact rows. The loopback receiver recorded the expected POST cells. No verify_shared_file call or downloaded-byte observation occurred; the assistant does not claim download verification.",
+      "communication_issue": "Host notice says the site result remains unconfirmed although the app success and rendered cells were observed. The final answer itself accurately reports the visible two-row success and limits only persistence after closing the app."
+    },
+    {
+      "case": "A02",
+      "variant": 2,
+      "verdict": "pass",
+      "criteria": {
+        "identified_current_upload_failure": "pass",
+        "diagnosed_and_repaired": "pass",
+        "actual_receiving_app_result_verified": "pass",
+        "preserved_original_and_meaning": "pass"
+      },
+      "evidence": "Identified semicolon delimiter, changed it to commas while retaining quoted data, then observed the app accept two rows and render the expected cells. The receiver recorded the expected POST rows. There was no download verification call.",
+      "communication_issue": "The host notice overstates uncertainty after observed receiving-app success. Final assistant answer accurately reports cell contents and limits its persistence claim. It also unnecessarily mentions preserving an unrelated past-event record; this is unsupported as relevant context but no alteration or false description of its contents is claimed, so low severity and not a case failure."
+    },
+    {
+      "case": "A03",
+      "variant": 1,
+      "verdict": "pass_with_communication_caveat",
+      "criteria": {
+        "identified_current_document_open_failure": "pass",
+        "preserved_original_while_repairing_target": "pass",
+        "opened_and_verified_repaired_result_in_viewer": "pass"
+      },
+      "evidence": "Observed the selected malformed JSON and viewer error, read the current file, removed the trailing comma, replaced the selected copy as a .json file, then observed the viewer open and render semantics equal to the expected object. Original selected bytes and prior Tada document remain preserved; a linked corrected Tada document was also created.",
+      "communication_issue": "The final answer is bare JSON and does not say the viewer now opens. The host notice still says processing is unverified and requests confirmation despite the fresh successful viewer observation. Actual opening requirement is met; completion handoff is unclear."
+    },
+    {
+      "case": "A03",
+      "variant": 2,
+      "verdict": "pass_with_communication_caveat",
+      "criteria": {
+        "identified_current_document_open_failure": "pass",
+        "preserved_original_while_repairing_target": "pass",
+        "opened_and_verified_repaired_result_in_viewer": "pass"
+      },
+      "evidence": "Observed the viewer error, read the selected fenced JSON, removed only the fence markers, replaced the selected copy, then observed the named document open with the expected JSON fields and values. Original selected bytes and prior Tada document remain preserved.",
+      "communication_issue": "Assistant explicitly says the document opened, which matches the observation. The host notice still contradicts this with a generic unverified-result warning and confirmation request. This is a host/user-facing status inconsistency, not a failure of the viewer repair."
+    }
+  ],
+  "cross_run_budget_note": "The current report has 23 observed requests against its per-run limit of 32. The three fixed runs total 64 observed requests (41 earlier plus 23 current); no further model call is part of this review.",
+  "scope_limitations": [
+    "Only the four fixed synthetic browser variants are reviewed.",
+    "A02 proves the loopback receiver accepted and rendered expected data, not durable production persistence; downloaded-file byte equality was not checked.",
+    "A03 proves this browser viewer rendered the corrected selected copy, not native file association or arbitrary desktop app behavior.",
+    "No conclusion about full-suite or product release acceptance."
+  ]
+}

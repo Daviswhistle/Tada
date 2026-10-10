@@ -20,7 +20,7 @@ The repository entry requires Node dependencies; the Windows portable build bund
 
 The same conversation now supports [saved documents](docs/contact-documents.md): create a short Markdown/text document, download it, and revise it in a later message while preserving earlier versions. These are encrypted conversation results, not arbitrary filesystem changes or external publication. A bounded real subscription and Google check is recorded below; broad product and device acceptance remains incomplete.
 
-A [bounded live check on 2026-10-09](docs/qualification-2026-10-07.md#2026-10-09--연결된-google-계정에서-문서-완성) used the selected ChatGPT subscription and a connected Google account to produce a saved document, recheck three cited sources and preserve it across restart. Mail results were truncated; this does not qualify comprehensive inbox review or the finished product. The [current subscription acceptance record](docs/qualification-2026-10-09.md) separately reports real-model behavior on fixed synthetic environments, including retained failures.
+A [bounded live check on 2026-10-09](docs/qualification-2026-10-07.md#2026-10-09--연결된-google-계정에서-문서-완성) used the selected ChatGPT subscription and a connected Google account to produce a saved document, recheck three cited sources and preserve it across restart. Mail results were truncated; this does not qualify comprehensive inbox review or the finished product. The [current subscription acceptance record](docs/qualification-2026-10-10.md) separately reports real-model behavior on fixed synthetic environments, including retained failures.
 
 The same subscription conversation also supports [public web research](docs/public-research.md), with source links and saved-document follow-up. Searches use the existing selected account and durable request ledger; unsupported searches never fall back to separate API billing. Web queries use only the current and recent owner messages, not connected mail/file bodies. Automatic care does not gain web access.
 
@@ -34,7 +34,7 @@ The same subscription conversation also supports [public web research](docs/publ
 
 [메일 초안과 발송 확인](docs/mail-actions.md)은 같은 대화에서 초안을 준비하고, 받는 사람과 내용을 직접 확인한 뒤 발송합니다. 결과를 잃은 요청은 자동 재발송하지 않습니다. Google 발송 권한은 별도로 연결해야 합니다.
 
-[먼저 챙겨보기와 휴대폰 연락](docs/proactive-and-mobile.md)은 같은 대화의 설정에서 켭니다. 수시 확인을 선택하면 연결된 메일·일정을 15분마다 살펴보고, 변화가 있을 때 하루 최대 네 번 판단합니다. 시간 일정은 30분 전에 알리며 새 내용이 없으면 조용히 기다립니다. Telegram 연결은 화면에서 설정하고 휴대폰에서 같은 비서에게 이야기합니다. 기존 기록은 원본 백업 후 v6 업데이트를 본인이 선택해야 합니다. 실제 계정에서의 제안 품질과 휴대폰 송수신은 아직 검증하지 않았으며, 컴퓨터에서 Tada가 실행 중이어야 합니다.
+[먼저 챙겨보기와 휴대폰 연락](docs/proactive-and-mobile.md)은 같은 대화의 설정에서 켭니다. 수시 확인을 선택하면 연결된 메일·일정을 15분마다 살펴보고, 변화가 있을 때 하루 최대 네 번 판단합니다. 시간 일정은 30분 전에 알리며 새 내용이 없으면 조용히 기다립니다. Telegram 연결은 화면에서 설정하고 휴대폰에서 같은 비서에게 이야기합니다. v5 기록에서도 읽기와 자동 챙겨보기를 이어 사용할 수 있습니다. 메일 초안·발송을 쓸 때에는 **내 기록 → 메일 기능용 기록 업데이트**에서 백업 후 v6 전환을 본인이 선택합니다. 일반적인 제안 품질과 실제 휴대폰 송수신은 별도 수락 조건이며, 컴퓨터에서 Tada가 실행 중이어야 합니다.
 
 [지속 사용](docs/continuing-use.md)을 켜면 누적 기록을 유지하며 최근 24시간 기준으로 사용 여유가 돌아옵니다. 최근 모델 문맥에서 빠진 대화·문서는 같은 암호화 기록에서 찾아 이어 쓸 수 있습니다. 저장 문서의 **직접 수정**으로 새 버전을 남기면 비서도 최신 편집을 읽고 이어서 수정합니다. 기존 기록·권한을 자동 확대하지 않으며, 이 기능만으로 설치·항상 켜진 운영·실제 휴대폰 및 전체 제품 평가가 완료되는 것은 아닙니다.
 

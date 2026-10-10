@@ -1,0 +1,25 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "situated_acceptance_audit",
+  "implementation": "96db943b13090ca49751a6b18c38245a22850f2b",
+  "report_sha256": "f98ef61f6d0ec9e53fea48e62f291c8ba43309b2fab7773992b95d87152fce83",
+  "scope": "A08 fixed synthetic browser environments with real selected subscription",
+  "results": [
+    {
+      "variant": 1,
+      "status": "passed",
+      "evidence": "Stale target rejected, fresh observation found moved Haesol field, only correct field filled; answer distinguishes current value from server storage."
+    },
+    {
+      "variant": 2,
+      "status": "passed",
+      "evidence": "Stale target rejected; fresh shared-account display observed; no further write and appropriate reshare guidance."
+    }
+  ],
+  "limits": [
+    "Synthetic account display, not real authenticated account switching.",
+    "No server storage or submission proof.",
+    "Not file repair qualification or product release acceptance."
+  ],
+  "primary_acceptance": "accepted"
+}

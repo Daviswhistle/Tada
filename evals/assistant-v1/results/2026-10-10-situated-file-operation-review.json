@@ -1,0 +1,70 @@
+{
+  "kind": "independent_semantic_review",
+  "source_report": "/tmp/tada-situated-file-operation-20261010.json",
+  "report_sha256": "d0fdf2891a152183d25e69d21c3d8142abdf4a53fcee0a362c7e69b987fbe52e",
+  "reviewer": "independent situated-acceptance audit",
+  "runtime_scope": {
+    "provider": "chatgpt-subscription",
+    "model": "gpt-6-astra",
+    "observed_requests": 21,
+    "unknown_requests": 0,
+    "public_web_requests": 0,
+    "synthetic_data_only": true
+  },
+  "results": [
+    {
+      "case": "A02",
+      "variant": 1,
+      "verdict": "pass",
+      "completion_checks": {
+        "identified_current_upload_failure": "pass",
+        "diagnosed_and_repaired": "pass",
+        "verified_target_result": "pass"
+      },
+      "evidence": "UTF-16LE was decoded and a UTF-8 copy submitted once. The receiving app showed two rows and the freshly observed table matched expected cells. The fixture mechanical check compares the server-received POST bytes with the saved replacement copy; there was no verify_shared_file call or observed download receipt in this variant. Answer accurately says two rows were imported and preserves all fields.",
+      "reporting_issue": "Host notice says site processing is not confirmed although app completion and rendered rows were observed. The file action receipt also has observed_sha256=null, consistent with no download verification call. Moderate clarity inconsistency; it does not negate the observed receiving-app result.",
+      "verification_scope": "Receiving-app POST bytes and rendered cells were observed; downloaded-file equality was not verified."
+    },
+    {
+      "case": "A02",
+      "variant": 2,
+      "verdict": "pass",
+      "completion_checks": {
+        "identified_current_upload_failure": "pass",
+        "diagnosed_and_repaired": "pass",
+        "verified_target_result": "pass"
+      },
+      "evidence": "The model identified the semicolon delimiter and applied bounded unique edits preserving quoted data. The receiving app and final rendered table matched expected cells; the downloaded copy matched. The answer reports the successful import and preserved values.",
+      "reporting_issue": "Host notice likewise says site processing is not confirmed despite the observed successful result. Moderate clarity inconsistency; does not negate the observed app result."
+    },
+    {
+      "case": "A03",
+      "variant": 1,
+      "verdict": "fail",
+      "completion_checks": {
+        "identified_current_document_open_failure": "fail",
+        "preserved_original_while_repairing_target": "partial",
+        "opened_and_verified_repaired_result_in_app": "fail"
+      },
+      "evidence": "No shared-browser observation or selected-file read occurred. The assistant read the saved Tada document and created a new text document with corrected JSON. The actual document viewer remained on its parse error with an empty document area."
+    },
+    {
+      "case": "A03",
+      "variant": 2,
+      "verdict": "pass",
+      "completion_checks": {
+        "identified_current_document_open_failure": "pass",
+        "preserved_original_while_repairing_target": "pass",
+        "opened_and_verified_repaired_result_in_app": "pass"
+      },
+      "evidence": "The assistant observed the viewer error, read the selected fenced JSON file, removed only the opening/closing Markdown fences, replaced the selected file, then observed the viewer open and render JSON semantically equal to the expected object. The original selected-file bytes and prior Tada document remained preserved. A new linked Tada document was also created after observing the repaired viewer.",
+      "reporting_issue": "The final assistant text is only the compact JSON, while the host notice says the site result is unverified and requests further confirmation, despite the fresh viewer observation proving the requested open/render outcome. The action ledger remains UNCERTAIN because no download-based verifier applies to this local viewer. Moderate user-facing status inconsistency; it does not erase the observed A03 outcome. Clarify that viewer rendering is verified while durable external file/server persistence is not claimed."
+    }
+  ],
+  "scope_limitations": [
+    "This review covers only the four fixed synthetic variants in this execution.",
+    "A02 proves the loopback receiving app parsed and rendered expected cells, not durable production storage.",
+    "A03-2 verifies this browser viewer outcome, not native file-association behavior or arbitrary desktop applications.",
+    "No conclusion about all-case or release acceptance."
+  ]
+}

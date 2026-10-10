@@ -242,7 +242,7 @@ export class ContactService extends EventEmitter {
           const verified=textActions.filter(r=>r.action.state==='VERIFIED').length;
           const unresolved=browserActions.filter(r=>['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(r.action.state)).length;
           const notices=[];
-          if(fileActions.length)notices.push(`원본과 수정본 ${fileActions.length}쌍을 보존했어요. ${matchingFiles ? `${matchingFiles}건은 다운로드한 파일이 수정본과 일치했어요. 사이트에 이번 수정이 적용됐는지는 아직 확인되지 않았어요.` : '사이트의 처리 결과는 아직 확인되지 않았어요.'} 아래 링크에서 두 파일을 내려받을 수 있어요.`);
+          if(fileActions.length)notices.push(`원본과 수정본 ${fileActions.length}쌍을 보존했어요. ${matchingFiles ? `${matchingFiles}건은 다운로드한 파일이 수정본과 일치했어요. ` : ''}아래 링크에서 두 파일을 내려받을 수 있어요. 화면에 표시된 결과와 별개로, 이번 변경의 최종 반영을 자동으로 확정하지는 못했어요.`);
           if(textActions.length)notices.push(`${verified ? `브라우저 입력 ${verified}건의 현재 값을 확인했어요.` : unresolved ? '브라우저 입력 결과를 확정하지 못했어요.' : '브라우저 입력은 적용되지 않았어요.'} 이 텍스트 입력의 서버 저장·전송 완료 여부는 확인하지 않았어요.`);
           if(unresolved)notices.push(`${unresolved}건은 결과 확인이 필요해 같은 사이트의 새 입력을 멈췄어요.`);
           const links=fileActions.map((r,i)=>`파일 ${i+1}: [원본 내려받기](/api/browser/files/${r.action.action_id}/original) · [수정본 내려받기](/api/browser/files/${r.action.action_id}/replacement)`);

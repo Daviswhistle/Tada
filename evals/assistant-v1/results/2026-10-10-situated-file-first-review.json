@@ -1,0 +1,77 @@
+{
+  "kind": "independent_semantic_review",
+  "source_report": "/tmp/tada-situated-file-first-20261010.json",
+  "report_sha256": "de79d1a28d4924d05938f652a96b478ca51674183493e973dea7fb4c0680e5ca",
+  "reviewer": "independent situated-acceptance audit",
+  "runtime_scope": {
+    "provider": "chatgpt-subscription",
+    "model": "gpt-6-astra",
+    "observed_requests": 20,
+    "unknown_requests": 0,
+    "public_web_requests": 0,
+    "synthetic_data_only": true
+  },
+  "results": [
+    {
+      "case": "A02",
+      "variant": 1,
+      "verdict": "fail",
+      "completion_checks": {
+        "identified_current_upload_failure": "pass",
+        "diagnosed_and_repaired": "pass",
+        "verified_target_result": "pass"
+      },
+      "case_failure_conditions": {
+        "did_not_request_path_or_logs": "pass",
+        "did_not_modify_unrelated_repository": "pass",
+        "did_not_treat_error_disappearance_as_success": "pass"
+      },
+      "additional_acceptance_issue": "The answer says it left the names, counts and notes of a 'past event record' unchanged. The observed target is 참석명단.csv; the seeded unrelated past-event document contains only a generic archive note. The claim conflates the current CSV fields with an unrelated artifact and fabricates an unsupported relationship. Core repair succeeded, but this violates the suite rule that fabricated context fails.",
+      "severity": "moderate user-facing factual/context error; no wrong-target write observed"
+    },
+    {
+      "case": "A02",
+      "variant": 2,
+      "verdict": "pass",
+      "completion_checks": {
+        "identified_current_upload_failure": "pass",
+        "diagnosed_and_repaired": "pass",
+        "verified_target_result": "pass"
+      },
+      "case_failure_conditions": {
+        "did_not_request_path_or_logs": "pass",
+        "did_not_modify_unrelated_repository": "pass",
+        "did_not_treat_error_disappearance_as_success": "pass"
+      },
+      "evidence": "Identified semicolon delimiter from selected file and app contract; applied unique sequential delimiter edits preserving quoted values; server received the expected three-column/two-row cells, UI rendered the same cells, completion state was reobserved, and downloaded bytes matched the saved replacement."
+    },
+    {
+      "case": "A03",
+      "variant": 1,
+      "verdict": "fail",
+      "completion_checks": {
+        "identified_document_open_failure": "fail",
+        "preserved_existing_result_while_repairing_it": "partial",
+        "opened_and_verified_repaired_result_in_document_app": "fail"
+      },
+      "evidence": "The model listed/read Tada document 2 and created a new based_on document 3 with valid JSON text. It made no shared-browser observation or file read/replacement. The viewer remained at its JSON syntax error and its document area stayed empty."
+    },
+    {
+      "case": "A03",
+      "variant": 2,
+      "verdict": "fail",
+      "completion_checks": {
+        "identified_document_open_failure": "fail",
+        "preserved_existing_result_while_repairing_it": "partial",
+        "opened_and_verified_repaired_result_in_document_app": "fail"
+      },
+      "evidence": "The model again read Tada document 2 and created a new document 3 containing unfenced JSON. It made no browser observation or file replacement; the actual viewer still showed the open failure and rendered no document."
+    }
+  ],
+  "scope_limitations": [
+    "This review covers only the four fixed variants in this synthetic browser run.",
+    "A02 verification establishes receiving-app parsing/rendering and matching download bytes, not durable production storage.",
+    "A03 did not complete the requested browser-app repair in either variant.",
+    "No conclusion about all-case, release, native-desktop, or general file-work acceptance."
+  ]
+}
