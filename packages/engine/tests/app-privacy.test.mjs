@@ -23,6 +23,8 @@ function env(){
 function complete(e,p=e.instance()){p.begin(randomUUID(),ERASE_CONSENT);p.erase();return p;}
 test('local clear removes exact owned records and keys, blocks old starts and needs explicit fresh start',()=>{
  const e=env();try{
+  const store=new ContactStore({directory:e.data,passphrase,route});store.prepareDesktopNotices();store.close();
+  writeFileSync(join(e.data,'.desktop-notices-'+randomUUID()+'.tmp'),'interrupted encrypted notification cache',{mode:0o600});
   const p=complete(e);assert.equal(p.status().phase,'done');assert.equal(readdirSync(e.data+'.app-private').some(n=>n.startsWith('erasing-')),false);
   assert.throws(()=>new ContactStore({directory:e.data,passphrase,route,initialize:true}));
   assert.equal(p.fresh().phase,'new');assert.equal(existsSync(e.data),false);assert.equal(existsSync(e.profile),false);

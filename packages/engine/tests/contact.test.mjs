@@ -327,7 +327,7 @@ test('TLS is required outside exact loopback; forwarded headers are not a substi
   assert.ok(validateContactAddress({ origin: 'https://assistant.example', port: 8000 }));
 });
 
-test('visible browser assets do not interpret model text as HTML or keep bearer tokens in localStorage', async () => {
+test('visible browser assets forbid raw HTML and keep credential access in HttpOnly cookies', async () => {
   const env = setup(); const service = new ContactService(env.store, { chat: async () => response('<script>bad()</script>') }, noSources);
   const network = await serverFor(env.store, service);
   try {
@@ -341,7 +341,9 @@ test('visible browser assets do not interpret model text as HTML or keep bearer 
     assert.match(await parser.text(), /markdownit/);
     assert.match(await (await network.call('/third-party-notices.txt')).text(), /Vitaly Puzrin/);
     const js = await (await network.call('/app.js')).text();
-    assert.equal(js.includes('innerHTML'), false); assert.equal(js.includes('localStorage'), false);
+    assert.equal(js.includes('innerHTML'), false); assert.equal(js.includes('document.cookie'), false);
+    // The only localStorage setting is a non-secret on/off presentation choice;
+    // its actual writes are checked by the browser-client notification test.
   } finally { await network.host.close(); await service.close(); env.close(); }
 });
 

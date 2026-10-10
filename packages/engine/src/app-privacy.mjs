@@ -23,7 +23,7 @@ const lease=n=>/^owner\.sqlite-(journal|wal|shm)$/u.test(n);
 const sqlite=n=>/^(owner|account|storage-key|contact)\.sqlite(?:-(journal|wal|shm))?$/u.test(n);
 const temp=(name,prefix)=>new RegExp('^'+prefix+idPattern+'\\.tmp$','u').test(name);
 function childType(type,name){
- if(type==='data')return /^(owner|contact)\.sqlite(?:-(journal|wal|shm))?$/u.test(name)||new RegExp('^before-(messaging|reviews|followups|assistance|mail)-'+idPattern+'\\.sqlite(?:-(journal|wal|shm))?$','u').test(name)||name==='google-oauth-client.enc'||name==='tada-recovery-guard'||temp(name,'\\.google-oauth-client-')||temp(name,'\\.record-')?'file':null;
+ if(type==='data')return /^(owner|contact)\.sqlite(?:-(journal|wal|shm))?$/u.test(name)||new RegExp('^before-(messaging|reviews|followups|assistance|mail)-'+idPattern+'\\.sqlite(?:-(journal|wal|shm))?$','u').test(name)||name==='desktop-notices.v1.enc'||temp(name,'\\.desktop-notices-')||name==='google-oauth-client.enc'||name==='tada-recovery-guard'||temp(name,'\\.google-oauth-client-')||temp(name,'\\.record-')?'file':null;
  if(type==='profile')return sqlite(name)&&!/^(contact)\./u.test(name)?'file':null;
  if(type==='records')return ['active.json','pending.json'].includes(name)||temp(name,'\\.record-')?'file':uuid(name)?'generation':null;
  if(type==='generation'){

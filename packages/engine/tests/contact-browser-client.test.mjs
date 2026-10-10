@@ -8,7 +8,7 @@ import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../../apps/contact/app.js', import.meta.url), 'utf8');
 const parserSource = readFileSync(new URL('../../../node_modules/markdown-it/dist/browser/markdown-it.umd.min.js', import.meta.url), 'utf8');
-function client({ parser = true, hash = '#pair=fixture', initiallyOffline = false } = {}) {
+function client({ parser = true, hash = '#pair=fixture', initiallyOffline = false, hidden = false, notificationPermission = null, browserStorage = new Map() } = {}) {
   const elements = new Map();
   let focused = null, offline = initiallyOffline, clock = 0, timerId = 0;
   const timers = new Map(), streams = [], browserEvents = new Map(), stateResponses = [];
@@ -60,7 +60,7 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
   }
   const body = new Element('body'); body.scrollHeight = 100;
   const get = id => { if (!elements.has(id)) { const item = new Element(); item.id = id; body.append(item); } return elements.get(id); };
-  const calls = [], pending = [], handlers = new Map(), replies = new Map();
+  const calls = [], pending = [], handlers = new Map(), replies = new Map(), notifications = [];
   const state = { assistant: 'fixture', device: 'fixture-device', turns: [], next_before: null,
     usage: {}, messaging: {}, followups: { available: false }, host_stopping: false };
   const context = {
@@ -68,7 +68,8 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { at: clock + delay, callback }); return id; },
     clearTimeout(id) { timers.delete(id); },
     location: { hash, pathname: '/' }, history: { replaceState() {} },
-    document: { getElementById: get, hidden: false, body, addEventListener: (name, fn) => browserEvents.set(name, fn),
+    localStorage: { getItem: key => browserStorage.get(key), setItem: (key, value) => browserStorage.set(key, value) },
+    document: { getElementById: get, hidden, body, addEventListener: (name, fn) => browserEvents.set(name, fn),
       createElement: tag => new Element(tag), createTextNode: text => Object.assign(new Element('#text'), { textContent: text }), createDocumentFragment: () => new Element() },
     window: { innerHeight: 800, scrollY: 0, scrollTo() {}, confirm: () => true, addEventListener: (name, fn) => browserEvents.set(name, fn) },
     EventSource: class {
@@ -89,10 +90,15 @@ function client({ parser = true, hash = '#pair=fixture', initiallyOffline = fals
       return Promise.resolve({ ok: true, status: 200, json: async () => state });
     },
   };
+  if (notificationPermission) context.Notification = class {
+    static permission = notificationPermission;
+    constructor(title, options) { notifications.push({ title, ...options }); }
+    static async requestPermission() { return notificationPermission; }
+  };
   vm.createContext(context);
   if (parser) vm.runInContext(parserSource, context, { filename: 'actual-markdown.js' });
   vm.runInContext(source, context, { filename: 'actual-contact-app.js' });
-  return { get, calls, pending, state, streams, timers, advance, flush,
+  return { get, calls, pending, state, streams, timers, advance, flush, notifications,
     browserEvent: (name, event) => browserEvents.get(name)?.(event), respond: (path, callback) => replies.set(path, callback),
     queueState: fn => stateResponses.push(fn),
     setOffline: value => { offline = value; }, get focused() { return focused; }, handle: (path, callback) => handlers.set(path, callback), refresh: () => vm.runInContext('refresh()', context), submit: () => get('message-form').onsubmit({ preventDefault() {} }),
@@ -1200,4 +1206,46 @@ test('v5 record update stays secondary while connected reading and ordinary conv
  await c.refresh();assert.equal(c.get('records-update').hidden,false);assert.equal(c.get('google-mail-upgrade').hidden,false);assert.match(c.get('google-mail-upgrade').textContent,/계속 사용할/u);assert.equal(c.get('google-connect').disabled,false);assert.equal(c.get('send').disabled,false);
  assert.ok(c.calls.every(call=>call.path==='/api/state'));
  c.state.record_update_available=false;c.state.google.mail.ready=true;await c.refresh();assert.equal(c.get('records-update').hidden,true);assert.equal(c.get('google-mail-upgrade').hidden,true);
+});
+
+test('native news keeps browser notifications on by default, with a browser-only proactive opt-out and failure fallback', async () => {
+  const storage = new Map(), c = client({ hidden: true, notificationPermission: 'granted', browserStorage: storage });
+  c.state.desktop_notifications = { available: true, active: true, error: false }; await c.refresh();
+  const add = (seq, origin = 'proactive') => c.state.turns.push({ seq, origin, state: 'answered', text: 'Synthetic request', answer: { text: 'Synthetic answer', sources: [] } });
+  assert.equal(c.get('desktop-notifications').hidden, false); assert.equal(c.get('browser-proactive-notifications').checked, true);
+  add(1); await c.refresh(); assert.equal(c.notifications.length, 1);
+  c.get('browser-proactive-notifications').checked = false; c.get('browser-proactive-notifications').onchange();
+  add(2); await c.refresh(); assert.equal(c.notifications.length, 1);
+  assert.deepEqual([...storage], [['tada.browser-proactive:fixture', 'off']], 'storage holds only a presentation flag, never pairing or device credentials');
+  add(3, 'human'); await c.refresh(); assert.equal(c.notifications.length, 2, 'ordinary answers still notify');
+  c.state.desktop_notifications = { available: true, active: false, error: true };
+  add(4); await c.refresh(); assert.equal(c.notifications.length, 3, 'a failed native path cannot globally suppress browser alerts');
+  assert.equal(c.get('browser-proactive-preference').hidden, true); assert.match(c.get('desktop-notifications-status').textContent, /준비하지 못/u);
+  const same = client({ hidden: true, notificationPermission: 'granted', browserStorage: storage });
+  same.state.desktop_notifications = { available: true, active: true }; await same.refresh();
+  assert.equal(same.get('browser-proactive-notifications').checked, false);
+  const other = client({ hidden: true, notificationPermission: 'granted' });
+  other.state.desktop_notifications = { available: true, active: true }; await other.refresh();
+  assert.equal(other.get('browser-proactive-notifications').checked, true, 'another browser retains its own default');
+  assert.ok(c.calls.every(call => call.path === '/api/state'), 'preference does not change server authority');
+});
+test('unavailable browser preference storage leaves automatic alerts enabled', async () => {
+  const c = client({ hidden: true, notificationPermission: 'granted', browserStorage: { get() { throw Error('DENIED'); }, set() { throw Error('DENIED'); } } });
+  c.state.desktop_notifications = { available: true, active: true }; await c.refresh();
+  c.get('browser-proactive-notifications').checked = false; c.get('browser-proactive-notifications').onchange();
+  assert.equal(c.get('browser-proactive-notifications').checked, true);
+  c.state.turns.push({ seq: 1, origin: 'proactive', state: 'answered', answer: { text: '새 소식', sources: [] } });
+  await c.refresh(); assert.equal(c.notifications.length, 1);
+});
+
+test('pairing credentials never enter browser preference storage', async () => {
+  const storage = new Map(), c = client({ hash: '#pair=SYNTHETIC_PAIR_SECRET_ONLY', browserStorage: storage });
+  c.handle('/api/pair', () => ({ device: 'SYNTHETIC_DEVICE_SECRET_ONLY' }));
+  c.get('device-name').value = 'Synthetic browser';
+  await c.get('pair-form').onsubmit({ preventDefault() {} });
+  assert.equal(c.calls.find(call => call.path === '/api/pair').body.code, 'SYNTHETIC_PAIR_SECRET_ONLY');
+  assert.deepEqual([...storage], []);
+  c.state.desktop_notifications = { available: true, active: true }; await c.refresh();
+  c.get('browser-proactive-notifications').checked = false; c.get('browser-proactive-notifications').onchange();
+  assert.deepEqual([...storage], [['tada.browser-proactive:fixture', 'off']]);
 });

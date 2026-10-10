@@ -332,6 +332,21 @@ function renderAnswer(parent, text) {
     const paragraph = document.createElement('p'); paragraph.textContent = text; parent.append(paragraph);
   }
 }
+let desktopNotificationsActive = false, browserProactiveNotifications = true, notificationPreferenceKey = null;
+function renderDesktopNotifications(result) {
+  const state = result.desktop_notifications;
+  desktopNotificationsActive = state?.active === true;
+  notificationPreferenceKey = typeof result.assistant === 'string' ? `tada.browser-proactive:${result.assistant}` : null;
+  try { browserProactiveNotifications = !notificationPreferenceKey || globalThis.localStorage?.getItem(notificationPreferenceKey) !== 'off'; }
+  catch { browserProactiveNotifications = true; }
+  $('desktop-notifications').hidden = state?.available !== true;
+  $('desktop-notifications-status').textContent = state?.error
+    ? '컴퓨터 알림을 준비하지 못했어요. 새 소식은 대화에 남아 있고, 브라우저와 연결된 휴대폰 알림은 계속 사용할 수 있어요.'
+    : desktopNotificationsActive ? 'Windows에서 Tada 알림을 허용하면, 창을 닫아도 새 제안과 일정·맡긴 일의 알림을 받을 수 있어요.'
+      : 'Tada가 다시 실행되면 컴퓨터 알림도 이어집니다.';
+  $('browser-proactive-preference').hidden = !desktopNotificationsActive;
+  $('browser-proactive-notifications').checked = browserProactiveNotifications;
+}
 function render() {
   const list = [...turns.values()].filter(t => !t.answer?.quiet && (t.origin !== 'proactive' || t.state === 'answered')).sort((a, b) => a.seq - b.seq);
   const fingerprint = JSON.stringify(list);
@@ -339,7 +354,9 @@ function render() {
   const nearEnd = window.innerHeight + window.scrollY >= document.body.scrollHeight - 200;
   const old = JSON.parse(rendered || '[]');
   if (known && document.hidden && globalThis.Notification?.permission === 'granted'
-      && list.some(t => !t.recovery && t.origin !== 'owner_edit' && t.state === 'answered' && !old.some(o => o.seq === t.seq && o.state === 'answered'))) {
+      && list.some(t => !t.recovery && t.origin !== 'owner_edit' && t.state === 'answered'
+        && (t.origin !== 'proactive' || !desktopNotificationsActive || browserProactiveNotifications)
+        && !old.some(o => o.seq === t.seq && o.state === 'answered'))) {
     try { new Notification('Tada', { body: '새 답변이 준비됐어요.', tag: 'tada-answer' }); }
     catch { /* Some mobile browsers require a service worker. Keep the answer visible. */ }
   }
@@ -455,7 +472,7 @@ async function refresh(older = false, quiet = false) {
     for (const turn of result.turns) turns.set(turn.seq, turn);
     if (older || nextBefore === null) nextBefore = result.next_before;
     $('older').hidden = nextBefore === null;
-    render();
+    renderDesktopNotifications(result); render();
     renderFollowups(result.followups);
     renderAssistance(result);
     void refreshOpenMail();
@@ -508,7 +525,17 @@ $('notifications').onclick = async () => {
   let result;
   try { result = await Notification.requestPermission(); }
   catch { notice('이 브라우저에서는 알림을 켜지 못했어요. 대화의 결과는 그대로 보존됩니다.'); return; }
-  notice(result === 'granted' ? '이 페이지가 열려 있는 동안 답변 알림을 보냅니다. 브라우저를 완전히 닫은 뒤의 푸시 알림은 아직 지원하지 않습니다.' : '알림을 켜지 않아도 결과는 대화에 보존됩니다.');
+  notice(result === 'granted' ? '이 페이지가 열려 있는 동안 이 브라우저로 답변 알림을 보냅니다.' : '알림을 켜지 않아도 결과는 대화에 보존됩니다.');
+};
+$('browser-proactive-notifications').onchange = () => {
+  try {
+    if (!notificationPreferenceKey || !globalThis.localStorage) throw Error('PREFERENCE_UNAVAILABLE');
+    globalThis.localStorage.setItem(notificationPreferenceKey, $('browser-proactive-notifications').checked ? 'on' : 'off');
+    browserProactiveNotifications = $('browser-proactive-notifications').checked;
+  } catch {
+    browserProactiveNotifications = true; $('browser-proactive-notifications').checked = true;
+    notice('이 브라우저에 알림 선택을 저장하지 못했어요. 자동 제안 알림은 계속 켜 두었습니다.');
+  }
 };
 
 let followupOffset = null;

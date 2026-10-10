@@ -31,12 +31,32 @@ function failureDetails(error) {
 }
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
+  #desktopNotify = null; #desktopError = false; #desktopStarted = false; #desktopPrepared = false;
   #maintenance = null;
   #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false; #mailOperations = new Map(); #backupConfig; #backupOperation = null;
-  constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone, backup = {} } = {}) {
+  constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone, backup = {}, desktopNotify = null } = {}) {
     super();
     this.#store = store; this.#model = model; this.#sources = sources; this.#timezone = followupTimezone(timezone);
     this.#backupConfig = { connection: structuredClone(backup.connection ?? { provider: null, google_client: null }), protector: backup.protector };
+    if (desktopNotify !== null) {
+      if (typeof desktopNotify !== 'function') throw Error('CONTACT_DESKTOP_NOTICES_UNAVAILABLE');
+      this.#desktopNotify = desktopNotify;
+      this.#prepareDesktop();
+      this.on('change', () => this.#notifyDesktop());
+    }
+  }
+  #prepareDesktop() {
+    if (!this.#desktopNotify || this.#desktopPrepared || this.#desktopError || this.#stopped || this.#store.contactVersion < 5) return;
+    try { this.#store.prepareDesktopNotices(); this.#desktopPrepared = true; }
+    catch { this.#desktopError = true; }
+  }
+  #notifyDesktop() {
+    if (!this.#desktopPrepared || !this.#desktopStarted || this.#desktopError || this.#stopped) return;
+    try { if (this.#store.takeDesktopNotices()) this.#desktopNotify(); }
+    catch { this.#desktopError = true; }
+  }
+  get desktopNotifications() {
+    return { available: !!this.#desktopNotify, active: this.#desktopPrepared && this.#desktopStarted && !this.#desktopError && !this.#stopped, error: this.#desktopError };
   }
   async backupRecords(device, portable, consent) {
     this.#store.assertDevice(device);
@@ -71,6 +91,7 @@ export class ContactService extends EventEmitter {
   unshareBrowser(device) { this.#store.assertDevice(device); this.#browser?.unshare(); this.emit('change'); return this.browserStatus(device); }
   resolveBrowser(device, id, consent) { this.#store.resolveBrowserAction(device, id, consent); this.emit('change'); return this.browserStatus(device); }
   start() {
+    this.#prepareDesktop(); this.#desktopStarted = true;
     if (!this.#timer && !this.#stopped && this.#store.contactVersion >= 3) {
       this.#timer = setInterval(() => {
         try {
@@ -92,6 +113,8 @@ export class ContactService extends EventEmitter {
       this.#timer.unref();
       this.tickFollowups(); this.checkAttention();
     }
+    // Initial catch-up may have just created an overdue notice.
+    this.#notifyDesktop();
     this.#wakeRequested = true;
     if (!this.#drain && !this.#stopped) {
       // Schedule outside request handling. Disconnecting the requester neither

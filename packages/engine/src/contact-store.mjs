@@ -1,4 +1,5 @@
 import { beginBrowserFileAction, finishBrowserFileAction } from './browser-file-actions.mjs';
+import { DesktopNotices } from './desktop-notices.mjs';
 // Host-owned contact journal. Raw context never goes into a browser checkpoint.
 // Separate from the existing action ledger: documents are conversation results,
 // never an authority to overwrite arbitrary files or publish externally.
@@ -130,6 +131,7 @@ function prepare(root, initialize) {
 }
 
 export class ContactStore {
+  #desktopNotices = null;
   #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0; #browserRevision = 0; #recovered = null;
   constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false, mail = false, recovery = null }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
@@ -1759,6 +1761,42 @@ export class ContactStore {
     return { available: this.#version >= 5, enabled: !!live, timezone: grant?.timezone ?? null,
       mode: grant?.version === 2 ? 'continuous' : 'daily', attention: grant?.version === 2 ? this.attentionStatus() : null,
       next_at: live ? grant.next_at : null, blocked_reason: live && this.requestRoom(grant.version === 2 ? 'continuous' : 'legacy') <= 4 ? 'usage_limit' : null, last: last ?? null };
+  }
+  prepareDesktopNotices() {
+    this.#check(); if (this.#version < 5) throw Error('CONTACT_DESKTOP_NOTICES_UNAVAILABLE');
+    this.#desktopNotices ??= new DesktopNotices(this.#root, this.#key, this.#id);
+    this.#desktopNotices.prepare(() => ({ version: 1,
+      through: this.#db.prepare('SELECT coalesce(max(seq),0) n FROM turns').get().n,
+      pending: this.#db.prepare("SELECT t.seq FROM turns t JOIN proactive_runs r ON r.turn=t.seq WHERE t.state IN('queued','running') ORDER BY t.seq").all().map(r => r.seq),
+      notices: this.#db.prepare("SELECT id FROM followup_notices WHERE state='ready' ORDER BY id").all().map(r => r.id) }));
+  }
+  takeDesktopNotices(now = Date.now()) {
+    this.#check(); this.prepareDesktopNotices();
+    const old = this.#desktopNotices.state;
+    const through = this.#db.prepare('SELECT coalesce(max(seq),0) n FROM turns').get().n;
+    if (through < old.through) throw Error('CONTACT_DESKTOP_NOTICES_UNAVAILABLE');
+    const pending = [], notices = []; let notify = false;
+    const rows = this.#db.prepare(`SELECT t.* FROM turns t JOIN proactive_runs r ON r.turn=t.seq WHERE t.seq>? OR t.seq IN(${old.pending.map(() => '?').join(',') || 'NULL'}) ORDER BY t.seq`).all(old.through, ...old.pending);
+    for (const row of rows) {
+      const run = this.proactiveForTurn(row.seq);
+      if (!this.#proactiveCurrent(run, now)) continue;
+      if (['queued', 'running'].includes(row.state)) { pending.push(row.seq); continue; }
+      if (row.state !== 'answered') continue;
+      const answer = this.#turn(row).answer;
+      if (!answer || answer.quiet) continue;
+      if (answer.calendar_reminder && (!this.googleConnected() || answer.observed_at > now || now - answer.observed_at > 60000
+          || !this.#setting('attention')?.notified.some(n => n.turn === row.seq && n.active && n.until > now))) continue;
+      notify = true;
+    }
+    for (const row of this.#db.prepare("SELECT n.id,n.version,f.version current_version,f.device,f.state FROM followup_notices n JOIN followups f ON f.id=n.commitment WHERE n.state='ready' ORDER BY n.id").all()) {
+      if (row.version !== row.current_version || !['open', 'waiting'].includes(row.state)) continue;
+      try { this.#device(row.device, now); } catch { continue; }
+      notices.push(row.id); if (!old.notices.includes(row.id)) notify = true;
+    }
+    // Persist the attempt before handing off. A crash here may lose a balloon,
+    // never the underlying result; this is not an OS delivery/read receipt.
+    this.#desktopNotices.save({ version: 1, through, pending, notices });
+    return notify;
   }
   configureProactive(device, enabled, consent, timezone, now = Date.now()) {
     if (typeof enabled !== 'boolean' || (enabled && !['daily_conversation_suggestions_v1', ATTENTION_CONSENT].includes(consent)) || (!enabled && consent !== null)) throw Error('CONTACT_PROACTIVE_CONSENT_REQUIRED');

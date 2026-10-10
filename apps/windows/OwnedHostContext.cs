@@ -22,7 +22,7 @@ sealed class OwnedHostContext : ApplicationContext {
     readonly Icon icon;
     Process child;
     int attempts;
-    bool everOpened, ready, owned, quitting, finished, openPending, opening;
+    bool everOpened, ready, currentReady, owned, quitting, finished, openPending, opening;
     internal int ExitCode { get; private set; }
     internal bool TrayVisible { get { return tray.Visible; } }
     internal bool Recovering { get { return retry.Enabled; } }
@@ -49,6 +49,7 @@ sealed class OwnedHostContext : ApplicationContext {
         tray.ContextMenuStrip = menu;
         open.Click += (sender, e) => OpenWindow();
         tray.DoubleClick += (sender, e) => OpenWindow();
+        tray.BalloonTipClicked += (sender, e) => OpenWindow();
         quit.Click += (sender, e) => Stop();
         retry.Tick += (sender, e) => { retry.Stop(); StartChild(); };
         dispatcher.BeginInvoke(new Action(StartChild));
@@ -63,7 +64,7 @@ sealed class OwnedHostContext : ApplicationContext {
         try {
             verify();
             process = new Process { StartInfo = start };
-            child = process; owned = false;
+            child = process; owned = currentReady = false;
             var current = process;
             // Discard every other stdout/stderr line: they can contain secrets.
             process.OutputDataReceived += (sender, e) => {
@@ -73,7 +74,14 @@ sealed class OwnedHostContext : ApplicationContext {
                     status.Text = "컴퓨터에서 실행 중"; tray.Text = "Tada · 실행 중";
                     if (openPending) OpenWindow();
                 });
-                else if (e.Data == "\u001eTADA_ASSISTANT_READY_V1") Post(() => { if (child == current) ready = true; });
+                else if (e.Data == "\u001eTADA_ASSISTANT_READY_V1") Post(() => { if (child == current) ready = currentReady = true; });
+                else if (e.Data == "\u001eTADA_NEWS_V1") Post(() => {
+                    if (child != current || !currentReady || quitting || finished || current.HasExited) return;
+                    // Ready may precede the window-open receipt during startup.
+                    tray.Visible = true;
+                    tray.BalloonTipTitle = "Tada"; tray.BalloonTipText = "새 소식이 있어요. Tada에서 확인해 주세요.";
+                    tray.BalloonTipIcon = ToolTipIcon.Info; tray.ShowBalloonTip(5000);
+                });
                 else if (e.Data == "\u001eTADA_OPEN_FAILED_V1") Post(() => {
                     if (child != current || quitting || finished) return;
                     tray.ShowBalloonTip(5000, "Tada", "창을 열지 못했어요. Windows의 기본 브라우저 설정을 확인하고 다시 열어 주세요.", ToolTipIcon.Warning);

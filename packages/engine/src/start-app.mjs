@@ -25,7 +25,7 @@ export async function openAppBrowser(url) {
   if (!/^http:\/\/127\.0\.0\.1:[0-9]+\/#setup=[A-Za-z0-9_-]{43}$/u.test(url)) throw Error('INVALID_APP_URL');
   return openSystemBrowser(url);
 }
-export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance, signal, onReady = () => {}, platform = process.platform, recordsFactory = options => new AppRecords(options), privacyFactory = options => new AppPrivacy(options), backgroundFactory = (options, config) => platform === 'win32' ? new WindowsBackgroundApp(options, config) : new BackgroundApp(options, config) } = {}) {
+export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance, signal, onReady = () => {}, desktopNotify = null, platform = process.platform, recordsFactory = options => new AppRecords(options), privacyFactory = options => new AppPrivacy(options), backgroundFactory = (options, config) => platform === 'win32' ? new WindowsBackgroundApp(options, config) : new BackgroundApp(options, config) } = {}) {
   if (args.includes('--help') || args.includes('-h')) return main(['--help']);
   if (args.filter(arg => arg === '--background').length > 1) throw Error('CONTACT_OPTIONS_INVALID');
   const backgroundMode = args.includes('--background'); args = args.filter(arg => arg !== '--background');
@@ -72,7 +72,7 @@ export async function startApp(args = process.argv.slice(2), { open = openAppBro
       const storageContext = await records.context();
       ui.recordRestore(storageContext?.restoring === true, storageContext?.expectedLabel ?? null);
       return run(launchArgs(initialized ? args.filter(arg => arg !== '--init') : args,!!freshId),
-        { ui: { ...ui, initialized: () => { initialized = true; }, ready: source => { ui.signal.throwIfAborted();if(freshId)privacy.completeFresh(freshId);ui.ready(source, storageContext?.restoring === true); onReady(); } }, background, storageContext });
+        { ui: { ...ui, desktopNotify, initialized: () => { initialized = true; }, ready: source => { ui.signal.throwIfAborted();if(freshId)privacy.completeFresh(freshId);ui.ready(source, storageContext?.restoring === true); onReady(); } }, background, storageContext });
     } });
     await slot.publish(setup.url);
   } catch (error) { await setup?.close(); slot.close(); return showFailure(error); }
@@ -102,7 +102,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     open: () => app?.reopen?.(),
     failed: () => process.stdout.write('\u001eTADA_OPEN_FAILED_V1\n'),
   });
-  startApp(process.argv.slice(2), { signal: parent.signal, onReady: () => {
+  startApp(process.argv.slice(2), { signal: parent.signal, desktopNotify: supervised ? () => {
+    if (!parent.signal.aborted) process.stdout.write('\u001eTADA_NEWS_V1\n');
+  } : null, onReady: () => {
     if (supervised && !parent.signal.aborted) process.stdout.write('\u001eTADA_ASSISTANT_READY_V1\n');
   } }).then(result => {
     app = result;

@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-10",
+  "scope": "Private Windows desktop presentation of existing authorized proactive results and due work; not release acceptance",
+  "parent": "21158f855c9d5eeef0cb2b6c84b8ece8decfc229",
+  "storage": {
+    "contact_schema_change": false,
+    "file": "desktop-notices.v1.enc",
+    "encrypted_journal_bound": true,
+    "meaning": "Attempted presentation, not delivery/read receipt; baseline historical results and retain pending lower sequence work",
+    "backup": "Excluded; restored results are historical, never replayed as new desktop news"
+  },
+  "validation": {
+    "npm_run_check": {
+      "passed": 1515,
+      "failed": 0,
+      "skipped": 0,
+      "log": "tada-desktop-amend-full.log"
+    },
+    "native_node": {
+      "passed": 261,
+      "failed": 0,
+      "skipped": 3,
+      "skip_reason": "POSIX-specific filesystem checks",
+      "log": "tada-desktop-amend-native.log"
+    },
+    "chrome_ui": {
+      "widths": [
+        1280,
+        390
+      ],
+      "horizontal_overflow": false,
+      "browser_preference_default": true,
+      "owner_accounts_or_model_calls": false,
+      "log": "tada-desktop-settings2.log"
+    },
+    "rust": "Unchanged crates, schema, dependencies and broker; preceding applicable workspace/clippy/process validation retained.",
+    "native_tray_log": "tada-desktop-amend-native.log",
+    "final_ui_regression": {
+      "passed": 137,
+      "failed": 0,
+      "skipped": 0,
+      "log": "tada-desktop-ui-final.log"
+    },
+    "source_parity": "Exact final production path sets and bytes matched the native test copy. Native Node and Windows Forms tray checks both passed on that copy."
+  },
+  "retained_failures": [
+    "Initial full check rejected the previous blanket localStorage ban; replaced it with actual pairing and presentation-storage assertions. Only an on/off display preference is stored; pairing credentials remain absent.",
+    "Native fixture initially supplied an invalid null Google account, inspected the wrong balloon text property, then invoked the parameterless .NET Framework click event with an argument. Corrected synthetic fixture data, explicit production balloon properties and reflection invocation. No product acceptance condition removed.",
+    "First independent commit review reproduced missed startup-overdue reminders, a separately expired Google connection device admitting a calendar balloon, and disabled notifications after explicitly upgrading a v1-v4 journal. The service now initializes after the supported schema is available, checks again after initial catch-up, and calendar presentation rechecks Google connection authority. Three new actual-store/service regression cases cover these paths."
+  ],
+  "remaining_limits": [
+    "OS notification settings/focus mode may suppress display; no read or delivery receipt.",
+    "The native test observes real BalloonTipShown, then injects the click event; it is not a physical user click.",
+    "Host sleep/shutdown suspends work. No web push, physical phone delivery or public distribution qualification.",
+    "An interruption after saving an attempt can lose a balloon, but the conversation result remains."
+  ],
+  "native_tray": {
+    "scope": "Real Windows Forms tray/menu, OS BalloonTipShown and production ContactService/Node receiver with synthetic work; balloon click event injected, not physical click or live account/mobile acceptance",
+    "checks": [
+      "active encoding 949 passed: exact one Node child; first command bytes, native open and EOF stop verified",
+      "backoff encoding 949 passed: exact one Node child; native lifecycle verified",
+      "reopen encoding 949 passed: exact one Node child; native lifecycle verified",
+      "news encoding 949 passed: exact one Node child; production ContactService reminder, OS BalloonTipShown, private generic body and injected click reopening the same journal verified",
+      "active encoding 65001 passed: exact one Node child; first command bytes, native open and EOF stop verified",
+      "backoff encoding 65001 passed: exact one Node child; native lifecycle verified",
+      "reopen encoding 65001 passed: exact one Node child; native lifecycle verified"
+    ],
+    "passed": true
+  }
+}
