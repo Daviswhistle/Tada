@@ -1,7 +1,7 @@
 import { BACKUP_CONSENT, createRecordBackup } from './contact-backup.mjs';
 import { MailSources } from './mail-sources.mjs';
 import { SavedFileSources } from './saved-file-sources.mjs';
-import { BrowserSources } from './browser-sources.mjs';
+import { BrowserTaskSources } from './browser-task.mjs';
 import { observeAttention, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { createHash } from 'node:crypto';
 import { ProactiveSources } from './proactive-sources.mjs';
@@ -168,7 +168,8 @@ export class ContactService extends EventEmitter {
         this.#active.google = google;
         const ownerContext = !review && !proactive ? new OwnerContext(this.#store, job) : null;
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
-        const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserSources(google ?? this.#sources, this.#store, this.#browser, job)) : google ?? this.#sources;
+        const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserTaskSources(google ?? this.#sources, this.#store, this.#browser, job, () => metered,
+          event => { if (event.kind === 'tool_call' && typeof event.name === 'string' && attemptedTools.length < 24) attemptedTools.push(event.name); })) : google ?? this.#sources;
         const mailSources = !review && !proactive && this.#store.contactVersion >= 6 ? new MailSources(interactive, this.#store, job, google, (id, signal) => this.reconcileMail(job.device, id, signal)) : null;
         const interactiveTools = !review && !proactive ? new SavedFileSources(mailSources ?? interactive, this.#store, job) : mailSources ?? interactive;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
@@ -266,7 +267,7 @@ export class ContactService extends EventEmitter {
           answer.notice = [answer.notice, notice].filter(Boolean).join('\n\n');
           checkpoint.history.push({ role: 'assistant', content: `Local mail draft ${mail.id} saved for owner review; not sent. Use read_mail_action for its current state.` });
         }
-        const browserActions = this.#store.readBrowserActions().filter(r => r.turn === job.seq);
+        const browserActions = browserSources?.actions ?? [];
         if (browserActions.length) {
           const fileActions=browserActions.filter(r=>r.payload.acceptance==='selected_file_result'),textActions=browserActions.filter(r=>r.payload.acceptance!=='selected_file_result');
           const matchingFiles=fileActions.filter(r=>r.receipt?.observed_sha256===r.payload.replacement.sha256).length;

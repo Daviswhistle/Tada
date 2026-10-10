@@ -188,7 +188,7 @@ test('same continuing service exposes actual tools only with owner sharing and r
   b.release = async epoch => { released = epoch; };
   const reply = content => ({ message: { role: 'assistant', content }, input_tokens: 1, output_tokens: 1 });
   const call = (name, args) => ({ ...reply(''), message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] } });
-  const model = { async chat(messages, tools) { calls++; assert.ok(tools.some(t => t.function?.name === 'observe_shared_browser')); if (calls === 1)
+  const model = { async chat(messages, tools) { if (tools.some(t=>t.function.name==='work_on_shared_browser')) return messages.some(m=>m.tool_name==='work_on_shared_browser') ? reply('현재 입력값을 확인했어요.') : call('work_on_shared_browser',{}); calls++; assert.ok(tools.some(t => t.function?.name === 'observe_shared_browser')); if (calls === 1)
       return call('observe_shared_browser', {}); if (calls === 2) {
       obs = JSON.parse(messages.at(-1).content);
       return call('fill_shared_textbox', { observation: obs.observation, ref: '1', value: '회의 준비' });
@@ -279,7 +279,8 @@ test('explicit host stop after browser input preserves the applied value and its
     const reached = new Promise(resolve => { applied = resolve; });
     b.fill = async (_epoch, _obs, _ref, value, admit) => { admit(); b.actual = value; applied(); await new Promise(resolve => { release = resolve; }); return { applied: true }; };
     let calls = 0;
-    const model = { chat: async messages => {
+    const model = { chat: async (messages, tools) => {
+      if (tools.some(t=>t.function.name==='work_on_shared_browser')) return {message:{role:'assistant',content:'',tool_calls:[{function:{name:'work_on_shared_browser',arguments:{}}}]},input_tokens:1,output_tokens:1};
       calls++;
       const name = calls === 1 ? 'observe_shared_browser' : 'fill_shared_textbox';
       const args = calls === 1 ? {} : { observation: JSON.parse(messages.at(-1).content).observation, ref: '1', value: '확인 전 적용된 값' };

@@ -36,7 +36,7 @@ try {
   let step = 0;
   const result = content => ({ message: { role: 'assistant', content }, input_tokens: 1, output_tokens: 1 });
   const call = (name, args) => ({ ...result(''), message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] } });
-  service = new ContactService(store, { async chat(messages) { if (++step === 1)
+  service = new ContactService(store, { async chat(messages, tools) { if(tools.some(t=>t.function.name==='work_on_shared_browser')) return messages.some(m=>m.tool_name==='work_on_shared_browser') ? result('제목 입력값을 확인했어요.') : call('work_on_shared_browser',{}); if (++step === 1)
       return call('observe_shared_browser', {}); if (step === 2) {
       const observed = JSON.parse(messages.at(-1).content);
       assert.equal(observed.fields.length, 2);

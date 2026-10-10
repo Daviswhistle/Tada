@@ -21,6 +21,8 @@ export class BrowserSources {
   #grant;
   #observations = new Map();
   #used = false;
+  #actionIds = [];
+  get actions() { return this.#actionIds.map(id => this.#store.readBrowserAction(id)); }
   #fills = 0;
   #reads = 0;
   #files = new Map(); #fileActions = new Map(); #fileReads = 0; #downloads = 0;
@@ -110,6 +112,7 @@ export class BrowserSources {
       const dispatched = await this.#browser.fill(this.#grant.epoch, observation, args.ref, args.value, () => {
         admit();
         id = this.#store.admitBrowserAction(this.#job.seq, this.#grant, observation, args.ref, args.value);
+        this.#actionIds.push(id);
       });
       if (!dispatched || typeof dispatched.applied !== 'boolean')
         throw Error('CONTACT_BROWSER_RESPONSE_UNKNOWN');
@@ -198,7 +201,7 @@ export class BrowserSources {
     let id=null,record,result;
     try {
       result=await this.#browser.replaceFile(this.#grant.epoch,observation,file.ref,file.original,replacement,args.submit,()=>{
-        admit();id=this.#store.admitBrowserFileAction(this.#job.seq,this.#grant,observation,file.ref,file.original,replacement,args.submit);
+        admit();id=this.#store.admitBrowserFileAction(this.#job.seq,this.#grant,observation,file.ref,file.original,replacement,args.submit);this.#actionIds.push(id);
       });
       if(typeof result?.applied!=='boolean')throw Error('CONTACT_BROWSER_RESPONSE_UNKNOWN');
       record=this.#store.finishBrowserFileAction(id,result.applied);

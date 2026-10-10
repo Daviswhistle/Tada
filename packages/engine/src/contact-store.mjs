@@ -1479,6 +1479,7 @@ export class ContactStore {
       .filter(r => !pendingOnly || ['DISPATCHING','UNCERTAIN','ACKNOWLEDGED'].includes(r.action.state) && !r.resolved && !r.recovery.acknowledged);
     return pendingOnly ? [...current,...prior] : [...current,...prior.sort((a,b) => b.created-a.created)].slice(0,20);
   }
+  readBrowserAction(id) { this.#check(); return structuredClone(this.#browserAction(id)); }
   #browserAction(id) {
     if (typeof id !== 'string' || !/^browser-[a-f0-9-]{36}$/u.test(id)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
     for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) {

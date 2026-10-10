@@ -151,7 +151,8 @@ for(const connected of [false,true])for(const historical of [false,true])test(`d
     e.store.cancel(e.job.seq);let step=0,view,file,action;const sizes=[];
     const call=(name,args)=>({message:{role:'assistant',content:'',tool_calls:[{function:{name,arguments:args}}]},input_tokens:1,output_tokens:1});
     if(connected)e.store.configureContinuingUse(e.device.id,true,CONTINUING_CONSENT);
-    service=new ContactService(e.store,{identity:{provider:'ollama-local'},contextBytes(messages,tools){const size=Buffer.byteLength(JSON.stringify({messages,tools}));sizes.push(size);return size;},async chat(messages){
+    service=new ContactService(e.store,{identity:{provider:'ollama-local'},contextBytes(messages,tools){const size=Buffer.byteLength(JSON.stringify({messages,tools}));sizes.push(size);return size;},async chat(messages,tools){
+      if(tools.some(t=>t.function.name==='work_on_shared_browser'))return messages.some(m=>m.tool_name==='work_on_shared_browser') ? {message:{role:'assistant',content:'브라우저 작업 결과를 확인했어요.'},input_tokens:1,output_tokens:1} : call('work_on_shared_browser',{});
       step++;if(step===1)return call('observe_shared_browser',{});
       const last=step<=6?JSON.parse(messages.at(-1).content):null;assert.equal(last?.error,undefined,JSON.stringify({step,last,sizes}));
       if(step===2){view=last;return call('read_shared_file',{observation:view.observation,ref:'file-1',encoding:'auto'});}
@@ -191,7 +192,8 @@ for(const repair of ['encoding','edit'])test(`continuing service repairs a 20KB 
     const original=fileCopy('large.txt','text/plain',Buffer.from(text));
     e.browser.readFile=async(epoch,observation,ref,admit)=>{admit();return original;};
     const call=(name,args)=>({message:{role:'assistant',content:'',tool_calls:[{function:{name,arguments:args}}]},input_tokens:1,output_tokens:1});
-    service=new ContactService(e.store,{contextLimitBytes:65536,async chat(messages){
+    service=new ContactService(e.store,{contextLimitBytes:65536,async chat(messages,tools){
+      if(tools.some(t=>t.function.name==='work_on_shared_browser'))return messages.some(m=>m.tool_name==='work_on_shared_browser') ? {message:{role:'assistant',content:'브라우저 작업 결과를 확인했어요.'},input_tokens:1,output_tokens:1} : call('work_on_shared_browser',{});
       step++;if(step===1)return call('observe_shared_browser',{});
       const last=JSON.parse(messages.at(-1).content);
       if(step===2)return call('read_shared_file',{observation:last.observation,ref:'file-1',encoding:'auto'});

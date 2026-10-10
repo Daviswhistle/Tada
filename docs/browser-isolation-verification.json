@@ -1,0 +1,66 @@
+{
+  "date": "2026-10-10",
+  "baseline": "cc87ca06ce3c9e076b77977c84dfb9adb1cc5ea4",
+  "scope": "Synthetic Google + actual ContactService + sandboxed Chrome. No real accounts or provider requests.",
+  "baseline_reproduction": {
+    "private_body_reached_model": true,
+    "private_body_reached_dom": true,
+    "private_body_reached_loopback_autosave": true
+  },
+  "current_cases": [
+    "rich planner raw write rejected",
+    "isolated editor cannot call connected-mail tool",
+    "normal current-request edit applied once with fixture-observed autosave",
+    "historical private answer absent from editor input",
+    "cancel/revoke/unshare/new grant/model failure do not dispatch",
+    "duplicate calls do not rerun editor",
+    "inference failure after verified write returns host effects, never performed=false",
+    "escaped editor explanation is shortened using actual parent serialization budget",
+    "current effect receipt and owner notice survive 20 older acknowledgements moving it out of the recent display list",
+    "late sharing from no grant or another device does not advertise uncaptured tools or fail the running request"
+  ],
+  "checks": {
+    "npm_ci_ignore_scripts": "passed; zero vulnerabilities",
+    "npm_check_with_native_read_broker": {
+      "passed": 1535,
+      "failed": 0,
+      "skipped": 0
+    },
+    "windows_focused": {
+      "passed": 84,
+      "failed": 0,
+      "skipped": 0
+    },
+    "windows_chrome": {
+      "private_transfer_modes": [
+        "raw",
+        "isolated",
+        "positive"
+      ],
+      "shared_browser_smoke": "passed"
+    },
+    "linux_chrome": {
+      "private_transfer_modes": [
+        "raw",
+        "isolated",
+        "positive"
+      ],
+      "shared_browser_smoke": "passed"
+    },
+    "rust": [
+      "cargo fmt --all -- --check",
+      "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "cargo test --workspace --locked",
+      "cargo test -p tada-agentd --features process-fixtures --locked"
+    ]
+  },
+  "harness_sha256": "b5fc1aec941f9cb88fb33d213623aa444ebb5ba1a3032caca24e4d2bc859891f",
+  "limits": [
+    "No whole prompt-injection or arbitrary-site isolation claim.",
+    "Owner current request and shared page/file are supplied to the editor.",
+    "Private cross-source transfer approval UI not implemented in this unit.",
+    "Prior A08 history-dependent model acceptance does not qualify this changed path; repeat after an explicit transfer path exists.",
+    "No live-model, physical-device or release acceptance in these checks."
+  ],
+  "review_amendment": "Independent reviews found post-effect exception reporting, escaped tool-result budgeting, recent-display-list eviction, and late-share tool exposure defects. All were reproduced and fixed; full amended review is separate."
+}
