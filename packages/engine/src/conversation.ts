@@ -353,9 +353,13 @@ export class ConversationAssistant {
                 // a provider to serialize it. Subscription continuation, all
                 // schemas, prior results and the exact evidence ID count here.
                 // Any later failure admitted by codeOf must fit this reservation.
+                // Reads can unlock larger tool schemas. Admission must measure
+                // the next request, including its current host context/tools.
+                const nextDefinitions = this.sources.definitions;
+                projected[0] = systemMessage(nextDefinitions, this.sources.hostContext);
                 const measured = this.model.contextBytes
-                  ? this.model.contextBytes(copy(projected), copy(definitions))
-                  : size({ messages: projected, tools: definitions });
+                  ? this.model.contextBytes(copy(projected), copy(nextDefinitions))
+                  : size({ messages: projected, tools: nextDefinitions });
                 const receipts = [...this.evidence.values()];
                 if (name === 'read_file' || this.sources.isEvidenceRead?.(name) === true) {
                   receipts.push({ id: `S${this.nextEvidence}`, source: candidate.source, path: candidate.path,

@@ -237,8 +237,12 @@ test('foreground recovery before model selection preserves visible setup and ini
   const endpoint = app => { const url = new URL(app.url); return { origin: url.origin, headers: { Authorization: 'Bearer ' + new URLSearchParams(url.hash.slice(1)).get('setup') } }; };
   const until = async (app, stage) => {
     const { origin, headers } = endpoint(app);
-    for (let i = 0; i < 200; i++) { const state = await nativeFetch(origin + '/state', { headers }).then(r => r.json()); if (state.stage === stage) return state; await new Promise(resolve => setTimeout(resolve, 10)); }
-    throw Error('SETUP_STAGE_TIMEOUT:' + stage);
+    // This checks recovery/one-time initialization, not startup latency. Full
+    // suites also run native process/crypto fixtures, so await the actual state
+    // with a bounded wall-clock deadline instead of a two-second poll count.
+    const deadline = Date.now() + 10000; let observed;
+    do { const state = await nativeFetch(origin + '/state', { headers, signal: AbortSignal.timeout(2000) }).then(r => r.json()); observed = state.stage; if (observed === stage) return state; await new Promise(resolve => setTimeout(resolve, 10)); } while (Date.now() < deadline);
+    throw Error('SETUP_STAGE_TIMEOUT:' + stage + ':observed=' + observed);
   };
   try {
     first = await startApp(['--data', data, '--port', String(port)], fixture);

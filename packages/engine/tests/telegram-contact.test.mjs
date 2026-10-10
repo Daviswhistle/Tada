@@ -810,3 +810,14 @@ for (const observed of [false, true]) test(`shutdown preserves a Telegram send o
     assert.equal(await bridge.deliverOnce(Date.now() + 86400000), false); assert.equal(f.effects.length, 1);
   } finally { await bridge.close(); await service.close(); env.close(); await f.close(); }
 });
+
+test('saved file links remain computer instructions in text-only Telegram delivery',()=>{
+ const env=setup();try {
+  const device=directBind(env.store);deliverAll(env.store);
+  const path='/api/browser/files/browser-'+randomUUID(),notice=`[원본 내려받기](${path}/original) · [수정본 내려받기](${path}/replacement)`;
+  const pending=env.store.submit(device,randomUUID(),'파일 결과 알려줘');env.store.claim();
+  env.store.finish(pending.seq,{text:'수정본을 보존했어요.',sources:[],notice},new ConversationAssistant({},noSources).checkpoint());
+  const out=deliverAll(env.store);assert.equal(out.length,1);assert.match(out[0].text,/원본 내려받기 \(컴퓨터의 Tada 대화에서\)/);assert.match(out[0].text,/수정본 내려받기 \(컴퓨터의 Tada 대화에서\)/);assert.doesNotMatch(out[0].text,/\/api\/browser|browser-[a-f0-9-]+/);
+  assert.equal(env.store.readTurn(pending.seq).answer.notice,notice);
+ }finally{env.close();}
+});

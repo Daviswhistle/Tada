@@ -31,6 +31,8 @@ body:has(#settings[open]){overflow:hidden}
 .browser-buttons { display:flex; flex-wrap:wrap; gap:.6rem; }
 .browser-tab,.browser-action { margin-top:1rem; padding:1rem; border:1px solid var(--line,#d8dfd6); border-radius:12px; overflow-wrap:anywhere; }
 .browser-tab p { font-size:.85rem; }
+.browser-action>a { display:inline-block; margin:.6rem 1rem .4rem 0; padding:.35rem 0; }
+.browser-action>strong { display:block; }
 .browser-sharing { max-width:960px; margin:0 auto; padding:.7rem 1rem; display:flex; align-items:center; justify-content:space-between; gap:1rem; color:#315344; background:#eef3eb; border-radius:12px; overflow-wrap:anywhere; }
 .browser-sharing[hidden] { display:none; }
 .browser-sharing button { flex-shrink:0; }
@@ -58,3 +60,4 @@ body:has(#settings[open]){overflow:hidden}
 .setup-recovery .lead { margin-bottom: 24px; }
 
 button.danger{color:#8b2d28;border-color:#cfa9a5}button.danger:not(:disabled):hover{background:#f9e8e5}.setup-recovery .backup-option{display:flex;align-items:flex-start;gap:.65rem;margin:1.25rem 0}.setup-recovery .backup-option input{width:auto;flex:0 0 auto;margin-top:.25rem}
+.status a[download],.answer a[download]{display:inline-flex;align-items:center;min-height:44px;padding:6px 12px;margin:3px 0;border:1px solid #d7ddcf;border-radius:10px;background:#fff;color:#355442;text-decoration:none;font-size:14px}.status a[download]:hover,.answer a[download]:hover{background:#f0f3ed}

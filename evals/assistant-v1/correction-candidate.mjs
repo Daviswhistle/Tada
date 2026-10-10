@@ -50,8 +50,10 @@ export async function runCorrectionAcceptance({ provider, reportPath, implementa
       store.close(); store = null;
       const setup = new DatabaseSync(join(config.directory, 'contact.sqlite'));
       try {
-        setup.prepare('UPDATE turns SET created=? WHERE seq=?').run(Date.now() - 3 * 86400000, irrelevant);
-        setup.prepare('UPDATE turns SET created=? WHERE seq=?').run(Date.now() - 86400000, earlier);
+        // Anchor to the last seeded record, not elapsed setup wall time.
+        const latest = setup.prepare('SELECT created FROM turns WHERE seq=?').get(result.fixture.history.at(-1).seq).created;
+        setup.prepare('UPDATE turns SET created=? WHERE seq=?').run(latest - 3 * 86400000, irrelevant);
+        setup.prepare('UPDATE turns SET created=? WHERE seq=?').run(latest - 86400000, earlier);
         for (const item of result.fixture.history) item.created = setup.prepare('SELECT created FROM turns WHERE seq=?').get(item.seq).created;
       } finally { setup.close(); }
       store = new ContactStore(config);

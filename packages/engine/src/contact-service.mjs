@@ -54,8 +54,8 @@ export class ContactService extends EventEmitter {
   attachBrowser(browser) { if (this.#browser) throw Error('CONTACT_BROWSER_ALREADY_ATTACHED'); this.#browser = browser; browser.on?.('change', () => this.emit('change')); }
   browserStatus(device) {
     const grant = this.#browser?.grant;
-    return { available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device } : null,
-      actions: [...new Map([...this.#store.readBrowserActions().slice(0,10), ...this.#store.readBrowserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved || !!r.recovery?.acknowledged, ...(r.recovery ? {recovery:r.recovery} : {}) })) };
+    return { available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device, files: grant.files === true } : null,
+      actions: [...new Map([...this.#store.readBrowserActions().slice(0,10), ...this.#store.readBrowserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, file: r.payload.acceptance === 'selected_file_result', download_matches: r.receipt?.observed_sha256 ? r.receipt.observed_sha256===r.payload.replacement?.sha256 : null, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved || !!r.recovery?.acknowledged, ...(r.recovery ? {recovery:r.recovery} : {}) })) };
   }
   async openBrowser(device) { this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE'); await this.#browser.open(); if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); this.#store.assertDevice(device); return this.browserStatus(device); }
   async browserTabs(device) { this.#store.assertDevice(device); if (!this.#browser) return []; const tabs = await this.#browser.tabs(); this.#store.assertDevice(device); return tabs; }
@@ -237,9 +237,16 @@ export class ContactService extends EventEmitter {
         }
         const browserActions = this.#store.readBrowserActions().filter(r => r.turn === job.seq);
         if (browserActions.length) {
-          const verified = browserActions.filter(r => r.action.state === 'VERIFIED').length;
-          const unresolved = browserActions.filter(r => ['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(r.action.state)).length;
-          const notice = `${verified ? `브라우저 입력 ${verified}건의 현재 값을 확인했어요.` : unresolved ? '브라우저 입력 결과를 확정하지 못했어요.' : '브라우저 입력은 적용되지 않았어요.'}${unresolved ? ` ${unresolved}건은 결과 확인이 필요해 같은 사이트의 새 입력을 멈췄어요.` : ''} 사이트의 저장·전송 완료 여부는 확인하지 않았어요.`;
+          const fileActions=browserActions.filter(r=>r.payload.acceptance==='selected_file_result'),textActions=browserActions.filter(r=>r.payload.acceptance!=='selected_file_result');
+          const matchingFiles=fileActions.filter(r=>r.receipt?.observed_sha256===r.payload.replacement.sha256).length;
+          const verified=textActions.filter(r=>r.action.state==='VERIFIED').length;
+          const unresolved=browserActions.filter(r=>['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(r.action.state)).length;
+          const notices=[];
+          if(fileActions.length)notices.push(`원본과 수정본 ${fileActions.length}쌍을 보존했어요. ${matchingFiles ? `${matchingFiles}건은 다운로드한 파일이 수정본과 일치했어요. 사이트에 이번 수정이 적용됐는지는 아직 확인되지 않았어요.` : '사이트의 처리 결과는 아직 확인되지 않았어요.'} 아래 링크에서 두 파일을 내려받을 수 있어요.`);
+          if(textActions.length)notices.push(`${verified ? `브라우저 입력 ${verified}건의 현재 값을 확인했어요.` : unresolved ? '브라우저 입력 결과를 확정하지 못했어요.' : '브라우저 입력은 적용되지 않았어요.'} 이 텍스트 입력의 서버 저장·전송 완료 여부는 확인하지 않았어요.`);
+          if(unresolved)notices.push(`${unresolved}건은 결과 확인이 필요해 같은 사이트의 새 입력을 멈췄어요.`);
+          const links=fileActions.map((r,i)=>`파일 ${i+1}: [원본 내려받기](/api/browser/files/${r.action.action_id}/original) · [수정본 내려받기](/api/browser/files/${r.action.action_id}/replacement)`);
+          const notice=[notices.join(' '),...links].join('\n\n');
           answer.notice = [answer.notice, notice].filter(Boolean).join('\n\n');
           checkpoint.history.push({ role: 'assistant', content: notice });
         }

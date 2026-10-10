@@ -7,6 +7,8 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir, release } from 'node:os';
 import { join, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileCapture, fileSnapshot, filePublic, readSelectedFile, replaceSelectedFile, readDownload } from './shared-browser-files.mjs';
+export const BROWSER_FILE_CONSENT = 'shared_browser_selected_files_v1';
 export const BROWSER_CONSENT = 'shared_browser_text_input_v1';
 export function browserCandidates(platform = process.platform, env = process.env) {
   if (platform === 'win32') {
@@ -45,7 +47,7 @@ const visible = `e => {
 }`;
 // Executed in an isolated world: page code cannot replace these DOM prototypes
 // or read the host's element references. The DOM itself remains untrusted data.
-const capture = `function(key, previous) {
+const capture = `function(key, previous, filesAllowed) {
   if(previous)delete globalThis[previous];
   const visible = ${visible};
   // Structural metadata can change the destination without changing visible
@@ -87,10 +89,11 @@ const capture = `function(key, previous) {
   const labels = (e,visibleOnly=true) => [...(e.labels || [])].map(l=>renderedText(l,visibleOnly)).join(' ');
   const aria = (e,visibleOnly=true) => (e.getAttribute('aria-labelledby') || '').split(/\\s+/).filter(Boolean).map(id=>renderedText(document.getElementById(id),visibleOnly)).join(' ');
   const label = e => (labels(e) || e.getAttribute('aria-label') || aria(e) || e.placeholder || e.name || '').slice(0,300);
-  const safe = e => {
+  const safeMeaning = e => {
     const meaning=[e.autocomplete,e.name,e.id,e.getAttribute('aria-label'),aria(e,false),e.placeholder,labels(e,false)].join(' ');
-    return !['password','hidden','file'].includes(e.type) && meaning.length<=4096 && !/password|passphrase|one-time-code|cc-|secret|token|credential|api[\\s_-]*key|(?:verification|security|authentication|auth|access|recovery|backup)[\\s_-]*code|one[\\s_-]*time|(?:^|[^a-z])(?:otp|pin|cvv|cvc|2fa|mfa)(?:$|[^a-z])|card[\\s_-]*(?:number|verification)|비밀번호|인증[\\s_-]*(?:코드|번호)|보안[\\s_-]*(?:키|코드|번호)|일회용|카드[\\s_-]*번호/i.test(meaning) && (e.tagName==='SELECT' || !/username/i.test(meaning));
+    return meaning.length<=4096 && !/password|passphrase|one-time-code|cc-|secret|token|credential|api[\\s_-]*key|(?:verification|security|authentication|auth|access|recovery|backup)[\\s_-]*code|one[\\s_-]*time|(?:^|[^a-z])(?:otp|pin|cvv|cvc|2fa|mfa)(?:$|[^a-z])|card[\\s_-]*(?:number|verification)|비밀번호|인증[\\s_-]*(?:코드|번호)|보안[\\s_-]*(?:키|코드|번호)|일회용|카드[\\s_-]*번호/i.test(meaning) && (e.tagName==='SELECT' || !/username/i.test(meaning));
   };
+  const safe = e => !['password','hidden','file'].includes(e.type) && safeMeaning(e);
   const eligible = e => safe(e) && visible(e) && !e.matches(':disabled') && !e.closest('[inert]') && !e.readOnly && (e.tagName === 'TEXTAREA' || e.tagName === 'INPUT' && ['text','search'].includes(e.type));
   const signature = e => JSON.stringify([e.tagName,e.type,e.name,e.id,e.getAttribute('aria-label'),label(e),e.getAttribute('form'),e.form?.action,e.form?.method,e.autocomplete,e.maxLength,e.disabled,e.readOnly]);
   const collect = () => [...document.querySelectorAll('input,textarea,select')];
@@ -106,8 +109,10 @@ const capture = `function(key, previous) {
   if (entries.some(x=>x.value.length>8000 || x.surrounding.length>100000)) throw Error('PAGE_TOO_LARGE');
   if ((document.body?.innerText || '').length > 100000) throw Error('PAGE_TOO_LARGE');
   const text=renderedText(document.body);
+  ${fileCapture}
   globalThis[key] = { document, markup, markupOf, baseURI, url: location.href, title: document.title, body: document.body?.innerText || '', text, renderedText, entries, eligible, signature, states, controlState, collect };
-  return { url: location.href, title: document.title.slice(0,300), text: text.slice(0,12000), truncated: text.length>12000 || all.length>40 || publicControls.filter(e=>!eligible(e)).length>40, fields: entries.map(x=>({ ref:x.ref, label:label(x.e), value:x.value.slice(0,2000), truncated:x.value.length>2000, type:x.e.tagName.toLowerCase(),max_length:x.e.maxLength<0?null:x.e.maxLength })), context_fields: publicControls.filter(e=>!eligible(e)).slice(0,40).map(e=>({label:label(e),type:e.type,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.label).join(', ').slice(0,300):['checkbox','radio'].includes(e.type)?e.checked:e.value.slice(0,300)})) };
+  ${fileSnapshot}
+  return { ${filePublic}, url: location.href, title: document.title.slice(0,300), text: text.slice(0,12000), truncated: text.length>12000 || all.length>40 || publicControls.filter(e=>!eligible(e)).length>40, fields: entries.map(x=>({ ref:x.ref, label:label(x.e), value:x.value.slice(0,2000), truncated:x.value.length>2000, type:x.e.tagName.toLowerCase(),max_length:x.e.maxLength<0?null:x.e.maxLength })), context_fields: publicControls.filter(e=>!eligible(e)).slice(0,40).map(e=>({label:label(e),type:e.type,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.label).join(', ').slice(0,300):['checkbox','radio'].includes(e.type)?e.checked:e.value.slice(0,300)})) };
 }`;
 const fill = `function(key, ref, value) {
   const s=globalThis[key], item=s?.entries.find(x=>x.ref===ref), e=item?.e;
@@ -130,7 +135,7 @@ const verify = `function(key) {
 export class SharedBrowser extends EventEmitter {
   #child; #directory; #pending = new Map(); #seq = 0; #buffer = Buffer.alloc(0);
   #opening; #closing; #reset; #closed = false; #grant = null; #session = null;
-  #generation = randomUUID(); #headless; #executable; #env; #context; #targets = new Set();
+  #generation = randomUUID(); #fileResults = new Map(); #headless; #executable; #env; #context; #targets = new Set();
   #snapshot = null; #worldName = `tada-${randomUUID()}`;
   constructor({ headless = false, executable } = {}) {
     super(); this.#headless = headless; this.#env = { ...process.env };
@@ -232,7 +237,7 @@ export class SharedBrowser extends EventEmitter {
     return targetInfos.filter(t => t.type === 'page' && t.browserContextId === this.#context && browserURL(t.url)).slice(0, 30).map(t => ({ id: t.targetId, title: t.title.slice(0, 300), url: t.url }));
   }
   async share(device, target, consent, expectedURL) {
-    if (consent !== BROWSER_CONSENT) throw Error('CONTACT_BROWSER_CONSENT_REQUIRED');
+    if (![BROWSER_CONSENT,BROWSER_FILE_CONSENT].includes(consent)) throw Error('CONTACT_BROWSER_CONSENT_REQUIRED');
     this.unshare(); const generation = this.#generation;
     const tab = (await this.tabs()).find(t => t.id === target);
     if (!tab || tab.url !== expectedURL) throw Error('CONTACT_BROWSER_TARGET_CHANGED');
@@ -244,7 +249,7 @@ export class SharedBrowser extends EventEmitter {
       const { executionContextId } = await this.command('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: this.#worldName, grantUniveralAccess: false }, sessionId);
       if (this.#generation !== generation) throw Error('CONTACT_BROWSER_TARGET_CHANGED');
       this.#session = { sessionId, context: executionContextId, frame: frameTree.frame.id };
-      this.#grant = { epoch: randomUUID(), device, target, url: tab.url, origin: new URL(tab.url).origin };
+      this.#grant = { epoch: randomUUID(), device, target, url: tab.url, origin: new URL(tab.url).origin, files:consent===BROWSER_FILE_CONSENT };
       this.emit('change'); return this.grant;
     } catch (error) {
       await this.command('Target.detachFromTarget', { sessionId }).catch(() => {});
@@ -258,18 +263,19 @@ export class SharedBrowser extends EventEmitter {
   async release(epoch) {
     const snapshot = this.#snapshot;
     if (snapshot?.epoch === epoch) { this.#snapshot = null; await this.#forget(snapshot); }
+    for(const [key,result] of this.#fileResults)if(result.epoch===epoch){this.#fileResults.delete(key);await this.#forget(result);}
   }
   unshare() {
-    const snapshot = this.#snapshot, session = this.#session; this.#snapshot = null;
+    const snapshot = this.#snapshot, session = this.#session, results=[...this.#fileResults.values()]; this.#snapshot = null;this.#fileResults.clear();
     this.#generation = randomUUID(); this.#grant = null; this.#session = null;
-    void this.#forget(snapshot).then(() => session ? this.command('Target.detachFromTarget', { sessionId: session.sessionId }).catch(() => {}) : undefined);
+    void Promise.all([this.#forget(snapshot),...results.map(r=>this.#forget(r))]).then(() => session ? this.command('Target.detachFromTarget', { sessionId: session.sessionId }).catch(() => {}) : undefined);
     this.emit('change');
   }
   assert(epoch) { if (!this.#grant || this.#grant.epoch !== epoch || !this.#session) throw Error('CONTACT_BROWSER_TARGET_CHANGED'); }
   async #call(fn, args, admit = () => {}) {
     const session = this.#session;
     if (!session) throw Error('CONTACT_BROWSER_NOT_SHARED');
-    const result = await this.command('Runtime.callFunctionOn', { functionDeclaration: fn, arguments: args.map(value => ({ value })), executionContextId: session.context, returnByValue: true }, session.sessionId, admit);
+    const result = await this.command('Runtime.callFunctionOn', { functionDeclaration: fn, arguments: args.map(value => ({ value })), executionContextId: session.context, returnByValue: true, awaitPromise: true }, session.sessionId, admit);
     if (result.exceptionDetails) throw Error('CONTACT_BROWSER_OBSERVATION_FAILED');
     return result.result.value;
   }
@@ -278,7 +284,7 @@ export class SharedBrowser extends EventEmitter {
     const key = `__tada_${randomUUID().replaceAll('-', '')}`, snapshot = { key, epoch, session: this.#session };
     const prior = this.#snapshot; this.#snapshot = snapshot;
     try {
-      const value = await this.#call(capture, [key, prior?.session.context === snapshot.session.context ? prior.key : null], admit);
+      const value = await this.#call(capture, [key, prior?.session.context === snapshot.session.context ? prior.key : null, this.#grant.files === true], admit);
       this.assert(epoch);
       if (value.url !== this.#grant.url) throw Error('CONTACT_BROWSER_TARGET_CHANGED');
       return { key, ...value };
@@ -288,6 +294,24 @@ export class SharedBrowser extends EventEmitter {
     this.assert(epoch); return this.#call(fill, [observation.key, ref, value], () => { this.assert(epoch); admit(); });
   }
   async verify(epoch, observation, admit) { this.assert(epoch); return this.#call(verify, [observation.key], admit); }
+  async readFile(epoch, observation, ref, admit) { this.assert(epoch);if(!this.#grant.files)throw Error('CONTACT_BROWSER_FILE_PERMISSION_REQUIRED');return this.#call(readSelectedFile,[observation.key,ref],()=>{this.assert(epoch);admit();}); }
+  async replaceFile(epoch, observation, ref, original, replacement, submit, admit) {
+    this.assert(epoch);if(!this.#grant.files)throw Error('CONTACT_BROWSER_FILE_PERMISSION_REQUIRED');
+    if(this.#fileResults.size>=8)throw Error('CONTACT_BROWSER_ACTION_LIMIT');
+    const key=`__tada_result_${randomUUID().replaceAll('-','')}`,snapshot={key,epoch,session:this.#session};this.#fileResults.set(key,snapshot);
+    try {
+      const result=await this.#call(replaceSelectedFile,[observation.key,ref,original,replacement,submit,key],()=>{this.assert(epoch);admit();});
+      this.assert(epoch);
+      if(result?.result_key!==key){this.#fileResults.delete(key);await this.#forget(snapshot);}
+      return result;
+    } catch(error){this.#fileResults.delete(key);await this.#forget(snapshot);throw error;}
+  }
+  async download(epoch, observation, ref, admit, resultKey) {
+    this.assert(epoch);if(!this.#grant.files)throw Error('CONTACT_BROWSER_FILE_PERMISSION_REQUIRED');
+    const result=this.#fileResults.get(resultKey);
+    if(!result || result.epoch!==epoch || result.session!==this.#session)throw Error('CONTACT_BROWSER_FILE_RESULT_REQUIRED');
+    return this.#call(readDownload,[observation.key,ref,resultKey],()=>{this.assert(epoch);admit();});
+  }
   #shutdown() {
     if (this.#closing) return this.#closing;
     const child = this.#child; this.#child = null; this.#context = null; this.#targets.clear(); this.#buffer = Buffer.alloc(0); this.#fail();

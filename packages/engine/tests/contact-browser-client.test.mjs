@@ -1161,3 +1161,36 @@ test('a restored applied mismatch preserves its known effect while requiring a c
  assert.ok(paragraphs.some(n=>n.textContent.includes('현재 사이트 내용을 확인')));
  assert.ok(!paragraphs.some(n=>n.textContent.includes('결과가 미확인')));
 });
+
+
+test('file sharing is a separate explicit choice and never silently expands text sharing',async()=>{
+ const c=client();c.state.browser={available:true,shared:null,actions:[]};await c.refresh();
+ c.handle('/api/browser/tabs',()=>({tabs:[{id:'one',title:'가져오기',url:'https://example.test/import'}]}));
+ c.handle('/api/browser/share',()=>({available:true,shared:{origin:'https://example.test',for_this_device:true,files:true},actions:[]}));
+ await c.get('browser-refresh').onclick();const buttons=c.get('browser-tabs').querySelectorAll('button');assert.equal(buttons.length,2);
+ assert.equal(c.calls.filter(x=>x.path==='/api/browser/share').length,0);
+ await buttons.find(b=>b.textContent==='선택한 파일 처리도 허용').onclick();
+ const call=c.calls.find(x=>x.path==='/api/browser/share');assert.equal(call.body.consent,'shared_browser_selected_files_v1');assert.match(c.get('browser-status').textContent,/선택한 파일 포함/);
+});
+test('file results keep original/copy download links and label restored verification as historical',async()=>{
+ const c=client(),id='browser-'+randomUUID();c.state.browser={available:true,shared:null,actions:[{id,origin:'https://example.test',file:true,requested:'수정본.csv',field:'파일',state:'VERIFIED',resolved:false,recovery:{quarantined:true}}]};
+ await c.refresh();const links=c.get('browser-actions').querySelectorAll('a');assert.equal(links.length,2);assert.equal(links[0].href,`/api/browser/files/${id}/original`);assert.equal(links[1].href,`/api/browser/files/${id}/replacement`);
+ assert.ok(c.get('browser-actions').querySelectorAll('p').some(p=>p.textContent.includes('복원 후 사이트를 다시 확인하지 않았어요')));
+ assert.equal(c.calls.filter(x=>x.path.startsWith('/api/browser/files/')).length,0);
+});
+
+test('old file results retain owner-click download links in conversation notices',async()=>{
+ const c=client(),id='browser-'+randomUUID(),path=`/api/browser/files/${id}`;
+ c.state.browser={available:true,shared:null,actions:[]};
+ c.state.turns=[{seq:1,state:'answered',text:'고쳐줘',answer:{text:'수정본을 보존했어요.',sources:[],notice:`[원본 내려받기](${path}/original) · [수정본 내려받기](${path}/replacement)`}}];
+ await c.refresh();const links=c.get('messages').querySelectorAll('a');assert.equal(links.length,2);
+ assert.deepEqual(links.map(a=>a.getAttribute('href')),[path+'/original',path+'/replacement']);
+ assert.ok(links.every(a=>a.getAttribute('download')==='' && a.getAttribute('target')===null));
+ assert.equal(c.calls.filter(x=>x.path.startsWith('/api/browser/files/')).length,0);
+});
+test('download exceptions never enable arbitrary relative paths or executable notice content',async()=>{
+ const c=client(),path='/api/browser/files/browser-'+randomUUID();
+ const paths=['/api/logout',path+'/original?delete=1',path+'/replacement#fragment',path+'/../original',path+'/original/extra','//example.invalid/track','/api/browser/files/browser-invalid/original'];
+ c.state.turns=[{seq:1,state:'answered',text:'파일',answer:{text:'결과',sources:[],notice:paths.map((p,i)=>`[bad${i}](${p})`).join(' ')+' <img src=x onerror=bad()> ![image](https://example.invalid/track)'}}];
+ await c.refresh();assert.equal(c.get('messages').querySelectorAll('a').length,0);assert.equal(c.get('messages').querySelectorAll('img').length,0);
+});

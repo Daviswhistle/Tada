@@ -1,9 +1,11 @@
+import { validBrowserFileActions } from './browser-file-actions.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { validateContract } from '../../contracts/src/index.mjs';
 import { isActionTransitionAllowed } from '../../contracts/src/generated/action-transitions.mjs';
 export const browserHash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === names.split(',').sort().join(',');
 export function validBrowserActions(value) {
+  if (value?.version === 2) return validBrowserFileActions(value);
   return keys(value, 'version,records') && value.version === 1 && Array.isArray(value.records) && value.records.length <= 256 && new Set(value.records.map(r => r?.action?.action_id)).size === value.records.length && value.records.every(r => keys(r, 'action,payload,origin,turn,created,resolved,receipt') && validateContract('ActionRecord', r.action).valid && ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED'].includes(r.action.state)
     && keys(r.payload, 'turn,epoch,url,key,ref,label,value,acceptance') && r.payload.turn === r.turn && r.payload.acceptance === 'textbox_dom_value' && typeof r.payload.value === 'string' && r.payload.value.length <= 8000 && r.action.intent_hash === browserHash(r.payload) && r.action.payload_ref === `blob://sha256/${browserHash(r.payload)}`
     && typeof r.payload.label === 'string' && r.payload.label.length <= 300 && ['epoch','url','key','ref'].every(k => typeof r.payload[k] === 'string' && r.payload[k].length > 0 && r.payload[k].length <= 4096)

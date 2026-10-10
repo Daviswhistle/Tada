@@ -2994,5 +2994,160 @@
         }
       }
     ]
+  },
+  {
+    "name": "selected-file-download-verified",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "browser.replace_selected_file",
+      "endpoint": "https://upload.example.invalid",
+      "account_ref": "shared_page_account_not_independently_verified",
+      "target": "selected-file-fixture",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "selected_file_download_v1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "selected-file-uncertain-cannot-be-verified",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "browser.replace_selected_file",
+      "endpoint": "https://upload.example.invalid",
+      "account_ref": "shared_page_account_not_independently_verified",
+      "target": "selected-file-fixture",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "selected_file_download_v1",
+      "side_effect_state": "uncertain",
+      "reconciliation_verdict": "UNCERTAIN",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "selected-file-missing-readback-cannot-pass",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "VERIFIED",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "browser.replace_selected_file",
+      "endpoint": "https://upload.example.invalid",
+      "account_ref": "shared_page_account_not_independently_verified",
+      "target": "selected-file-fixture",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "selected_file_download_v1",
+      "side_effect_state": "confirmed",
+      "reconciliation_verdict": "CONFIRMED_APPLIED",
+      "acceptance_status": "inconclusive",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "selected-file-download-observation-uncertain",
+    "contract": "ActionRecord",
+    "valid": true,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "UNCERTAIN",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "browser.replace_selected_file",
+      "endpoint": "https://upload.example.invalid",
+      "account_ref": "shared_page_account_not_independently_verified",
+      "target": "selected-file-fixture",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "selected_file_download_v2",
+      "side_effect_state": "uncertain",
+      "reconciliation_verdict": "UNCERTAIN",
+      "acceptance_status": "inconclusive",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
+  },
+  {
+    "name": "selected-file-download-observation-cannot-pass-uncertain",
+    "contract": "ActionRecord",
+    "valid": false,
+    "instance": {
+      "schema_version": 1,
+      "action_id": "action_example",
+      "task_id": "task_example",
+      "version": 1,
+      "state": "UNCERTAIN",
+      "effect": "external_write",
+      "intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "payload_ref": "blob://sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "method": "browser.replace_selected_file",
+      "endpoint": "https://upload.example.invalid",
+      "account_ref": "shared_page_account_not_independently_verified",
+      "target": "selected-file-fixture",
+      "policy_revision": 1,
+      "cancel_epoch": 0,
+      "precondition_version": 1,
+      "verifier_version": "selected_file_download_v2",
+      "side_effect_state": "uncertain",
+      "reconciliation_verdict": "UNCERTAIN",
+      "acceptance_status": "pass",
+      "evidence_refs": [
+        "ev_1"
+      ],
+      "fencing_token": 1,
+      "receipt_ref": "receipt_1"
+    }
   }
 ]

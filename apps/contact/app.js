@@ -85,6 +85,9 @@ const errors = {
   CONTACT_BROWSER_EFFECT_UNRESOLVED: '앞선 입력 결과를 확인하지 못해 같은 사이트의 새 입력을 멈췄어요. 브라우저에서 실제 상태를 확인해 주세요.',
   CONTACT_BROWSER_ACTION_LIMIT: '브라우저 작업 보관 한도에 도달해 새 입력을 멈췄어요. 기존 기록은 유지됩니다.',
   CONTACT_BROWSER_RESPONSE_UNKNOWN: '브라우저 응답을 확인하지 못했어요. 입력한 내용은 반복하지 않고 실제 화면을 확인해 주세요.',
+  CONTACT_BROWSER_FILE_PERMISSION_REQUIRED: '파일을 처리하려면 공유할 탭에서 선택한 파일 처리도 허용해 주세요.',
+  CONTACT_BROWSER_FILE_INVALID: '이 파일은 처리할 수 없어요. 현재는 32KB 이하의 텍스트 파일을 지원하며 원본은 그대로 보존합니다.',
+  CONTACT_BROWSER_FILE_ENCODING_REQUIRED: '파일의 글자 인코딩을 확인하지 못했어요. 원본은 그대로 보존했어요.',
   CONTACT_BROWSER_CONSENT_REQUIRED: '공유할 탭과 입력 허용 범위를 확인해 주세요.',
 
   CONTACT_DOCUMENT_INVALID: '문서 제목과 내용을 확인해 주세요. 비어 있거나 너무 긴 문서는 저장할 수 없어요.',
@@ -242,10 +245,14 @@ function safeWebHref(raw) {
   try { const url = new URL(raw); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; }
   catch { return null; }
 }
+function savedFileHref(raw) {
+  return typeof raw==='string' && !/[\u0000-\u0020\u007f-\u009f]/u.test(raw) && /^\/api\/browser\/files\/browser-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\/(?:original|replacement)$/u.test(raw) ? raw : null;
+}
 function renderAnswer(parent, text) {
   // The parser supplies tokens, never executable HTML. Only this allowlist
   // creates elements. Public HTTP(S) links open only on an owner click;
-  // images and unsafe/relative URLs remain inert, selectable text.
+  // only exact owner-authenticated saved-file paths also become download links.
+  // Images and all other relative/unsafe URLs remain inert, selectable text.
   const fragment = document.createDocumentFragment();
   try {
     const parser = globalThis.markdownit({ html: false, linkify: false, typographer: false });
@@ -269,9 +276,10 @@ function renderAnswer(parent, text) {
           const tag = kind === 'heading' && /^h[1-6]$/u.test(token.tag)
             ? `h${Math.min(6, Number(token.tag.slice(1)) + 2)}` : tags[kind];
           if (!tag) throw Error('Unsupported answer structure');
-          const href = kind === 'link' ? safeWebHref(token.attrGet('href')) : null;
+          const fileHref = kind === 'link' ? savedFileHref(token.attrGet('href')) : null;
+          const href = fileHref ?? (kind === 'link' ? safeWebHref(token.attrGet('href')) : null);
           const element = document.createElement(href ? 'a' : tag);
-          if (href) { element.setAttribute('href', href); element.setAttribute('target', '_blank'); element.setAttribute('rel', 'noopener noreferrer'); }
+          if (href) { element.setAttribute('href', href); if(fileHref)element.setAttribute('download','');else {element.setAttribute('target', '_blank');element.setAttribute('rel', 'noopener noreferrer');} }
           if (tag === 'ol') {
             const start = token.attrGet('start');
             if (start !== null && /^\d{1,9}$/u.test(start)) element.setAttribute('start', start);
@@ -356,7 +364,7 @@ function render() {
         if (turn.origin === 'owner_edit') { const note = document.createElement('p'); note.className = 'muted'; note.textContent = '직접 수정한 버전 · 참고 자료는 이전 버전에서 이어받은 기록입니다.'; article.append(note); }
       }
       const answer = document.createElement('div'); answer.className = 'answer'; renderAnswer(answer, turn.answer.text); article.append(answer);
-      if (turn.answer.notice) { const note = document.createElement('p'); note.className = 'status'; note.textContent = turn.answer.notice; article.append(note); }
+      if (turn.answer.notice) { const note = document.createElement('div'); note.className = 'status'; renderAnswer(note,turn.answer.notice); article.append(note); }
       if (turn.answer.sources.length) {
         const details = document.createElement('details'); details.className = 'source-list';
         const summary = document.createElement('summary'); summary.textContent = turn.answer.verification === 'saved_document_sources_checked' ? '저장된 문서의 당시 참고 자료' : '참고한 자료'; details.append(summary);
@@ -968,7 +976,7 @@ window.addEventListener('beforeunload', event => { if (editorUnsaved() || mailDi
 function renderBrowser(state) {
   browserView = state;
   $('browser-settings').hidden = !state;
-  $('browser-status').textContent = state?.shared ? `${state.shared.for_this_device ? '공유 중' : '다른 기기에서 공유 중'} · ${state.shared.origin}${state.shared.for_this_device ? '' : ' · 이 기기에서 사용하려면 아래에서 탭을 선택해 주세요.'}` : state?.available ? '공유한 탭이 없어요.' : '이 환경에서는 전용 브라우저를 찾지 못했어요.';
+  $('browser-status').textContent = state?.shared ? `${state.shared.for_this_device ? '공유 중' : '다른 기기에서 공유 중'} · ${state.shared.origin}${state.shared.files ? ' · 선택한 파일 포함' : ''}${state.shared.for_this_device ? '' : ' · 이 기기에서 사용하려면 아래에서 탭을 선택해 주세요.'}` : state?.available ? '공유한 탭이 없어요.' : '이 환경에서는 전용 브라우저를 찾지 못했어요.';
   $('browser-stop').hidden = !state?.shared;
   $('browser-sharing').hidden = !state?.shared;
   $('browser-sharing-label').textContent = state?.shared ? `${state.shared.for_this_device ? 'Tada와 공유 중' : '다른 기기에서 공유 중'} · ${state.shared.origin}` : '';
@@ -976,8 +984,15 @@ function renderBrowser(state) {
   $('browser-stop').disabled = browserBusy; $('browser-sharing-stop').disabled = browserBusy;
   const list = $('browser-actions'); list.replaceChildren();
   for (const action of state?.actions ?? []) {
-    if (action.resolved || !['UNCERTAIN', 'ACKNOWLEDGED', 'DISPATCHING'].includes(action.state)) continue;
+    const pending=!action.resolved && ['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(action.state);
+    if(!pending && !action.file)continue;
     const box = element('div', '', 'browser-action');
+    if(action.file) {
+      box.append(element('strong',action.requested));
+      if(action.download_matches!==null && action.download_matches!==undefined)box.append(element('p',`${action.recovery?'백업 당시 ':''}다운로드한 파일이 수정본과 ${action.download_matches?'일치했어요':'달랐어요'}. 이번 수정의 사이트 적용 여부는 별도 확인이 필요해요.`,'muted'));
+      for(const [kind,label] of [['original','원본 내려받기'],['replacement','수정본 내려받기']]) {const link=element('a',label);link.href=`/api/browser/files/${encodeURIComponent(action.id)}/${kind}`;link.download='';box.append(link);}
+      if(!pending){box.append(element('p',action.state==='VERIFIED'?(action.recovery?'백업 당시 내려받은 파일이 수정본과 일치한 기록입니다. 복원 후 사이트를 다시 확인하지 않았어요.':'사이트에서 내려받은 파일이 수정본과 일치해요.'):action.state==='FAILED'?'화면이 바뀌어 적용하지 않았어요.':'이전 결과를 확인하고 새 작업을 허용한 기록입니다.','muted'));list.append(box);continue;}
+    }
     box.append(element('p', `${action.field || '입력란'} · 요청한 내용: ${action.requested}`, 'muted'));
     box.append(element('p', `${action.origin} · ${action.recovery ? (action.verdict === 'APPLIED_MISMATCH' ? '백업 당시 입력은 적용됐지만 요청한 값과 달랐어요. 현재 사이트 내용을 확인해 주세요.' : '백업 당시 결과가 미확인 상태입니다. 현재 사이트 내용을 확인해 주세요.') : action.state === 'DISPATCHING' ? '입력 결과를 확인하고 있어요.' : action.verdict === 'APPLIED_MISMATCH' ? '입력은 적용됐지만 요청한 값과 달라요.' : '입력 결과가 불확실해 새 입력을 멈췄어요.'}`));
     if (action.recovery || action.state !== 'DISPATCHING') {
@@ -1002,7 +1017,10 @@ $('browser-refresh').onclick = () => browserTask(async () => {
     const row = element('div', '', 'browser-tab'); row.append(element('strong', tab.title || '제목 없는 탭'), element('p', tab.url, 'muted'));
     const button = element('button', '이 탭 읽기와 입력 허용'); button.type = 'button';
     button.onclick = () => browserTask(async () => { renderBrowser(await api('/api/browser/share', { target: tab.id, url: tab.url, consent: 'shared_browser_text_input_v1' })); list.replaceChildren(); });
-    row.append(button); list.append(row);
+    const fileButton=element('button','선택한 파일 처리도 허용');fileButton.type='button';
+    row.append(button,element('p','아래 권한은 이 탭에서 선택한 작은 텍스트 파일을 현재 AI로 읽고, 원본을 보존한 수정본으로 교체하고, 같은 사이트의 파일 가져오기·업로드·열기 버튼으로 제출하도록 허용합니다. 파일 선택 즉시 전송되는 사이트도 있어요. 로그인·결제·다른 사람에게 연락하는 권한은 포함하지 않습니다.','muted'),fileButton);
+    fileButton.onclick=()=>browserTask(async()=>{renderBrowser(await api('/api/browser/share',{target:tab.id,url:tab.url,consent:'shared_browser_selected_files_v1'}));list.replaceChildren();});
+    list.append(row);
   }
 });
 const stopBrowser = () => browserTask(async () => renderBrowser(await api('/api/browser/stop', {})));

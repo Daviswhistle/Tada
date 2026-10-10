@@ -1,3 +1,4 @@
+import { beginBrowserFileAction, finishBrowserFileAction } from './browser-file-actions.mjs';
 // Host-owned contact journal. Raw context never goes into a browser checkpoint.
 // Separate from the existing action ledger: documents are conversation results,
 // never an authority to overwrite arbitrary files or publish externally.
@@ -861,7 +862,7 @@ export class ContactStore {
         } else if (row.state === 'answered') {
           const turn = this.#turn(row);
           text = `Tada · 요청 ${row.seq}\n${turn.answer.text}`;
-          if (turn.answer.notice) text += '\n\n' + turn.answer.notice;
+          if (turn.answer.notice) text += '\n\n' + turn.answer.notice.replace(/\[(원본 내려받기|수정본 내려받기)\]\(\/api\/browser\/files\/browser-[a-f0-9-]{36}\/(?:original|replacement)\)/gu,'$1 (컴퓨터의 Tada 대화에서)');
           const citations = [...new Map(turn.answer.sources.flatMap(source => (source.citations ?? []).map(citation =>
             [citation.url, `[${source.id}] ${citation.title} · ${citation.url}`]))).values()];
           const included = []; let bytes = Buffer.byteLength(text), omitted = 0;
@@ -1466,7 +1467,7 @@ export class ContactStore {
     throw Error('CONTACT_BROWSER_ACTION_INVALID');
   }
   #saveBrowserAction(record) {
-    const next = { version: 1, records: [record] };
+    const next = { version: record.payload.acceptance === 'selected_file_result' ? 2 : 1, records: [record] };
     if (!validBrowserActions(next)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
     for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) this.#db.prepare('DELETE FROM assistance_settings WHERE name=?').run(`browser_action:${state}:${record.action.action_id}`);
     this.#saveSetting(`browser_action:${record.action.state}:${record.action.action_id}`, next);
@@ -1488,6 +1489,34 @@ export class ContactStore {
       const record = finishBrowserAction(this.#browserAction(id), requested, observation, applied);
       this.#saveBrowserAction(record); return structuredClone(record);
     });
+  }
+  admitBrowserFileAction(seq, grant, observation, ref, original, replacement, submit) {
+    return this.#tx(() => {
+      this.assertTurnAuthority(seq); this.assertDevice(grant.device);
+      if (this.turn(seq).device !== grant.device || grant.files !== true) throw Error('CONTACT_BROWSER_FILE_PERMISSION_REQUIRED');
+      if (this.reviewForTurn(seq) || this.proactiveForTurn(seq)) throw Error('CONTACT_BROWSER_FOREGROUND_REQUIRED');
+      if (this.browserBlocked(grant.origin, seq)) throw Error('CONTACT_BROWSER_EFFECT_UNRESOLVED');
+      if (this.browserActions(true).filter(r => !r.resolved).length >= 256) throw Error('CONTACT_BROWSER_ACTION_LIMIT');
+      const record = beginBrowserFileAction(seq, grant, observation, ref, original, replacement, submit);
+      this.#saveBrowserAction(record); return record.action.action_id;
+    });
+  }
+  finishBrowserFileAction(id, applied, observedHash = null) {
+    return this.#tx(() => {
+      const record = finishBrowserFileAction(this.#browserAction(id), applied, observedHash);
+      this.#saveBrowserAction(record); return structuredClone(record);
+    });
+  }
+  browserFile(device, id, kind) {
+    this.assertDevice(device);
+    if (!['original','replacement'].includes(kind)) throw Error('CONTACT_BROWSER_FILE_INVALID');
+    let record;
+    try { record=this.#browserAction(id); } catch(error) {
+      if(error.message !== 'CONTACT_BROWSER_ACTION_INVALID')throw error;
+      record=(this.#recovered?.rows('browser_actions')??[]).map(r=>r.payload.records[0]).find(r=>r.action.action_id===id);
+    }
+    if(record?.payload.acceptance !== 'selected_file_result')throw Error('CONTACT_BROWSER_FILE_INVALID');
+    return structuredClone(record.payload[kind]);
   }
   resolveBrowserAction(device, id, consent) {
     return this.#tx(() => {
