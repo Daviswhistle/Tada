@@ -1,0 +1,15 @@
+{
+  "platform": "win32",
+  "node": "v24.21.0",
+  "checks": [
+    "native installation and repeat installation preserve one verified payload and atomic version pointer",
+    "occupied, linked and overlapping installation paths rejected without altering existing files",
+    "exact unique HKCU registration enabled, read back, collision protected and removed; no Task Scheduler job or other startup entry touched",
+    "installing a new payload retains the running previous version and changes only the next-launch pointer",
+    "Settings startup adapter recognizes the actual current v2 payload and enables, reads back and disables its unique native registration",
+    "background relaunch exits against the existing owner instead of waiting to revive it after explicit stop",
+    "installed bootstrap reopens the same conversation; killing only its launcher closes its Node host and releases the lease",
+    "nonzero owned Node exits recover at most three times with backoff; no process tree or browser termination"
+  ],
+  "passed": true
+}

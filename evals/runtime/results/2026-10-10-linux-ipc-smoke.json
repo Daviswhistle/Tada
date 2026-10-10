@@ -1,0 +1,130 @@
+{
+  "version": 2,
+  "mode": "idle-smoke",
+  "started": "2026-10-10T08:54:53.710Z",
+  "platform": "linux",
+  "node": "v24.21.0",
+  "scope": "Real ContactStore/ContactService/HTTP; isolated encrypted synthetic journal and model; no owner account or data.",
+  "passed": false,
+  "idle": {
+    "requested_seconds": 10,
+    "cpu_samples": [
+      0.2621178278459234,
+      0.06138176887798369,
+      0.4432464370075185,
+      0.14730829587047053,
+      0.0811994624603809,
+      0.07248004472111629,
+      0.062073918401138274,
+      2.528497428034248,
+      2.925151776224524,
+      0.1858065196255016
+    ],
+    "cpu_raw_samples": [
+      {
+        "elapsed_ms": 0,
+        "user_us": 0,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 1000.6950010061264,
+        "user_us": 2183,
+        "system_us": 440
+      },
+      {
+        "elapsed_ms": 2000.9920130074024,
+        "user_us": 2694,
+        "system_us": 543
+      },
+      {
+        "elapsed_ms": 3002.0152879953384,
+        "user_us": 7131,
+        "system_us": 543
+      },
+      {
+        "elapsed_ms": 4002.637820005417,
+        "user_us": 8605,
+        "system_us": 543
+      },
+      {
+        "elapsed_ms": 5002.644439995289,
+        "user_us": 9417,
+        "system_us": 543
+      },
+      {
+        "elapsed_ms": 6002.919761002064,
+        "user_us": 10142,
+        "system_us": 543
+      },
+      {
+        "elapsed_ms": 7003.3399310112,
+        "user_us": 10763,
+        "system_us": 543
+      },
+      {
+        "elapsed_ms": 8003.736440002918,
+        "user_us": 31263,
+        "system_us": 5338
+      },
+      {
+        "elapsed_ms": 9003.240132004023,
+        "user_us": 58631,
+        "system_us": 7207
+      },
+      {
+        "elapsed_ms": 10003.743238002062,
+        "user_us": 60490,
+        "system_us": 7207
+      }
+    ],
+    "cpu_windows": [
+      {
+        "start_ms": 0,
+        "end_ms": 5002.644439995289,
+        "cpu_us": 9960,
+        "one_core_percent": 0.19909470120185835,
+        "partial": false
+      },
+      {
+        "start_ms": 5002.644439995289,
+        "end_ms": 10003.743238002062,
+        "cpu_us": 57737,
+        "one_core_percent": 1.1544862905530187,
+        "partial": false
+      }
+    ],
+    "completed_observations_after_warmup": [],
+    "seconds": 10.003785064011812,
+    "full_30_minute_measurement": false,
+    "extension": false,
+    "cpu_p95_one_core_percent": 2.925151776224524,
+    "cpu_max_one_core_percent": 2.925151776224524,
+    "cpu_p95_five_second_one_core_percent": 1.1544862905530187,
+    "one_second_threshold_met": false,
+    "sampling": "One-second raw cumulative CPU/time samples; consecutive groups of five, each normalized by its actual elapsed time. Final partial window included. No samples discarded or phase shifting.",
+    "cpu_mean_one_core_percent": 0.6767166888373715,
+    "model_calls_delta": 0,
+    "ledger_requests_delta": 0,
+    "baseline": {
+      "warmup_state": "answered",
+      "warmup_quiet": true,
+      "calls": 2,
+      "requests": 2,
+      "counts": {
+        "token": 1,
+        "mail": 2,
+        "calendar": 2,
+        "unexpected": 0
+      }
+    },
+    "final_counts": {
+      "token": 1,
+      "mail": 2,
+      "calendar": 2,
+      "unexpected": 0
+    },
+    "boundary": "Browser-closed Node Contact host including measurement overhead; fixture HTTP child excluded. Real 1-second timer and 15-minute polls, unchanged empty sources, no clock acceleration. Existing 1-hour model cooldown applies, so this does not independently prove fingerprint suppression. Excludes tray/browser/broker child CPU and real provider execution."
+  },
+  "error": "AssertionError [ERR_ASSERTION]: idle CPU five-second-window p95 1.1544862905530187% exceeds 1% of one logical core\n    at idle (file:///home/davis/.codex/worktrees/readable-planning-results/Tada/scripts/contact-runtime-acceptance.mjs:208:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///home/davis/.codex/worktrees/readable-planning-results/Tada/scripts/contact-runtime-acceptance.mjs:52:10",
+  "finished": "2026-10-10T08:55:04.374Z"
+}

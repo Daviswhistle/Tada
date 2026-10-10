@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "classification": "Acceptance-harness development attempts; not claimed as release passes",
+  "attempts": [
+    {
+      "kind": "idle",
+      "issue": "Initial synthetic warmup omitted mandatory connected source reads, then failed ASSISTANT_INCOMPLETE_CHECK. Owner terminated only the two isolated test hosts. No 30-minute acceptance claimed."
+    },
+    {
+      "kind": "cancellation",
+      "issue": "Initial fixture crossed real 20 pairings/minute limit. Corrected to three independent journals per group without relaxing production limits."
+    },
+    {
+      "kind": "idle",
+      "issue": "Initial new journal used legacy default schema. Corrected fixture creation to isolated v6."
+    },
+    {
+      "kind": "idle-smoke",
+      "issue": "10-second runs showed short-window startup/GC CPU outliers. These are diagnostic runs and never replace the full 30-minute denominator."
+    },
+    {
+      "kind": "crash",
+      "issue": "Initial harness assumed reverse page ordering; failed on first sample. Corrected exact seq selection."
+    },
+    {
+      "kind": "crash",
+      "issue": "Next harness omitted explicit startup before ready and expected 409 rather than existing HTTP 400 on duplicate send. Fifty inference samples completed but the first mail sample failed; not accepted as the final crash run."
+    },
+    {
+      "kind": "crash",
+      "issue": "Two startup-enabled preliminary 100-trial runs passed assertions but lacked explicit kill return/exit receipts. Repeated all 100 trials on each platform with strict live-child/SIGKILL receipt assertions."
+    },
+    {
+      "kind": "crash-error-regression",
+      "issue": "First error injector changed ChildProcess.prototype.send, but Node installs an own send method. Two cases ran ordinary trials until the test deadline on both platforms, so those attempts did not prove error handling. Corrected to wrap fork and inject on its actual child instance; all three error cases then passed on each platform."
+    }
+  ]
+}

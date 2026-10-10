@@ -1,0 +1,25 @@
+{
+  "production_commit": "51fd56cad254f66e45831672f9f83085c33ba398",
+  "harness_sha256": "d5833621c300f8a18d4dc81e90d0608e57096aa193b0fe6f97b3f3d89fb7d377",
+  "environments": {
+    "linux": {
+      "platform": "linux",
+      "release": "6.18.40.1-microsoft-standard-WSL2",
+      "arch": "x64",
+      "node": "v24.21.0",
+      "cpu": "12th Gen Intel(R) Core(TM) i7-12800HX",
+      "logical_cpus": 24,
+      "total_memory_bytes": 25199042560
+    },
+    "windows": {
+      "platform": "win32",
+      "release": "10.0.26200",
+      "arch": "x64",
+      "node": "v24.21.0",
+      "cpu": "12th Gen Intel(R) Core(TM) i7-12800HX",
+      "logical_cpus": 24,
+      "total_memory_bytes": 34008584192
+    }
+  },
+  "scope": "Isolated synthetic Contact host, not full release acceptance."
+}

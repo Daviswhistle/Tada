@@ -1,0 +1,1456 @@
+{
+  "version": 1,
+  "mode": "cancel",
+  "started": "2026-10-10T08:13:32.329Z",
+  "platform": "linux",
+  "node": "v24.21.0",
+  "scope": "Real ContactStore/ContactService/HTTP; isolated encrypted synthetic journal and model; no owner account or data.",
+  "passed": true,
+  "cancellation": {
+    "groups": [
+      {
+        "operation": "cancel",
+        "completion": "cooperative",
+        "measured": 50,
+        "warmup": 1,
+        "samples": [
+          {
+            "index": 1,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.73241502046585,
+            "admission_ms": 6.012616008520126
+          },
+          {
+            "index": 2,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.987152993679047,
+            "admission_ms": 5.449183017015457
+          },
+          {
+            "index": 3,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.067063987255096,
+            "admission_ms": 6.145695984363556
+          },
+          {
+            "index": 4,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.762847006320953,
+            "admission_ms": 6.161833018064499
+          },
+          {
+            "index": 5,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.365584999322891,
+            "admission_ms": 6.233171999454498
+          },
+          {
+            "index": 6,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.568663001060486,
+            "admission_ms": 6.113866001367569
+          },
+          {
+            "index": 7,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.9149189889431,
+            "admission_ms": 5.174970984458923
+          },
+          {
+            "index": 8,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.339268982410431,
+            "admission_ms": 5.6381970047950745
+          },
+          {
+            "index": 9,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.366737008094788,
+            "admission_ms": 5.402110993862152
+          },
+          {
+            "index": 10,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.784471988677979,
+            "admission_ms": 5.374875992536545
+          },
+          {
+            "index": 11,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.132366001605988,
+            "admission_ms": 5.6957550048828125
+          },
+          {
+            "index": 12,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.582931011915207,
+            "admission_ms": 5.314325988292694
+          },
+          {
+            "index": 13,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.25959900021553,
+            "admission_ms": 5.055427998304367
+          },
+          {
+            "index": 14,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.95118197798729,
+            "admission_ms": 5.354629993438721
+          },
+          {
+            "index": 15,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.571647018194199,
+            "admission_ms": 5.220198005437851
+          },
+          {
+            "index": 16,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.73974597454071,
+            "admission_ms": 5.579896986484528
+          },
+          {
+            "index": 17,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.284871995449066,
+            "admission_ms": 5.732842981815338
+          },
+          {
+            "index": 18,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.49065700173378,
+            "admission_ms": 5.316127985715866
+          },
+          {
+            "index": 19,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.66440898180008,
+            "admission_ms": 5.413359999656677
+          },
+          {
+            "index": 20,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.868669003248215,
+            "admission_ms": 6.4125950038433075
+          },
+          {
+            "index": 21,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.035943001508713,
+            "admission_ms": 7.326043009757996
+          },
+          {
+            "index": 22,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.107451975345612,
+            "admission_ms": 5.072422981262207
+          },
+          {
+            "index": 23,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.24601399898529,
+            "admission_ms": 5.76180300116539
+          },
+          {
+            "index": 24,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.640132009983063,
+            "admission_ms": 5.431053012609482
+          },
+          {
+            "index": 25,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.62516501545906,
+            "admission_ms": 5.27504700422287
+          },
+          {
+            "index": 26,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.486911982297897,
+            "admission_ms": 5.166135996580124
+          },
+          {
+            "index": 27,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.9081050157547,
+            "admission_ms": 4.991427004337311
+          },
+          {
+            "index": 28,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.56055399775505,
+            "admission_ms": 5.31054499745369
+          },
+          {
+            "index": 29,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.42306399345398,
+            "admission_ms": 4.852315992116928
+          },
+          {
+            "index": 30,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.294943988323212,
+            "admission_ms": 5.1422799825668335
+          },
+          {
+            "index": 31,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.446563005447388,
+            "admission_ms": 5.575958013534546
+          },
+          {
+            "index": 32,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.036053001880646,
+            "admission_ms": 5.344118982553482
+          },
+          {
+            "index": 33,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.086620002985,
+            "admission_ms": 5.770772993564606
+          },
+          {
+            "index": 34,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.017529994249344,
+            "admission_ms": 5.801509976387024
+          },
+          {
+            "index": 35,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.941606998443604,
+            "admission_ms": 5.486030012369156
+          },
+          {
+            "index": 36,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.345306992530823,
+            "admission_ms": 5.036103993654251
+          },
+          {
+            "index": 37,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.059141010046005,
+            "admission_ms": 5.674134999513626
+          },
+          {
+            "index": 38,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.141290009021759,
+            "admission_ms": 5.458806991577148
+          },
+          {
+            "index": 39,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.627788990736008,
+            "admission_ms": 5.3276180028915405
+          },
+          {
+            "index": 40,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.629963994026184,
+            "admission_ms": 6.301241993904114
+          },
+          {
+            "index": 41,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.993023008108139,
+            "admission_ms": 5.5083760023117065
+          },
+          {
+            "index": 42,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.436124980449677,
+            "admission_ms": 5.57337298989296
+          },
+          {
+            "index": 43,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.309930980205536,
+            "admission_ms": 5.334748983383179
+          },
+          {
+            "index": 44,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.538689017295837,
+            "admission_ms": 5.302628010511398
+          },
+          {
+            "index": 45,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.181603014469147,
+            "admission_ms": 5.48028901219368
+          },
+          {
+            "index": 46,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.499253004789352,
+            "admission_ms": 5.3784399926662445
+          },
+          {
+            "index": 47,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.544528007507324,
+            "admission_ms": 5.353083997964859
+          },
+          {
+            "index": 48,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.862722992897034,
+            "admission_ms": 5.552583992481232
+          },
+          {
+            "index": 49,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.88085401058197,
+            "admission_ms": 5.361475020647049
+          },
+          {
+            "index": 50,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 11.403533011674881,
+            "admission_ms": 5.558082014322281
+          }
+        ],
+        "fixtures": 3,
+        "p95_ms": 6.301241993904114
+      },
+      {
+        "operation": "cancel",
+        "completion": "late-response",
+        "measured": 50,
+        "warmup": 1,
+        "samples": [
+          {
+            "index": 1,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.547034978866577,
+            "admission_ms": 5.826873004436493
+          },
+          {
+            "index": 2,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.149372011423111,
+            "admission_ms": 5.99023300409317
+          },
+          {
+            "index": 3,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.455203980207443,
+            "admission_ms": 7.729249000549316
+          },
+          {
+            "index": 4,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.302707016468048,
+            "admission_ms": 5.614008009433746
+          },
+          {
+            "index": 5,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.39179801940918,
+            "admission_ms": 4.8386030197143555
+          },
+          {
+            "index": 6,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.812828987836838,
+            "admission_ms": 5.278672009706497
+          },
+          {
+            "index": 7,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.846403986215591,
+            "admission_ms": 5.109452992677689
+          },
+          {
+            "index": 8,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.881481021642685,
+            "admission_ms": 5.364323019981384
+          },
+          {
+            "index": 9,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.011848002672195,
+            "admission_ms": 5.284652978181839
+          },
+          {
+            "index": 10,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.560483992099762,
+            "admission_ms": 5.691000998020172
+          },
+          {
+            "index": 11,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.804622977972031,
+            "admission_ms": 5.3421459794044495
+          },
+          {
+            "index": 12,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.073329985141754,
+            "admission_ms": 6.401028990745544
+          },
+          {
+            "index": 13,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.042396008968353,
+            "admission_ms": 5.29796302318573
+          },
+          {
+            "index": 14,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.965795993804932,
+            "admission_ms": 5.273923993110657
+          },
+          {
+            "index": 15,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.422946989536285,
+            "admission_ms": 5.660634011030197
+          },
+          {
+            "index": 16,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.294028997421265,
+            "admission_ms": 5.538224995136261
+          },
+          {
+            "index": 17,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.033564001321793,
+            "admission_ms": 5.505163997411728
+          },
+          {
+            "index": 18,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.792677998542786,
+            "admission_ms": 5.276362985372543
+          },
+          {
+            "index": 19,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.164572983980179,
+            "admission_ms": 7.518673986196518
+          },
+          {
+            "index": 20,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.0842370092868805,
+            "admission_ms": 5.307155013084412
+          },
+          {
+            "index": 21,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.028227001428604,
+            "admission_ms": 5.417358994483948
+          },
+          {
+            "index": 22,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.602488994598389,
+            "admission_ms": 5.836446017026901
+          },
+          {
+            "index": 23,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.857474982738495,
+            "admission_ms": 5.296581000089645
+          },
+          {
+            "index": 24,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.585409015417099,
+            "admission_ms": 4.966511994600296
+          },
+          {
+            "index": 25,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.279599994421005,
+            "admission_ms": 5.67229700088501
+          },
+          {
+            "index": 26,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.960871011018753,
+            "admission_ms": 5.267562001943588
+          },
+          {
+            "index": 27,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.602374017238617,
+            "admission_ms": 6.466037005186081
+          },
+          {
+            "index": 28,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.168857008218765,
+            "admission_ms": 6.622587025165558
+          },
+          {
+            "index": 29,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.499453008174896,
+            "admission_ms": 7.03362900018692
+          },
+          {
+            "index": 30,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.958876997232437,
+            "admission_ms": 6.0623040199279785
+          },
+          {
+            "index": 31,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.593618988990784,
+            "admission_ms": 5.924855977296829
+          },
+          {
+            "index": 32,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.104810982942581,
+            "admission_ms": 6.246448993682861
+          },
+          {
+            "index": 33,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.754197984933853,
+            "admission_ms": 6.2435749769210815
+          },
+          {
+            "index": 34,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.700606018304825,
+            "admission_ms": 6.9729650020599365
+          },
+          {
+            "index": 35,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 5.669609010219574,
+            "admission_ms": 5.10979899764061
+          },
+          {
+            "index": 36,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.307691007852554,
+            "admission_ms": 5.6982280015945435
+          },
+          {
+            "index": 37,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.308091998100281,
+            "admission_ms": 5.488126993179321
+          },
+          {
+            "index": 38,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.191543996334076,
+            "admission_ms": 5.592212975025177
+          },
+          {
+            "index": 39,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.466709017753601,
+            "admission_ms": 5.691305011510849
+          },
+          {
+            "index": 40,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.60488498210907,
+            "admission_ms": 7.741934984922409
+          },
+          {
+            "index": 41,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.612665981054306,
+            "admission_ms": 7.577147006988525
+          },
+          {
+            "index": 42,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.806094020605087,
+            "admission_ms": 7.763942003250122
+          },
+          {
+            "index": 43,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.914379984140396,
+            "admission_ms": 6.805180996656418
+          },
+          {
+            "index": 44,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.866218000650406,
+            "admission_ms": 7.20771798491478
+          },
+          {
+            "index": 45,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.511094003915787,
+            "admission_ms": 6.949930012226105
+          },
+          {
+            "index": 46,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.097957998514175,
+            "admission_ms": 5.534114986658096
+          },
+          {
+            "index": 47,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.882832020521164,
+            "admission_ms": 6.285371005535126
+          },
+          {
+            "index": 48,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.712556004524231,
+            "admission_ms": 7.01146200299263
+          },
+          {
+            "index": 49,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.07210499048233,
+            "admission_ms": 11.058303982019424
+          },
+          {
+            "index": 50,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.012187987565994,
+            "admission_ms": 7.393453985452652
+          }
+        ],
+        "fixtures": 3,
+        "p95_ms": 7.741934984922409
+      },
+      {
+        "operation": "revoke",
+        "completion": "cooperative",
+        "measured": 50,
+        "warmup": 1,
+        "samples": [
+          {
+            "index": 1,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 23.0694699883461,
+            "admission_ms": 11.00237900018692
+          },
+          {
+            "index": 2,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 18.046496003866196,
+            "admission_ms": 9.379188001155853
+          },
+          {
+            "index": 3,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 22.366637021303177,
+            "admission_ms": 9.263148009777069
+          },
+          {
+            "index": 4,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.250784993171692,
+            "admission_ms": 6.483397006988525
+          },
+          {
+            "index": 5,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.666671007871628,
+            "admission_ms": 8.578345000743866
+          },
+          {
+            "index": 6,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.072843998670578,
+            "admission_ms": 8.240460008382797
+          },
+          {
+            "index": 7,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.082830995321274,
+            "admission_ms": 10.962078005075455
+          },
+          {
+            "index": 8,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.682871013879776,
+            "admission_ms": 8.579023003578186
+          },
+          {
+            "index": 9,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.78738299012184,
+            "admission_ms": 8.756081998348236
+          },
+          {
+            "index": 10,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.639899998903275,
+            "admission_ms": 8.145797997713089
+          },
+          {
+            "index": 11,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.819618999958038,
+            "admission_ms": 7.8455129861831665
+          },
+          {
+            "index": 12,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.78404301404953,
+            "admission_ms": 10.153010994195938
+          },
+          {
+            "index": 13,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.720084995031357,
+            "admission_ms": 9.185431003570557
+          },
+          {
+            "index": 14,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 20.398739993572235,
+            "admission_ms": 10.131327003240585
+          },
+          {
+            "index": 15,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.454932004213333,
+            "admission_ms": 6.958315998315811
+          },
+          {
+            "index": 16,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.106482982635498,
+            "admission_ms": 7.2752330005168915
+          },
+          {
+            "index": 17,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.205788016319275,
+            "admission_ms": 8.025077015161514
+          },
+          {
+            "index": 18,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.033841997385025,
+            "admission_ms": 8.797627002000809
+          },
+          {
+            "index": 19,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.275655001401901,
+            "admission_ms": 7.846675008535385
+          },
+          {
+            "index": 20,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.482540994882584,
+            "admission_ms": 7.262548983097076
+          },
+          {
+            "index": 21,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.156040996313095,
+            "admission_ms": 8.501228004693985
+          },
+          {
+            "index": 22,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.353352010250092,
+            "admission_ms": 7.455356001853943
+          },
+          {
+            "index": 23,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.487374007701874,
+            "admission_ms": 7.881327003240585
+          },
+          {
+            "index": 24,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.027401000261307,
+            "admission_ms": 7.675090998411179
+          },
+          {
+            "index": 25,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.733472973108292,
+            "admission_ms": 6.455471992492676
+          },
+          {
+            "index": 26,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.075726985931396,
+            "admission_ms": 6.594888001680374
+          },
+          {
+            "index": 27,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.593926012516022,
+            "admission_ms": 8.134781002998352
+          },
+          {
+            "index": 28,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.579103976488113,
+            "admission_ms": 8.063384979963303
+          },
+          {
+            "index": 29,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.71459600329399,
+            "admission_ms": 8.264407008886337
+          },
+          {
+            "index": 30,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.435963988304138,
+            "admission_ms": 8.640089988708496
+          },
+          {
+            "index": 31,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.330936014652252,
+            "admission_ms": 6.952471017837524
+          },
+          {
+            "index": 32,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.938151985406876,
+            "admission_ms": 8.50705599784851
+          },
+          {
+            "index": 33,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.03848198056221,
+            "admission_ms": 8.80494999885559
+          },
+          {
+            "index": 34,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.463977992534637,
+            "admission_ms": 8.113802999258041
+          },
+          {
+            "index": 35,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 17.100053995847702,
+            "admission_ms": 8.847192019224167
+          },
+          {
+            "index": 36,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.977635979652405,
+            "admission_ms": 6.613970994949341
+          },
+          {
+            "index": 37,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 16.652383983135223,
+            "admission_ms": 8.130272001028061
+          },
+          {
+            "index": 38,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 13.729216009378433,
+            "admission_ms": 6.280034005641937
+          },
+          {
+            "index": 39,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.32089501619339,
+            "admission_ms": 6.199027001857758
+          },
+          {
+            "index": 40,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 20.551245987415314,
+            "admission_ms": 11.627783000469208
+          },
+          {
+            "index": 41,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.991627991199493,
+            "admission_ms": 8.849849998950958
+          },
+          {
+            "index": 42,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.983996003866196,
+            "admission_ms": 9.96204200387001
+          },
+          {
+            "index": 43,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.978058010339737,
+            "admission_ms": 7.7041929960250854
+          },
+          {
+            "index": 44,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.690766006708145,
+            "admission_ms": 8.11149799823761
+          },
+          {
+            "index": 45,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 15.749507993459702,
+            "admission_ms": 8.464798986911774
+          },
+          {
+            "index": 46,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 13.213930994272232,
+            "admission_ms": 5.768386006355286
+          },
+          {
+            "index": 47,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.426829993724823,
+            "admission_ms": 6.263902992010117
+          },
+          {
+            "index": 48,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.384990006685257,
+            "admission_ms": 6.802468001842499
+          },
+          {
+            "index": 49,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 14.35419499874115,
+            "admission_ms": 7.29085299372673
+          },
+          {
+            "index": 50,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.949124991893768,
+            "admission_ms": 6.062056005001068
+          }
+        ],
+        "fixtures": 3,
+        "p95_ms": 10.962078005075455
+      },
+      {
+        "operation": "revoke",
+        "completion": "late-response",
+        "measured": 50,
+        "warmup": 1,
+        "samples": [
+          {
+            "index": 1,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.669131010770798,
+            "admission_ms": 8.866686999797821
+          },
+          {
+            "index": 2,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.1471990048885345,
+            "admission_ms": 6.381651997566223
+          },
+          {
+            "index": 3,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.735618025064468,
+            "admission_ms": 9.161989003419876
+          },
+          {
+            "index": 4,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.133540004491806,
+            "admission_ms": 7.364367991685867
+          },
+          {
+            "index": 5,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.39173099398613,
+            "admission_ms": 7.509895980358124
+          },
+          {
+            "index": 6,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.657391995191574,
+            "admission_ms": 7.864849001169205
+          },
+          {
+            "index": 7,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.477189004421234,
+            "admission_ms": 8.917439997196198
+          },
+          {
+            "index": 8,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.38357400894165,
+            "admission_ms": 9.650492995977402
+          },
+          {
+            "index": 9,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.756103992462158,
+            "admission_ms": 6.156560003757477
+          },
+          {
+            "index": 10,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.291821002960205,
+            "admission_ms": 6.660443007946014
+          },
+          {
+            "index": 11,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.01612302660942,
+            "admission_ms": 7.47290101647377
+          },
+          {
+            "index": 12,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.868322998285294,
+            "admission_ms": 6.2397379875183105
+          },
+          {
+            "index": 13,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.402056992053986,
+            "admission_ms": 6.822691977024078
+          },
+          {
+            "index": 14,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.161127001047134,
+            "admission_ms": 6.44691401720047
+          },
+          {
+            "index": 15,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.313651025295258,
+            "admission_ms": 6.465561002492905
+          },
+          {
+            "index": 16,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.540385007858276,
+            "admission_ms": 11.939155995845795
+          },
+          {
+            "index": 17,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.01648598909378,
+            "admission_ms": 7.324001997709274
+          },
+          {
+            "index": 18,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.764715999364853,
+            "admission_ms": 9.158568024635315
+          },
+          {
+            "index": 19,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.315120995044708,
+            "admission_ms": 6.5628019869327545
+          },
+          {
+            "index": 20,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.113732993602753,
+            "admission_ms": 7.369031995534897
+          },
+          {
+            "index": 21,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.51181098818779,
+            "admission_ms": 6.003755986690521
+          },
+          {
+            "index": 22,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.542185008525848,
+            "admission_ms": 5.913430988788605
+          },
+          {
+            "index": 23,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.53220397233963,
+            "admission_ms": 7.913614988327026
+          },
+          {
+            "index": 24,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.773885995149612,
+            "admission_ms": 6.2075619995594025
+          },
+          {
+            "index": 25,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.83721199631691,
+            "admission_ms": 8.144792020320892
+          },
+          {
+            "index": 26,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.424760013818741,
+            "admission_ms": 6.864055007696152
+          },
+          {
+            "index": 27,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.008726000785828,
+            "admission_ms": 8.102238982915878
+          },
+          {
+            "index": 28,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.46059900522232,
+            "admission_ms": 7.827655017375946
+          },
+          {
+            "index": 29,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.435995012521744,
+            "admission_ms": 7.78166401386261
+          },
+          {
+            "index": 30,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 12.413099020719528,
+            "admission_ms": 11.73257800936699
+          },
+          {
+            "index": 31,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.9854539930820465,
+            "admission_ms": 7.464821010828018
+          },
+          {
+            "index": 32,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.354047000408173,
+            "admission_ms": 6.585883021354675
+          },
+          {
+            "index": 33,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.337985008955002,
+            "admission_ms": 9.748627007007599
+          },
+          {
+            "index": 34,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.887089014053345,
+            "admission_ms": 8.254990994930267
+          },
+          {
+            "index": 35,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.902925997972488,
+            "admission_ms": 9.106370002031326
+          },
+          {
+            "index": 36,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.954685002565384,
+            "admission_ms": 7.887107998132706
+          },
+          {
+            "index": 37,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.01249298453331,
+            "admission_ms": 7.447424978017807
+          },
+          {
+            "index": 38,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.27336099743843,
+            "admission_ms": 7.600167006254196
+          },
+          {
+            "index": 39,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.627350002527237,
+            "admission_ms": 6.173844993114471
+          },
+          {
+            "index": 40,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.9416050016880035,
+            "admission_ms": 7.274650990962982
+          },
+          {
+            "index": 41,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 10.85087502002716,
+            "admission_ms": 10.044100016355515
+          },
+          {
+            "index": 42,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.492891013622284,
+            "admission_ms": 5.959707021713257
+          },
+          {
+            "index": 43,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 9.293705999851227,
+            "admission_ms": 8.086602002382278
+          },
+          {
+            "index": 44,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.651004999876022,
+            "admission_ms": 6.037564009428024
+          },
+          {
+            "index": 45,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.826094001531601,
+            "admission_ms": 8.328085988759995
+          },
+          {
+            "index": 46,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.791115015745163,
+            "admission_ms": 8.213677018880844
+          },
+          {
+            "index": 47,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 8.084001988172531,
+            "admission_ms": 7.464057981967926
+          },
+          {
+            "index": 48,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 6.442245006561279,
+            "admission_ms": 5.876204013824463
+          },
+          {
+            "index": 49,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.538646012544632,
+            "admission_ms": 7.045453995466232
+          },
+          {
+            "index": 50,
+            "warmup": false,
+            "passed": true,
+            "http_ms": 7.418311983346939,
+            "admission_ms": 6.688005983829498
+          }
+        ],
+        "fixtures": 3,
+        "p95_ms": 10.044100016355515
+      }
+    ],
+    "planned_measured": 200,
+    "boundary": "HTTP request start to durable cancellation/revocation and active AbortSignal; subsequent dispatch denied, late result discarded. Does not measure remote computation termination or worker process kill."
+  },
+  "finished": "2026-10-10T08:13:42.082Z"
+}

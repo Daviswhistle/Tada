@@ -1,0 +1,15 @@
+{
+  "platform": "win32",
+  "node": "v24.21.0",
+  "checks": [
+    "embedded manifest and bundled runtime verified",
+    "changed, missing, additional files, manifest and junction rejected",
+    "bundled native read broker reads scoped fixture and rejects traversal without developer runtimes",
+    "fresh Windows DPAPI storage reaches subscription consent without developer tools or inherited Node options",
+    "native Chrome shared textbox verified",
+    "native Edge shared textbox verified",
+    "same and relocated bundles reopen one host and preserve protected storage key",
+    "restart from relocated bundle preserves protected key and reacquires ownership"
+  ],
+  "passed": true
+}

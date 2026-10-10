@@ -1,0 +1,194 @@
+// Isolated runtime measurements. Never opens the owner's journal or accounts.
+import assert from 'node:assert/strict';
+import { fork } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, request } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
+import { ContactStore, contactRoute } from '../packages/engine/src/contact-store.mjs';
+import { ContactService } from '../packages/engine/src/contact-service.mjs';
+import { serveContact } from '../packages/engine/src/contact-http.mjs';
+import { GoogleConnection } from '../packages/engine/src/google-connection.mjs';
+import { GOOGLE_SCOPES } from '../packages/engine/src/google-contract.mjs';
+import { ATTENTION_CONSENT, localDay, localHour } from '../packages/engine/src/attention.mjs';
+import { CONTINUING_CONSENT } from '../packages/engine/src/continuing-use.mjs';
+
+const response = () => ({ message: { role: 'assistant', content: '지금 알려드릴 새로운 내용이 없습니다.' }, input_tokens: 5, output_tokens: 3 });
+const identity = { provider: 'chatgpt-subscription', model: 'synthetic-counted-adapter' };
+const noSources = { definitions: [], validate: () => false, execute: async () => { throw Error('NO_FIXTURE_TOOLS'); }, verify: async () => false };
+const mono = () => Number(process.hrtime.bigint()) / 1e6;
+const percentile = (values, p) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * p) - 1];
+async function until(test, label, timeout = 10000) {
+  const end = mono() + timeout;
+  while (!test()) { assert.ok(mono() < end, `timeout: ${label}`); await delay(10); }
+}
+
+// Kept in a child so its HTTP/JSON CPU is excluded from the measured host.
+if (process.argv.includes('--google-fixture')) {
+  const counts = { token: 0, mail: 0, calendar: 0, unexpected: 0 };
+  const server = createServer((req, res) => {
+    const path = new URL(req.url, 'http://127.0.0.1').pathname; let body;
+    if (req.method === 'POST' && path === '/token') { counts.token++; body = { access_token: 'fixture-access-token-not-real', expires_in: 3600, token_type: 'Bearer', scope: GOOGLE_SCOPES.join(' ') }; }
+    else if (req.method === 'GET' && path === '/gmail/v1/users/me/messages') { counts.mail++; body = { messages: [] }; }
+    else if (req.method === 'GET' && path === '/calendar/v3/calendars/primary/events') { counts.calendar++; body = { items: [] }; }
+    else { counts.unexpected++; res.statusCode = 404; body = { error: 'unexpected_fixture_request' }; }
+    req.resume(); res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body));
+  });
+  server.listen(0, '127.0.0.1', () => process.send({ address: `http://127.0.0.1:${server.address().port}` }));
+  process.on('message', message => { if (message === 'counts') process.send({ counts }); });
+  process.on('disconnect', () => { server.closeAllConnections(); server.close(); });
+} else {
+  const args = process.argv.slice(2), mode = args[0], output = args[1];
+  assert.ok(['cancel', 'idle', 'idle-smoke'].includes(mode) && output && args.length === 2,
+    'Usage: node --experimental-strip-types scripts/contact-runtime-acceptance.mjs cancel|idle|idle-smoke REPORT.json');
+  const report = { version: 1, mode, started: new Date().toISOString(), platform: process.platform, node: process.version,
+    scope: 'Real ContactStore/ContactService/HTTP; isolated encrypted synthetic journal and model; no owner account or data.', passed: false };
+  try {
+    if (mode === 'cancel') await cancellations(report);
+    else await idle(mode === 'idle' ? 1800 : 10, report);
+    report.passed = true;
+  } catch (error) { report.error = String(error.stack); process.exitCode = 1; }
+  finally { report.finished = new Date().toISOString(); writeFileSync(output, JSON.stringify(report, null, 2) + '\n'); console.log(JSON.stringify(report)); }
+}
+
+async function fixture(model, timezone = 'Asia/Seoul') {
+  const root = mkdtempSync(join(tmpdir(), 'tada-runtime-'));
+  const store = new ContactStore({ directory: join(root, 'private'), passphrase: 'synthetic runtime fixture only', route: contactRoute({ fixture: true }), initialize: true, mail: true });
+  const service = new ContactService(store, model, noSources, { timezone });
+  const faults = [], turnFailures = []; service.on('fault', code => faults.push(code)); service.on('turn-failed', failure => turnFailures.push(failure));
+  const origin = 'http://127.0.0.1:9177';
+  const host = await serveContact({ store, service, origin, port: 0 });
+  const call = (path, body, cookie = '') => new Promise((resolve, reject) => {
+    const req = request(`http://127.0.0.1:${host.address.port}${path}`, { method: 'POST', headers: {
+      Host: '127.0.0.1:9177', Origin: origin, 'Content-Type': 'application/json', Cookie: cookie,
+    } }, res => { const chunks = []; res.on('data', chunk => chunks.push(chunk)); res.on('end', () => {
+      try { resolve({ status: res.statusCode, headers: res.headers, body: JSON.parse(Buffer.concat(chunks).toString()) }); } catch (error) { reject(error); }
+    }); });
+    req.setTimeout(10000, () => req.destroy(Error('fixture HTTP timeout'))); req.on('error', reject); req.end(JSON.stringify(body));
+  });
+  const pair = async () => {
+    const code = new URLSearchParams(new URL(host.pair()).hash.slice(1)).get('pair');
+    const result = await call('/api/pair', { code, name: 'Isolated acceptance device' }); assert.equal(result.status, 200);
+    return { cookie: result.headers['set-cookie'][0].split(';')[0], id: result.body.device };
+  };
+  return { store, service, call, pair, faults, turnFailures, async close() { await service.close(); await host.close(); store.close(); rmSync(root, { recursive: true, force: true }); } };
+}
+
+async function cancellations(report) {
+  const groups = [];
+  report.cancellation = { groups, planned_measured: 200,
+    boundary: 'HTTP request start to durable cancellation/revocation and active AbortSignal; subsequent dispatch denied, late result discarded. Does not measure remote computation termination or worker process kill.' };
+  for (const operation of ['cancel', 'revoke']) for (const completion of ['cooperative', 'late-response']) {
+    const group = { operation, completion, measured: 0, warmup: 1, samples: [], fixtures: 3 };
+    groups.push(group); let index = 0;
+    // Three fresh journals avoid the real 20 pairings/minute limit; each stays below 64 reservations.
+    for (const size of [18, 17, 16]) {
+      let pending, calls = 0;
+      const f = await fixture({ identity, contextLimitBytes: 65536, chat(_messages, _tools, signal, admit) {
+        calls++;
+        return new Promise((resolve, reject) => {
+          const current = { signal, admit, resolve, abortedAt: null }; pending = current;
+          signal.addEventListener('abort', () => { current.abortedAt = mono(); if (completion === 'cooperative') reject(signal.reason); }, { once: true });
+        });
+      } });
+      let device;
+      try {
+        device = await f.pair();
+        for (let local = 0; local < size; local++, index++) {
+          const sample = { index, warmup: index === 0, passed: false };
+          if (index) group.samples.push(sample);
+          pending = null;
+          if (operation === 'revoke' && local) device = await f.pair();
+          const accepted = await f.call('/api/turns', { request_id: randomUUID(), text: '합성 취소 지연 측정입니다.' }, device.cookie);
+          assert.equal(accepted.status, 202); const seq = accepted.body.seq;
+          await until(() => pending !== null, 'model dispatch'); const current = pending;
+          const started = mono();
+          const stopped = await f.call(operation === 'cancel' ? '/api/cancel' : '/api/logout', operation === 'cancel' ? { seq } : {}, device.cookie);
+          sample.http_ms = mono() - started;
+          assert.equal(stopped.status, 200); assert.equal(current.signal.aborted, true);
+          if (operation === 'cancel') assert.equal(stopped.body.changed, true);
+          assert.notEqual(current.abortedAt, null); sample.admission_ms = current.abortedAt - started;
+          assert.throws(() => current.admit()); assert.throws(() => f.store.assertTurnAuthority(seq));
+          if (completion === 'late-response') current.resolve(response());
+          await f.service.idle();
+          const turn = f.store.page().turns.find(t => t.seq === seq);
+          assert.ok(turn); assert.equal(turn.state, 'cancelled'); assert.equal(turn.error, operation === 'cancel' ? 'USER_CANCELLED' : 'DEVICE_REVOKED'); assert.ok(!turn.answer);
+          if (operation === 'revoke') assert.equal((await f.call('/api/turns', { request_id: randomUUID(), text: 'Revoked device must not submit.' }, device.cookie)).status, 401);
+          assert.equal(calls, local + 1); assert.equal(f.store.usage().requests, local + 1); assert.deepEqual(f.faults, []);
+          sample.passed = true; if (index) group.measured++;
+        }
+      } finally { pending?.resolve(response()); await f.close(); }
+    }
+    group.p95_ms = percentile(group.samples.map(s => s.admission_ms), .95);
+    assert.equal(group.measured, 50); assert.ok(group.p95_ms <= 250, `cancellation p95 ${group.p95_ms} exceeds 250ms`);
+  }
+}
+
+async function idle(seconds, report) {
+  const timezone = 'Asia/Seoul', day = localDay(Date.now(), timezone);
+  assert.ok(localHour(Date.now(), timezone) >= 9 && localHour(Date.now() + (seconds + 30) * 1000, timezone) < 21, 'Run during 09:00–21:00 Asia/Seoul, without crossing the quiet-hours boundary.');
+  let modelCalls = 0;
+  const f = await fixture({ identity, contextLimitBytes: 65536, async chat(messages, tools) {
+    modelCalls++;
+    const current = messages.slice(messages.findLastIndex(message => message.role === 'user') + 1);
+    const required = ['list_followups', 'list_recent_emails', 'list_upcoming_events'];
+    if (!current.some(message => message.role === 'tool')) {
+      assert.ok(required.every(name => tools.some(tool => tool.function.name === name)));
+      return { ...response(), message: { role: 'assistant', content: '', tool_calls: required.map(name => ({ function: { name, arguments: name === 'list_followups' ? { status: 'active', offset: 0 } : {} } })) } };
+    }
+    assert.ok(required.every(name => current.some(message => message.role === 'tool' && message.tool_name === name)));
+    return { ...response(), message: { role: 'assistant', content: 'NO_NEW_SUGGESTION' } };
+  } }, timezone);
+  const child = fork(fileURLToPath(import.meta.url), ['--google-fixture'], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+  const cpu = [], observations = [];
+  report.idle = { requested_seconds: seconds, cpu_samples: cpu, completed_observations_after_warmup: observations };
+  try {
+    const [{ address }] = await once(child, 'message'); assert.ok(address);
+    const counts = async () => { const waiting = once(child, 'message'); child.send('counts'); return (await waiting)[0].counts; };
+    const device = await f.pair();
+    f.store.saveGoogleCredential(device.id, { version: 1, epoch: randomUUID(), device: device.id, scopes: [...GOOGLE_SCOPES],
+      refresh_token: 'fixture-refresh-token-not-real', email: 'owner@example.test', connected_at: Date.now(), last_checked: null, last_error: null, reconnect_required: false }, null);
+    f.service.attachGoogle(new GoogleConnection({ store: f.store, clientId: 'runtime-fixture.apps.googleusercontent.com', clientSecret: 'fixture-only',
+      testEndpoints: { token: `${address}/token`, revoke: `${address}/revoke`, gmail: `${address}/gmail/v1`, calendar: `${address}/calendar/v3` } }));
+    assert.equal((await f.call('/api/continuing-use', { enabled: true, consent: CONTINUING_CONSENT }, device.cookie)).status, 200);
+    assert.equal((await f.call('/api/proactive', { enabled: true, consent: ATTENTION_CONSENT }, device.cookie)).status, 200);
+    await until(() => f.store.attentionStatus()?.google_observed && modelCalls > 0, 'initial connected observation and model warm-up');
+    await f.service.idle(); assert.deepEqual(f.faults, []); assert.deepEqual(f.turnFailures, []);
+    const warmup = f.store.turn(1); assert.equal(warmup?.state, 'answered'); assert.equal(warmup.answer?.quiet, true); assert.equal(warmup.answer?.refused, undefined); assert.equal(modelCalls, 2);
+    const initial = f.store.attentionStatus(); assert.equal(initial.error, null);
+    const baseline = { warmup_state: warmup.state, warmup_quiet: warmup.answer.quiet, calls: modelCalls, requests: f.store.usage().requests, counts: await counts() };
+    // Observe actual host changes rather than decrypting/rendering UI status
+    // on every CPU sample. Poll completion emits change even on failure.
+    let attentionDirty = false, state = initial;
+    f.service.on('change', () => { attentionDirty = true; });
+    let previousAt = mono(), previousCpu = process.cpuUsage(), observed = initial.observed_at;
+    const started = previousAt, initialCpu = previousCpu; let extension = false;
+    for (;;) {
+      await delay(1000);
+      const current = process.cpuUsage(), at = mono();
+      cpu.push((current.user + current.system - previousCpu.user - previousCpu.system) / ((at - previousAt) * 1000) * 100);
+      previousAt = at; previousCpu = current;
+      if (attentionDirty) { state = f.store.attentionStatus(); attentionDirty = false; }
+      assert.equal(state.google_observed, true); assert.equal(state.error, null); assert.deepEqual(f.faults, []); assert.equal(f.service.stopped, false); assert.deepEqual(f.turnFailures, []);
+      if (state.observed_at !== observed) { observed = state.observed_at; observations.push(observed); }
+      if (at - started >= seconds * 1000) {
+        if (seconds < 1800 || observations.length >= 2) break;
+        extension = true; assert.ok(at - started < (seconds + 15) * 1000, 'two completed 15-minute observations required');
+      }
+    }
+    const elapsed = (mono() - started) / 1000, finalCounts = await counts();
+    assert.equal(localDay(Date.now(), timezone), day); assert.equal(modelCalls - baseline.calls, 0);
+    assert.equal(f.store.usage().requests - baseline.requests, 0); assert.equal(finalCounts.unexpected, 0);
+    assert.ok(finalCounts.mail >= baseline.counts.mail + observations.length); assert.ok(finalCounts.calendar >= baseline.counts.calendar + observations.length);
+    const p95 = percentile(cpu, .95);
+    Object.assign(report.idle, { seconds: elapsed, full_30_minute_measurement: seconds === 1800, extension, cpu_samples: cpu, cpu_p95_one_core_percent: p95, cpu_mean_one_core_percent: (previousCpu.user + previousCpu.system - initialCpu.user - initialCpu.system) / ((previousAt - started) * 1000) * 100,
+      model_calls_delta: modelCalls - baseline.calls, ledger_requests_delta: f.store.usage().requests - baseline.requests,
+      completed_observations_after_warmup: observations, baseline, final_counts: finalCounts,
+      boundary: 'Browser-closed Node Contact host including measurement overhead; fixture HTTP child excluded. Real 1-second timer and 15-minute polls, unchanged empty sources, no clock acceleration. Existing 1-hour model cooldown applies, so this does not independently prove fingerprint suppression. Excludes tray/browser/broker child CPU and real provider execution.' });
+    assert.ok(p95 < 1, `idle CPU p95 ${p95}% exceeds 1% of one logical core`);
+  } finally { await f.close(); child.disconnect(); await once(child, 'exit'); }
+}

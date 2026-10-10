@@ -1,0 +1,48 @@
+{
+  "base_commit": "51fd56cad254f66e45831672f9f83085c33ba398",
+  "harness_sha256": "81ff2b26ec2240be541f6472a9f44b90fbc4def2b79ae70f77294226a6cbb55f",
+  "source_hashes": {
+    "packages/engine/src/attention.mjs": "a3287a8fbfbf67f7a22af0864c5391d2c03ddf6134b1030053e293803bf51c51",
+    "packages/engine/src/followup-contract.mjs": "b8e8b21591d9556a2492355504f8e651d4ca6737025a07d5040695b258647ddf",
+    "packages/engine/src/contact-store.mjs": "bb83ebe765788acb286adcf2f28a6ef980521567e658aa26b7ac5ebd770bec6a",
+    "packages/engine/src/contact-service.mjs": "de6f03d601a59415c204c8233d70528cdfff4ba15b2fce7acb411cb61365ac27"
+  },
+  "scope": "Current Contact host timer optimization; existing account permissions and database versions unchanged. Production hashes remained frozen through all recorded measurements.",
+  "production_commit": "92deb6f",
+  "core_review": {
+    "native_review": "no actionable findings",
+    "reviewer_tests": 326,
+    "reviewer_skipped": 5,
+    "author_full_tests": 1475,
+    "author_skipped": 0,
+    "native_windows_related_tests": 119
+  },
+  "source_byte_parity": {
+    "windows_clone": true,
+    "windows_bundle20": true,
+    "all_runtime_paths_compared": 79
+  },
+  "crash_harness_sha256": "5a7ae14aaa0811d2955aad2bb0fbaf2ebe8e027f2f9373929540b6c0eb5bee1a",
+  "post_measurement_harness_fix": {
+    "reason": "Bound Google fixture readiness/count IPC by child exit, error and timeout; safely close exited or unresponsive fixture children. No production change or 30-minute rerun claimed.",
+    "measured_five_second_harness_sha256": "07280d1916b11e63e9be7922e13d3255c0ecb03f8aff5a16fa108ebfbaba6ef2",
+    "ipc_tests": {
+      "linux": 5,
+      "windows": 5,
+      "skipped": 0
+    },
+    "current_sources": {
+      "scripts/contact-runtime-acceptance.mjs": "5cd03ad56dba1a392d25b86a42419fa9a43703003fcb66df14f2ed5ec67ac7bd",
+      "scripts/runtime-fixture-ipc.mjs": "0a5c924c6ae9b16c3d5706ea8b92f6d1af7457d8fb9c868e716b90258b638f7a",
+      "scripts/runtime-fixture-ipc.test.mjs": "e14baba9f33400d413e6529ad6e9f875b71f0140108aef58767c87b9ae663dfc"
+    }
+  },
+  "post_measurement_crash_fix": {
+    "reason": "Route spawn/IPC and asynchronous mock HTTP errors to failure JSON and owned-child cleanup. Product sources unchanged. Repeat 100 normal crash trials per platform after correction.",
+    "error_regressions_per_platform": 4,
+    "current_sources": {
+      "scripts/contact-crash-acceptance.mjs": "65fad7de765a0dbff54a04dd579fb345289943fd96317b8f028aaa7763c88a70",
+      "scripts/contact-crash-acceptance.test.mjs": "31f786f6ec0012ed309b2a13fc03e9ccb77906bc21e94a09af89169f57e788fe"
+    }
+  }
+}

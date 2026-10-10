@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "fixed_before_runs_at": "2026-10-10T08:19:59.777422+00:00",
+  "scope": "Browser-closed synthetic Contact Node host, not whole installed app or real provider.",
+  "duration_seconds": 1800,
+  "raw_interval_ms": 1000,
+  "consecutive_samples_per_window": 5,
+  "trailing_partial": "included in p95 and whole-run mean",
+  "threshold": "five-second nominal nonoverlapping CPU window p95 < 1 percent of one logical core",
+  "additional_metrics": [
+    "one-second p95",
+    "one-second maximum",
+    "whole-run CPU mean",
+    "raw cumulative user/system CPU and actual monotonic elapsed milliseconds"
+  ],
+  "excluded_post_warmup_samples": 0,
+  "one_second_runs": "Preserved separately; never reclassified as five-second passes.",
+  "baseline_commit": "51fd56cad254f66e45831672f9f83085c33ba398",
+  "harness_sha256": "07280d1916b11e63e9be7922e13d3255c0ecb03f8aff5a16fa108ebfbaba6ef2",
+  "method_reason": "The original design does not prescribe a sampling interval. Coarse Windows CPU accounting can make the one-second minimum nonzero sample exceed 1%; raw data and both windows distinguish resolution from actual load. Independent read-only methodology review accepted this explicit protocol change, not retroactive reinterpretation."
+}

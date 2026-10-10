@@ -1,0 +1,1315 @@
+{
+  "version": 1,
+  "started": "2026-10-10T08:33:32.120Z",
+  "platform": "win32",
+  "node": "v24.21.0",
+  "planned": {
+    "inference": 50,
+    "mail": 50
+  },
+  "samples": [
+    {
+      "kind": "inference",
+      "index": 0,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 1,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 2,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 3,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 4,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 5,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 6,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 7,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 8,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 9,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 10,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 11,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 12,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 13,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 14,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 15,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 16,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 17,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 18,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 19,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 20,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 21,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 22,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 23,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 24,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 25,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 26,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 27,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 28,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 29,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 30,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 31,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 32,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 33,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 34,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 35,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 36,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 37,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 38,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 39,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 40,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 41,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 42,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 43,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 44,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 45,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 46,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 47,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 48,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "inference",
+      "index": 49,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "requests_after_restart": 3,
+      "unknown_requests": 1
+    },
+    {
+      "kind": "mail",
+      "index": 0,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 1,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 2,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 3,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 4,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 5,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 6,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 7,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 8,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 9,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 10,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 11,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 12,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 13,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 14,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 15,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 16,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 17,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 18,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 19,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 20,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 21,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 22,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 23,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 24,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 25,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 26,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 27,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 28,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 29,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 30,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 31,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 32,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 33,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 34,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 35,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 36,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 37,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 38,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 39,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 40,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 41,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 42,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 43,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 44,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 45,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 46,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 47,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    },
+    {
+      "kind": "mail",
+      "index": 48,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": true,
+      "state": "VERIFIED",
+      "remote_posts": 1,
+      "remote_reads": 2
+    },
+    {
+      "kind": "mail",
+      "index": 49,
+      "passed": true,
+      "termination": {
+        "requested": "SIGKILL",
+        "code": null,
+        "signal": "SIGKILL"
+      },
+      "query_available": false,
+      "state": "UNCERTAIN",
+      "remote_posts": 1,
+      "remote_reads": 1
+    }
+  ],
+  "passed": true,
+  "scope": "Actual ContactService/HTTP child SIGKILL and same encrypted journal restart. Synthetic model and independently retained loopback mail server; no owner data, real provider or external delivery. Not the whole 1000-transition release suite.",
+  "finished": "2026-10-10T08:35:32.734Z"
+}

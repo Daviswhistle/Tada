@@ -1,0 +1,130 @@
+{
+  "version": 2,
+  "mode": "idle-smoke",
+  "started": "2026-10-10T08:54:56.039Z",
+  "platform": "win32",
+  "node": "v24.21.0",
+  "scope": "Real ContactStore/ContactService/HTTP; isolated encrypted synthetic journal and model; no owner account or data.",
+  "passed": false,
+  "idle": {
+    "requested_seconds": 10,
+    "cpu_samples": [
+      1.5917566108845,
+      0,
+      1.4894974048255385,
+      0,
+      0,
+      0,
+      0,
+      7.816576802640518,
+      0,
+      1.5928484291604281
+    ],
+    "cpu_raw_samples": [
+      {
+        "elapsed_ms": 0,
+        "user_us": 0,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 1005.1787999868393,
+        "user_us": 16000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 2014.571399986744,
+        "user_us": 16000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 3021.622500002384,
+        "user_us": 31000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 4029.7599999904633,
+        "user_us": 31000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 5035.505999982357,
+        "user_us": 31000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 6038.756299972534,
+        "user_us": 31000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 7042.486299991608,
+        "user_us": 31000,
+        "system_us": 0
+      },
+      {
+        "elapsed_ms": 8053.158899962902,
+        "user_us": 78000,
+        "system_us": 32000
+      },
+      {
+        "elapsed_ms": 9057.377399981022,
+        "user_us": 78000,
+        "system_us": 32000
+      },
+      {
+        "elapsed_ms": 10061.86719995737,
+        "user_us": 94000,
+        "system_us": 32000
+      }
+    ],
+    "cpu_windows": [
+      {
+        "start_ms": 0,
+        "end_ms": 5035.505999982357,
+        "cpu_us": 31000,
+        "one_core_percent": 0.6156283003159685,
+        "partial": false
+      },
+      {
+        "start_ms": 5035.505999982357,
+        "end_ms": 10061.86719995737,
+        "cpu_us": 95000,
+        "one_core_percent": 1.8900352804026948,
+        "partial": false
+      }
+    ],
+    "completed_observations_after_warmup": [],
+    "seconds": 10.061933499991893,
+    "full_30_minute_measurement": false,
+    "extension": false,
+    "cpu_p95_one_core_percent": 7.816576802640518,
+    "cpu_max_one_core_percent": 7.816576802640518,
+    "cpu_p95_five_second_one_core_percent": 1.8900352804026948,
+    "one_second_threshold_met": false,
+    "sampling": "One-second raw cumulative CPU/time samples; consecutive groups of five, each normalized by its actual elapsed time. Final partial window included. No samples discarded or phase shifting.",
+    "cpu_mean_one_core_percent": 1.2522526634075815,
+    "model_calls_delta": 0,
+    "ledger_requests_delta": 0,
+    "baseline": {
+      "warmup_state": "answered",
+      "warmup_quiet": true,
+      "calls": 2,
+      "requests": 2,
+      "counts": {
+        "token": 1,
+        "mail": 2,
+        "calendar": 2,
+        "unexpected": 0
+      }
+    },
+    "final_counts": {
+      "token": 1,
+      "mail": 2,
+      "calendar": 2,
+      "unexpected": 0
+    },
+    "boundary": "Browser-closed Node Contact host including measurement overhead; fixture HTTP child excluded. Real 1-second timer and 15-minute polls, unchanged empty sources, no clock acceleration. Existing 1-hour model cooldown applies, so this does not independently prove fingerprint suppression. Excludes tray/browser/broker child CPU and real provider execution."
+  },
+  "error": "AssertionError [ERR_ASSERTION]: idle CPU five-second-window p95 1.8900352804026948% exceeds 1% of one logical core\n    at idle (file:///C:/Users/rkddk/AppData/Local/Temp/tada-native-build-0df28ed51d50/runtime-validation1/scripts/contact-runtime-acceptance.mjs:208:12)\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async file:///C:/Users/rkddk/AppData/Local/Temp/tada-native-build-0df28ed51d50/runtime-validation1/scripts/contact-runtime-acceptance.mjs:52:10",
+  "finished": "2026-10-10T08:55:06.737Z"
+}
