@@ -1,3 +1,4 @@
+import { BrowserTransfers } from './browser-transfers.mjs';
 import { BACKUP_CONSENT, createRecordBackup } from './contact-backup.mjs';
 import { MailSources } from './mail-sources.mjs';
 import { SavedFileSources } from './saved-file-sources.mjs';
@@ -9,6 +10,7 @@ import { EventEmitter } from 'node:events';
 import { OwnerContext } from './owner-context.mjs';
 import { DocumentSources } from './document-sources.mjs';
 import { ConversationAssistant } from './conversation.ts';
+import { boundedTools } from './tool-selection.mjs';
 import { ReviewSources } from './review-sources.mjs';
 import { preparePersonalRequest } from './personal-request.mjs';
 import { FollowupSources } from './followup-sources.mjs';
@@ -32,7 +34,7 @@ function failureDetails(error) {
 const safeCode = error => /^[A-Z_]{1,64}$/u.test(error?.message) ? error.message : 'ASSISTANT_FAILED';
 export class ContactService extends EventEmitter {
   #desktopNotify = null; #desktopError = false; #desktopStarted = false; #desktopPrepared = false;
-  #maintenance = null;
+  #maintenance = null; #transfers = null;
   #store; #model; #sources; #active; #drain; #stopped = false; #timer; #timezone; #google = null; #browser = null; #attention = null; #attentionAbort = null; #wakeRequested = false; #mailOperations = new Map(); #backupConfig; #backupOperation = null;
   constructor(store, model, sources, { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone, backup = {}, desktopNotify = null } = {}) {
     super();
@@ -73,10 +75,10 @@ export class ContactService extends EventEmitter {
       return result;
     } finally { if (this.#backupOperation === operation) this.#backupOperation = null; }
   }
-  attachBrowser(browser) { if (this.#browser) throw Error('CONTACT_BROWSER_ALREADY_ATTACHED'); this.#browser = browser; browser.on?.('change', () => this.emit('change')); }
+  attachBrowser(browser) { if (this.#browser) throw Error('CONTACT_BROWSER_ALREADY_ATTACHED'); this.#browser = browser; this.#transfers = new BrowserTransfers(this.#store, browser, () => this.emit('change')); browser.on?.('change', () => { this.#transfers.invalidate(); this.emit('change'); }); }
   browserStatus(device) {
     const grant = this.#browser?.grant;
-    return { available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device, files: grant.files === true } : null,
+    return { transfer: this.#transfers?.status(device) ?? null, available: !!this.#browser?.available, shared: grant ? { url: grant.url, origin: grant.origin, for_this_device: grant.device === device, files: grant.files === true } : null,
       actions: [...new Map([...this.#store.readBrowserActions().slice(0,10), ...this.#store.readBrowserActions(true).filter(r => !r.resolved)].map(r => [r.action.action_id, r])).values()].map(r => ({ id: r.action.action_id, turn: r.turn, origin: r.origin, field: r.payload.label, requested: r.payload.value, file: r.payload.acceptance === 'selected_file_result', download_matches: r.receipt?.observed_sha256 ? r.receipt.observed_sha256===r.payload.replacement?.sha256 : null, state: r.action.state, verdict: r.action.reconciliation_verdict, resolved: !!r.resolved || !!r.recovery?.acknowledged, ...(r.recovery ? {recovery:r.recovery} : {}) })) };
   }
   async openBrowser(device) { this.#store.assertDevice(device); if (!this.#browser || this.#stopped) throw Error('CONTACT_BROWSER_UNAVAILABLE'); await this.#browser.open(); if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); this.#store.assertDevice(device); return this.browserStatus(device); }
@@ -90,6 +92,14 @@ export class ContactService extends EventEmitter {
   }
   unshareBrowser(device) { this.#store.assertDevice(device); this.#browser?.unshare(); this.emit('change'); return this.browserStatus(device); }
   resolveBrowser(device, id, consent) { this.#store.resolveBrowserAction(device, id, consent); this.emit('change'); return this.browserStatus(device); }
+  approveBrowserTransfer(device, input) {
+    if (this.#stopped || !this.#transfers) throw Error('CONTACT_BROWSER_UNAVAILABLE');
+    return this.#transfers.approve(device, input);
+  }
+  discardBrowserTransfer(device, input) {
+    if (this.#stopped || !this.#transfers) throw Error('CONTACT_BROWSER_UNAVAILABLE');
+    return this.#transfers.discard(device, input);
+  }
   start() {
     this.#prepareDesktop(); this.#desktopStarted = true;
     if (!this.#timer && !this.#stopped && this.#store.contactVersion >= 3) {
@@ -128,16 +138,18 @@ export class ContactService extends EventEmitter {
   submit(device, requestId, text) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
     const accepted = this.#store.submit(device, requestId, text);
+    if (!accepted.replay) this.#transfers?.invalidate();
     if (!accepted.replay && this.#active && this.#store.proactiveForTurn(this.#active.seq)) this.#active.abort.abort();
     this.emit('change'); this.start();
     return accepted;
   }
   editDocument(device, input) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
-    const saved = this.#store.editDocument(device, input); this.emit('change'); return saved;
+    const saved = this.#store.editDocument(device, input); this.#transfers?.invalidate(); this.emit('change'); return saved;
   }
   cancel(seq) {
     const changed = this.#store.cancel(seq);
+    this.#transfers?.invalidate();
     if (this.#active?.seq === seq) this.#active.abort.abort();
     this.emit('change');
     return changed;
@@ -145,22 +157,25 @@ export class ContactService extends EventEmitter {
   revoke(device) {
     this.#google?.deviceRevoked(device);
     if (this.#browser?.grant?.device === device) this.#browser.unshare();
-    this.#store.revoke(device);
+    this.#store.revoke(device); this.#transfers?.invalidate();
     this.#abortStale();
     if (this.#active?.device === device) this.#active.abort.abort();
     this.emit('change');
   }
   async #run() {
     while (!this.#stopped) {
+      if (this.#transfers?.operation) await Promise.allSettled([this.#transfers.operation]);
+      if (this.#stopped) break;
       const job = this.#store.claim();
       if (!job) break;
       const abort = new AbortController();
       this.#active = { seq: job.seq, device: job.device, abort, google: null };
       this.emit('change');
-      const attemptedTools = []; let providerFailure, browserSources;
+      const attemptedTools = []; let providerFailure, browserSources, browserScope;
       try {
         const proactive = this.#store.proactiveForTurn(job.seq);
         const review = this.#store.reviewForTurn(job.seq);
+        if (!review && !proactive) this.#transfers?.invalidate();
         if (review && !this.localReviews) throw Error('CONTACT_REVIEW_LOCAL_PROVIDER_REQUIRED');
         // Local review grants are deliberately composed without Google. Normal
         // turns and the separately opted-in daily suggestion path may use it.
@@ -168,8 +183,9 @@ export class ContactService extends EventEmitter {
         this.#active.google = google;
         const ownerContext = !review && !proactive ? new OwnerContext(this.#store, job) : null;
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
+        browserScope = !review && !proactive && this.#transfers ? this.#transfers.capture(job, this.#google) : null;
         const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserTaskSources(google ?? this.#sources, this.#store, this.#browser, job, () => metered,
-          event => { if (event.kind === 'tool_call' && typeof event.name === 'string' && attemptedTools.length < 24) attemptedTools.push(event.name); })) : google ?? this.#sources;
+          event => { if (event.kind === 'tool_call' && typeof event.name === 'string' && attemptedTools.length < 24) attemptedTools.push(event.name); }, browserScope.stage)) : google ?? this.#sources;
         const mailSources = !review && !proactive && this.#store.contactVersion >= 6 ? new MailSources(interactive, this.#store, job, google, (id, signal) => this.reconcileMail(job.device, id, signal)) : null;
         const interactiveTools = !review && !proactive ? new SavedFileSources(mailSources ?? interactive, this.#store, job) : mailSources ?? interactive;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
@@ -205,7 +221,7 @@ export class ContactService extends EventEmitter {
         // Rolling allowance may recover while a provider response is pending.
         // The durable reserve above owns admission at every request, including
         // legacy review/proactive limits; do not freeze that allowance here.
-        const assistant = new ConversationAssistant(metered, sources, event => {
+        const assistant = new ConversationAssistant(metered, boundedTools(sources, metered.contextLimitBytes), event => {
           if (event.kind === 'tool_call' && typeof event.name === 'string' && /^[a-z_]{1,64}$/u.test(event.name) && attemptedTools.length < 24) attemptedTools.push(event.name);
         }, { continuing, requestLimit: continuing ? Number.MAX_SAFE_INTEGER : 64 });
         const prior = this.#store.checkpoint();
@@ -217,6 +233,7 @@ export class ContactService extends EventEmitter {
           if (stopped.origin !== 'proactive') assistant.noteStopped(stopped.text, stopped.state);
         }
         assistant.noteContext(this.#store.reminderContext(prior.through, job.seq));
+        if (!review && !proactive) assistant.noteContext(this.#store.browserReceiptContext(job.seq), true);
         const answer = await assistant.ask(job.text, abort.signal);
         abort.signal.throwIfAborted(); sources.assertCurrent?.(abort.signal);
         const proposals = !answer.refused && !proactive && base instanceof FollowupSources ? base.proposals() : [];
@@ -229,7 +246,17 @@ export class ContactService extends EventEmitter {
         // The full document stays in the encrypted answer. Persist a compact
         // receipt in model context; read_document retrieves it when needed.
         const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events', 'search_related_emails', 'read_email_thread', 'read_mail_action', 'prepare_mail', 'list_mail_actions']);
+        let sharedBrowserRead = false;
         for (const message of checkpoint.history) {
+          if (message.role === 'user') sharedBrowserRead = false;
+          if (message.tool_calls?.some(call => ['observe_shared_browser', 'read_shared_file'].includes(call.function.name))) sharedBrowserRead = true;
+          if (message.role === 'tool' && ['observe_shared_browser', 'read_shared_file'].includes(message.tool_name)) sharedBrowserRead = true;
+          if (message.role === 'tool' && message.tool_name === 'read_shared_file') {
+            message.content = JSON.stringify({ note: 'Selected file content is not retained in the checkpoint. Observe and read the currently shared file again when needed.' });
+          }
+          // Opaque provider continuation can contain the same transient input.
+          // Preserve the visible answer and normalized tool transcript only.
+          if (sharedBrowserRead) delete message.provider_state;
           if (message.role === 'tool' && message.tool_name === 'observe_shared_browser') message.content = JSON.stringify({ note: 'Shared browser observations expire. Observe the currently shared page again.' });
           if (message.role === 'tool' && message.tool_name === 'read_saved_file') message.content = JSON.stringify({ note: 'Saved file content is not retained in the checkpoint. Use list_saved_files/read_saved_file when needed.' });
           if (message.role === 'tool' && message.tool_name === 'read_document') {
@@ -243,9 +270,17 @@ export class ContactService extends EventEmitter {
             message.content = JSON.stringify({ note: 'Google account content was not retained in the checkpoint. Re-read current account data when needed.' });
           }
         }
-        if (document) {
-          const currentUser = checkpoint.history.findLastIndex(message => message.role === 'user');
-          checkpoint.history.splice(currentUser + 1, checkpoint.history.length, { role: 'assistant', content: `Saved document: ${JSON.stringify({ id: document.id, root: document.root, based_on: document.based_on, title: document.title, revision: document.revision })}. Use read_document for content.` });
+        const currentUser = checkpoint.history.findLastIndex(message => message.role === 'user');
+        const transferAttempted = checkpoint.history.slice(currentUser + 1).some(message => message.tool_calls?.some(call => ['prepare_browser_text_transfer','prepare_browser_file_transfer'].includes(call.function.name)));
+        if (document || transferAttempted) {
+          // Prepared bytes and provider continuation remain transient, including
+          // failed attempts. Keep actual host status and document lineage only.
+          const receipts = [];
+          if (document) receipts.push({ role: 'assistant', content: `Saved document: ${JSON.stringify({ id: document.id, root: document.root, based_on: document.based_on, title: document.title, revision: document.revision })}. Use read_document for content.` });
+          if (transferAttempted) receipts.push({ role: 'assistant', content: !answer.refused && browserScope?.prepared()
+            ? 'Browser transfer prepared for owner review, not applied. Preview expires and is discarded on restart or a new owner request. Host browser receipts describe any later application; never infer approval from this message.'
+            : 'Browser transfer preparation did not leave a valid preview. Nothing was applied by preparation. Reobserve the current page before any new attempt.' });
+          checkpoint.history.splice(currentUser + 1, checkpoint.history.length, ...receipts);
         }
         const directIds = proposals.length && base instanceof FollowupSources ? base.directProposalIds() : [];
         if (directIds.length) {
@@ -253,7 +288,7 @@ export class ContactService extends EventEmitter {
           checkpoint.history.push({ role: 'assistant', content: answer.notice });
         } else if (proposals.length) {
           const notice = '\n\n맡긴 일의 내용·시각을 확인해 확정해 주세요. 아래 제안은 아직 저장 확정·알림 예약 전입니다.';
-          if (document) {
+          if (document || transferAttempted) {
             answer.notice = notice.trim(); checkpoint.history.push({ role: 'assistant', content: notice.trim() });
           } else {
             answer.text += notice;
@@ -282,14 +317,17 @@ export class ContactService extends EventEmitter {
           answer.notice = [answer.notice, notice].filter(Boolean).join('\n\n');
           checkpoint.history.push({ role: 'assistant', content: notice });
         }
+        if (!answer.refused && browserScope?.prepared()) answer.notice = [answer.notice, '웹사이트에 옮길 내용을 준비했어요. 아직 입력하지 않았습니다. 이 대화 아래에서 내용과 대상을 확인한 뒤 적용해 주세요. 미리보기는 5분 동안 유지되며 새 요청이나 재시작 시 취소됩니다.'].filter(Boolean).join('\n\n');
         sources.assertCurrent?.(abort.signal);
-        this.#store.finish(job.seq, answer, checkpoint, proposals, document, directIds.length ? { epoch: delegation, proposal_ids: directIds } : null, mail);
+        const finished = this.#store.finish(job.seq, answer, checkpoint, proposals, document, directIds.length ? { epoch: delegation, proposal_ids: directIds } : null, mail);
+        if (finished && !answer.refused) browserScope?.publish();
       } catch (error) {
         this.#store.fail(job.seq, safeCode(error), this.#stopped ? 'interrupted' : 'failed');
         const details = failureDetails(error);
         if (providerFailure?.code === details.code) Object.assign(details, providerFailure);
         this.emit('turn-failed', { turn: job.seq, ...details, attempted_tools: attemptedTools });
       } finally {
+        browserScope?.discard();
         await browserSources?.close();
         this.#active = null;
         this.emit('change');
@@ -307,15 +345,16 @@ export class ContactService extends EventEmitter {
     this.#google = connection;
     connection.on('change', change => {
       this.#maintenance = null;
-      if (change?.authorityChanged) { this.#attentionAbort?.abort(); if (this.#active?.google) this.#active.abort.abort(); }
+      if (change?.authorityChanged) { this.#transfers?.invalidate(); this.#attentionAbort?.abort(); if (this.#active?.google) this.#active.abort.abort(); }
       this.emit('change');
     });
   }
-  async mailOperation(device, id, operation) {
+  async mailOperation(device, id, operation, changesMail = false) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
     this.#store.assertDevice(device);
     if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED');
     if (this.#mailOperations.has(id)) throw Error('CONTACT_MAIL_BUSY');
+    if (changesMail) this.#transfers?.invalidate();
     const pending = Promise.resolve().then(() => { if (this.#stopped) throw Error('CONTACT_HOST_STOPPING'); return operation(); });
     this.#mailOperations.set(id, pending); this.emit('change');
     try { return await pending; }
@@ -328,16 +367,16 @@ export class ContactService extends EventEmitter {
       if (this.#stopped || !['ACCEPTED', 'UNCERTAIN'].includes(receipt.state)) return receipt;
       try { return await this.#google.reconcileMail(device, input.id, new AbortController().signal); }
       catch { return receipt; }
-    });
+    }, true);
   }
   reconcileMail(device, id, signal) { return this.mailOperation(device, id, () => this.#google.reconcileMail(device, id, signal)); }
   editMail(device, input) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
-    const result = this.#store.editMail(device, input.id, input.revision, input.sha256, input.draft); this.emit('change'); return result;
+    const result = this.#store.editMail(device, input.id, input.revision, input.sha256, input.draft); this.#transfers?.invalidate(); this.emit('change'); return result;
   }
   discardMail(device, input) {
     if (this.#stopped) throw Error('CONTACT_HOST_STOPPING');
-    const result = this.#store.discardMail(device, input.id, input.revision, input.sha256); this.emit('change'); return result;
+    const result = this.#store.discardMail(device, input.id, input.revision, input.sha256); this.#transfers?.invalidate(); this.emit('change'); return result;
   }
   disableMail(device) { if (!this.#google) throw Error('CONTACT_GOOGLE_NOT_CONFIGURED'); return this.#google.disableMail(device); }
   googleStatus() { return this.#google?.status() ?? { available: false, configured: false, connected: false, pending: false, state: 'unavailable', account: null, last_checked: null, error: null, last_disconnect: null }; }
@@ -360,7 +399,7 @@ export class ContactService extends EventEmitter {
   confirmFollowup(device, id, decision) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
     const result = this.#store.confirmFollowup(device, id, decision);
-    this.#abortStale(); this.emit('change'); return result;
+    this.#transfers?.invalidate(); this.#abortStale(); this.emit('change'); return result;
   }
   armReview(device, commitment, version, consent) {
     if (this.#stopped) throw new Error('CONTACT_HOST_STOPPING');
@@ -423,11 +462,11 @@ export class ContactService extends EventEmitter {
   get stopped() { return this.#stopped; }
   async idle() { while (this.#drain) await this.#drain; }
   async stopWhenIdle() {
-    while (this.#drain || this.#mailOperations.size || this.#backupOperation) {
-      await Promise.allSettled([...(this.#drain ? [this.#drain] : []), ...(this.#backupOperation ? [this.#backupOperation] : []), ...this.#mailOperations.values()]);
+    while (this.#drain || this.#mailOperations.size || this.#backupOperation || this.#transfers?.operation) {
+      await Promise.allSettled([...(this.#drain ? [this.#drain] : []), ...(this.#backupOperation ? [this.#backupOperation] : []), ...this.#mailOperations.values(), ...(this.#transfers?.operation ? [this.#transfers.operation] : [])]);
     }
     // No asynchronous gap between draining admitted work and closing admission.
-    this.#stopped = true; clearInterval(this.#timer); this.#attentionAbort?.abort();
+    this.#stopped = true; clearInterval(this.#timer); this.#attentionAbort?.abort(); this.#transfers?.invalidate();
     this.emit('change');
   }
   beginStop() {
@@ -435,7 +474,7 @@ export class ContactService extends EventEmitter {
     this.#stopped = true;
     clearInterval(this.#timer);
     this.#attentionAbort?.abort(); this.#active?.abort.abort();
-    this.#browser?.unshare(); this.#google?.close();
+    this.#transfers?.invalidate(); this.#browser?.unshare(); this.#google?.close();
     if (changed) this.emit('change');
   }
   async close() {
@@ -443,7 +482,7 @@ export class ContactService extends EventEmitter {
     await this.#attention;
     this.#active?.abort.abort();
     await this.#drain;
-    await Promise.allSettled([...this.#mailOperations.values(), ...(this.#backupOperation ? [this.#backupOperation] : [])]);
+    await Promise.allSettled([...this.#mailOperations.values(), ...(this.#backupOperation ? [this.#backupOperation] : []), ...(this.#transfers?.operation ? [this.#transfers.operation] : [])]);
     await this.#browser?.close();
   }
 }

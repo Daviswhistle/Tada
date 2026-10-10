@@ -191,7 +191,7 @@ test('twenty long calendar titles do not inflate checkpoint or hide a prior inte
     const accepted = service.submit(e.device, randomUUID(), 'Continue the earlier request'); await service.idle();
     assert.equal(e.store.turn(accepted.seq).state, 'answered');
     assert.ok(seen.some(m => m.content.includes('Remember my earlier failed request')));
-    assert.ok(seen.some(m => m.content.includes('Recent historical calendar notices')));
+    assert.ok(seen.some(m => m.content.includes('Historical host observations')));
     assert.ok(Buffer.byteLength(JSON.stringify(e.store.checkpoint().value)) < 3000);
   } finally { await service?.close(); e.close(); }
 });

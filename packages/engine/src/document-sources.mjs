@@ -1,4 +1,4 @@
-import { HISTORY_TOOLS, validHistoryCall, readConversationHistory } from './history-sources.mjs';
+import { HISTORY_TOOLS, validHistoryCall, readConversationHistory, fitHistoryRead } from './history-sources.mjs';
 import { createHash } from 'node:crypto';
 // Documents are final answers saved in the same encrypted transaction. Preparing
 // one never writes a user path, overwrites a version, or publishes externally.
@@ -63,9 +63,11 @@ export class DocumentSources {
       return structuredClone(this.#webReport);
     }
     if (this.#history && HISTORY_TOOLS.some(t => t.function.name === name)) {
-      const result = readConversationHistory(this.#store, this.#job.seq, name, args, budget);
+      const result = readConversationHistory(this.#store, this.#job.seq, name, args, name === 'read_history' ? undefined : budget);
+      const finalBudget = { fits: value => Buffer.byteLength(JSON.stringify(value)) <= 32768 && (!budget || budget.fits(value)) };
       const admit = value => {
-        if (budget && !budget.fits(value)) throw Error('ASSISTANT_SOURCE_LIMIT');
+        if (name === 'read_history') fitHistoryRead(value, args.receipt_offset ?? 0, finalBudget);
+        if (!finalBudget.fits(value)) throw Error('ASSISTANT_SOURCE_LIMIT');
         if (name === 'read_history') this.#ownerContext?.read(args.id, signal);
         return value;
       };
@@ -78,14 +80,9 @@ export class DocumentSources {
       const restored = { ...result, answer: prior.answer.text, sources, truncated: false,
         ...(prior.origin === 'owner_edit' ? { source_basis: 'inherited_references_not_verification_of_owner_edits' } : {}),
         note: result.note + ' Returned sources are saved public research receipts, not new web observations.' };
-      while ((Buffer.byteLength(JSON.stringify(restored)) > 32768 || budget && !budget.fits(restored)) && (restored.answer || restored.request)) {
-        const key = restored.request.length > restored.answer.length ? 'request' : 'answer';
-        restored[key] = [...restored[key]].slice(0, Math.floor([...restored[key]].length / 2)).join('');
-        if (key === 'answer') restored.truncated = true; else restored.request_truncated = true;
-      }
-      if (Buffer.byteLength(JSON.stringify(restored)) > 32768 || budget && !budget.fits(restored)) throw Error('ASSISTANT_SOURCE_LIMIT');
+      const admitted = admit(restored);
       this.#historyReports.set(args.id, JSON.stringify(prior.answer));
-      return admit(restored);
+      return admitted;
     }
     if (name === 'list_documents') return this.#store.documentPage(args.before);
     if (name === 'read_document') {

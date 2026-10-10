@@ -176,3 +176,29 @@ for (const initial of ['unshared', 'other_device']) test(`sharing during a ${ini
     await next.close();
   } finally { await service?.close(); e.close(); }
 });
+
+test('planner discovery can transition to fresh isolated editing without transferring private context',async()=>{
+  const e=fixture();let reads=0,released=false,calls=0;try{
+    const observe=e.browser.observe;e.browser.observe=async(...args)=>{reads++;if(reads===2)assert.equal(released,true);return observe.apply(e.browser,args);};
+    e.browser.release=async()=>{await Promise.resolve();released=true;};
+    const base={...empty,hostContext:'SYNTHETIC_PRIVATE_PARENT'};
+    const s=new BrowserTaskSources(base,e.store,e.browser,e.job(),()=>({async chat(messages){calls++;assert.equal(JSON.stringify(messages).includes('SYNTHETIC_PRIVATE_PARENT'),false);
+      if(calls===1)return call('observe_shared_browser');
+      if(calls===2)return call('fill_shared_textbox',{observation:JSON.parse(messages.at(-1).content).observation,ref:'1',value:'repaired'});
+      return reply('입력 확인');
+    }}),()=>{},()=>{throw Error('NO_PREPARATION');});
+    await s.execute('observe_shared_browser',{},new AbortController().signal);
+    assert.equal(s.validate('work_on_shared_browser',{}),true);
+    const result=await s.execute('work_on_shared_browser',{},new AbortController().signal);
+    assert.equal(result.effects[0].verdict,'CONFIRMED_APPLIED');assert.equal(reads,2);assert.equal(e.browser.writes,1);
+    assert.equal(s.definitions.some(t=>t.function.name==='observe_shared_browser'),false);
+  }finally{e.close();}
+});
+test('an attempted transfer cannot switch to isolated editing',async()=>{
+  const e=fixture();try{
+    const s=new BrowserTaskSources(empty,e.store,e.browser,e.job(),()=>{throw Error('NO_MODEL');},()=>{},()=>({state:'awaiting_owner_confirmation'}));
+    await assert.rejects(s.execute('prepare_browser_text_transfer',{observation:'stale',ref:'1',value:'private'},new AbortController().signal));
+    assert.equal(s.validate('work_on_shared_browser',{}),false);
+    await assert.rejects(s.execute('work_on_shared_browser',{},new AbortController().signal),/REQUEST_INVALID/);assert.equal(e.browser.writes,0);
+  }finally{e.close();}
+});

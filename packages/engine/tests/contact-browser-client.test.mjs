@@ -1249,3 +1249,54 @@ test('pairing credentials never enter browser preference storage', async () => {
   c.get('browser-proactive-notifications').checked = false; c.get('browser-proactive-notifications').onchange();
   assert.deepEqual([...storage], [['tada.browser-proactive:fixture', 'off']]);
 });
+
+test('browser transfer preview is inline plain text and posts only the exact owner approval receipt',async()=>{
+  const c=client();await c.flush();
+  const transfer={id:'synthetic-transfer',revision:1,sha256:'f'.repeat(64),turn:7,state:'ready',origin:'https://fixture.invalid',field:'Title',kind:'text',text:'<script>hidden()</script>\u202Eprivate',filename:null,submit:null,result:null};
+  c.state.turns=[{seq:7,state:'answered',text:'옮겨줘',answer:{text:'내용을 준비했어요.',sources:[],verification:'not_applicable'}}];
+  c.state.browser={available:true,shared:null,actions:[],transfer};await c.refresh();
+  const card=c.get('messages').querySelectorAll('section.browser-transfer')[0];assert.ok(card);
+  assert.equal(card.querySelectorAll('script').length,0);assert.match(card.querySelectorAll('pre')[0].textContent,/<script>hidden\(\)<\/script>⟦U\+202E⟧private/u);
+  assert.ok(card.querySelectorAll('button').some(b=>b.textContent==='취소'));
+  let resolve; c.respond('/api/browser/transfer/apply',()=>new Promise(r=>{resolve=r;}));
+  const apply=card.querySelectorAll('button').find(b=>b.textContent==='이 내용으로 입력');const operation=apply.onclick();await c.flush();
+  assert.ok(c.get('messages').querySelectorAll('section.browser-transfer')[0].querySelectorAll('button').every(b=>b.disabled));
+  await apply.onclick();assert.equal(c.calls.filter(x=>x.path==='/api/browser/transfer/apply').length,1);
+  assert.deepEqual(c.calls.find(x=>x.path==='/api/browser/transfer/apply').body,{id:transfer.id,revision:1,sha256:transfer.sha256,consent:'apply_browser_transfer_v1'});
+  const finished={...transfer,state:'finished',result:{id:'browser-'+randomUUID(),state:'VERIFIED'}};c.state.browser.transfer=finished;
+  resolve({ok:true,status:200,json:async()=>({transfer:finished})});await operation;
+  assert.match(c.get('messages').querySelectorAll('section.browser-transfer')[0].querySelectorAll('p').map(x=>x.textContent).join(' '),/서버 저장 여부는 별도로 확인하지 않았습니다/u);
+  // Ephemeral preview disappears on restart; the durable journal receipt remains.
+  c.state.browser.transfer=null;c.state.turns[0].browser_receipts=[{...finished.result,origin:transfer.origin,field:'Title',file:false}];await c.refresh();
+  assert.equal(c.get('messages').querySelectorAll('section.browser-transfer')[0].getAttribute('aria-label'),'저장된 웹사이트 입력 결과');
+});
+for(const stall of ['headers','body'])for(const state of ['new','finished','ready'])test(`browser approval ${stall} timeout recovers ${state} state without replay or late rollback`,async()=>{
+  const c=client();await c.flush();
+  const transfer={id:'old-transfer',revision:1,sha256:'f'.repeat(64),turn:7,state:'ready',origin:'https://fixture.invalid',field:'Title',kind:'text',text:'old preview',filename:null,submit:null,result:null};
+  c.state.turns=[{seq:7,state:'answered',text:'옮겨줘',answer:{text:'준비했어요.',sources:[]}}];c.state.browser={available:true,shared:null,actions:[],transfer};await c.refresh();
+  let complete;const delayed=new Promise(resolve=>{complete=resolve;});
+  c.respond('/api/browser/transfer/apply',()=>stall==='headers'?delayed:{ok:true,status:200,json:()=>delayed});
+  const card=()=>c.get('messages').querySelectorAll('section.browser-transfer')[0];
+  const oldButton=card().querySelectorAll('button')[0],operation=oldButton.onclick();await c.flush();
+  const finished={...transfer,state:'finished',result:{id:'browser-fixture',state:'VERIFIED'}};
+  c.state.browser.transfer=state==='new'?{...transfer,id:'new-transfer',text:'new preview'}:state==='finished'?finished:transfer;
+  await c.refresh();await c.advance(30000);await operation;
+  const request=c.calls.find(x=>x.path==='/api/browser/transfer/apply');assert.equal(request.signal.aborted,true);
+  if(state==='new'){assert.equal(card().querySelectorAll('pre')[0].textContent,'new preview');assert.ok(card().querySelectorAll('button').every(b=>!b.disabled));}
+  if(state==='finished')assert.equal(card().querySelectorAll('button').length,0);
+  if(state==='ready'){assert.ok(card().querySelectorAll('button').every(b=>b.disabled));assert.match(card().querySelectorAll('p').map(p=>p.textContent).join(' '),/이미 실행됐을 수/u);}
+  await oldButton.onclick();assert.equal(c.calls.filter(x=>x.path==='/api/browser/transfer/apply').length,1);
+  const before=card().querySelectorAll('pre')[0].textContent;complete(stall==='headers'?{ok:true,status:200,json:async()=>({transfer:finished})}:{transfer:finished});await c.flush();assert.equal(card().querySelectorAll('pre')[0].textContent,before);
+  await c.advance(30000);assert.equal(c.calls.filter(x=>x.path==='/api/browser/transfer/apply').length,1);
+});
+
+for(const file of [false,true])test(`browser receipt preserves ${file?'file':'text'} applied mismatch`,async()=>{
+  const c=client();c.state.turns=[{seq:1,state:'answered',text:'수정',answer:{text:'결과',sources:[]},browser_receipts:[{id:'browser-fixture',origin:'https://fixture.invalid',field:'Target',file,state:'ACKNOWLEDGED',verdict:'APPLIED_MISMATCH'}]}];await c.refresh();
+  const text=c.get('messages').querySelectorAll('section.browser-transfer')[0].querySelectorAll('p').map(x=>x.textContent).join(' ');
+  assert.match(text,/달라요/u);assert.doesNotMatch(text,/실행됐을 수|확정하지 못/u);
+});
+test('historical verified file receipt describes downloaded bytes rather than a verified textbox',async()=>{
+  const c=client();c.state.turns=[{seq:1,state:'answered',text:'수정',answer:{text:'결과',sources:[]},browser_receipts:[{id:'browser-fixture',origin:'https://fixture.invalid',field:'File',file:true,state:'VERIFIED',verdict:'CONFIRMED_APPLIED'}]}];await c.refresh();
+  const text=c.get('messages').querySelectorAll('section.browser-transfer')[0].querySelectorAll('p').map(x=>x.textContent).join(' ');
+  assert.match(text,/내려받은 파일의 내용/u);assert.match(text,/최종 적용 상태는 별도로 확인하지 않았/u);assert.doesNotMatch(text,/입력란의 값/u);
+});

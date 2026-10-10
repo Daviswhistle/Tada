@@ -152,6 +152,7 @@ for(const connected of [false,true])for(const historical of [false,true])test(`d
     const call=(name,args)=>({message:{role:'assistant',content:'',tool_calls:[{function:{name,arguments:args}}]},input_tokens:1,output_tokens:1});
     if(connected)e.store.configureContinuingUse(e.device.id,true,CONTINUING_CONSENT);
     service=new ContactService(e.store,{identity:{provider:'ollama-local'},contextBytes(messages,tools){const size=Buffer.byteLength(JSON.stringify({messages,tools}));sizes.push(size);return size;},async chat(messages,tools){
+      if(tools.some(t=>t.function.name==='select_tools')&&!tools.some(t=>t.function.name==='work_on_shared_browser'))return call('select_tools',{names:['work_on_shared_browser']});
       if(tools.some(t=>t.function.name==='work_on_shared_browser'))return messages.some(m=>m.tool_name==='work_on_shared_browser') ? {message:{role:'assistant',content:'브라우저 작업 결과를 확인했어요.'},input_tokens:1,output_tokens:1} : call('work_on_shared_browser',{});
       step++;if(step===1)return call('observe_shared_browser',{});
       const last=step<=6?JSON.parse(messages.at(-1).content):null;assert.equal(last?.error,undefined,JSON.stringify({step,last,sizes}));

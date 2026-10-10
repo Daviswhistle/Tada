@@ -21,12 +21,13 @@ export class BrowserSources {
   #grant;
   #observations = new Map();
   #used = false;
+  #prepare = null; #prepared = false;
   #actionIds = [];
   get actions() { return this.#actionIds.map(id => this.#store.readBrowserAction(id)); }
   #fills = 0;
   #reads = 0;
   #files = new Map(); #fileActions = new Map(); #fileReads = 0; #downloads = 0;
-  constructor(base, store, browser, job) { this.#base = base; this.#store = store; this.#browser = browser; this.#job = job; this.#grant = browser.grant?.device === job.device ? browser.grant : null; if (base.definitions.some(t => [...TOOLS,...FILE_TOOLS].some(b => b.function.name === t.function?.name)))
+  constructor(base, store, browser, job, { prepare = null } = {}) { this.#prepare = prepare; this.#base = base; this.#store = store; this.#browser = browser; this.#job = job; this.#grant = browser.grant?.device === job.device ? browser.grant : null; if (base.definitions.some(t => ([...TOOLS,...FILE_TOOLS].some(b => b.function.name === t.function?.name) || ['prepare_browser_text_transfer','prepare_browser_file_transfer'].includes(t.function?.name))))
     throw Error('CONTACT_TOOL_COLLISION'); }
   get definitions() {
     // Expose file operations only when their host prerequisites exist. This
@@ -37,7 +38,12 @@ export class BrowserSources {
       return this.#fileActions.size>0 && [...this.#observations.values()].some(o=>o.downloads?.length);
     }) : [];
     const text = TOOLS.filter(t=>t.function.name==='observe_shared_browser' || [...this.#observations.values()].some(o=>o.fields.length));
-    return [...this.#base.definitions, ...(this.#grant ? structuredClone([...text,...files]) : [])];
+    const browserTools = this.#grant && !this.#prepared ? structuredClone([...text,...files]) : [];
+    if (this.#prepare) for (const t of browserTools) {
+      if (t.function.name === 'fill_shared_textbox') Object.assign(t.function, { name: 'prepare_browser_text_transfer', description: 'Prepare exact text for owner review before putting earlier conversation or connected-account content into the observed field. Does NOT input anything. Owner must approve the complete text and site in Tada.' });
+      if (t.function.name === 'replace_shared_file') Object.assign(t.function, { name: 'prepare_browser_file_transfer', description: 'ONLY import earlier conversation/account/document content into a file for owner review. Ordinary repairs use work_on_shared_browser. content=null applies unique sequential edits to the read file; otherwise edits=[]. Does NOT replace, upload or submit. Owner reviews full resulting text, filename and any submit target in Tada.' });
+    }
+    return [...this.#base.definitions, ...browserTools.filter(t => !this.#prepare || t.function.name !== 'verify_shared_file')];
   }
   get hostContext() { return (this.#base.hostContext ?? '') + (this.#grant?.files ? ' Preserve original files/meaning; downloads compare bytes only. ' : '') + (this.#grant ? ' For ANY reported malfunction, observe the currently shared app before choosing a repair from history. Verify the intended app operation; a new copy alone is insufficient. Current request only; reobserve confirmed non-application, never uncertain replay. Re-share after navigation. No login/secrets/payments/account/security changes or contacting others.' : ' Browser work requires sharing a tab from this requesting device under Settings → Connected accounts → Browser. Do not claim to see the desktop or an unshared tab.'); }
   get verificationKind() { return this.#base.verificationKind; }
@@ -47,7 +53,14 @@ export class BrowserSources {
     this.#browser.assert(this.#grant.epoch);
     this.#store.assertDevice(this.#grant.device);
   } }
-  validate(name, args) {
+  #canonical(name) {
+    if (!this.#prepare) return name;
+    if (name === 'prepare_browser_text_transfer') return 'fill_shared_textbox';
+    if (name === 'prepare_browser_file_transfer') return 'replace_shared_file';
+    return ['fill_shared_textbox', 'replace_shared_file', 'verify_shared_file'].includes(name) ? null : name;
+  }
+  validate(name, args) { const canonical = this.#canonical(name); return canonical !== null && this.#validate(canonical, args); }
+  #validate(name, args) {
     if (FILE_TOOLS.some(t=>t.function.name===name)) {
       if(!this.#grant?.files)return false;
       if(name==='read_shared_file')return exact(args,'observation,ref,encoding') && typeof args.observation==='string' && typeof args.ref==='string' && FILE_ENCODINGS.includes(args.encoding);
@@ -61,10 +74,12 @@ export class BrowserSources {
     return this.#base.validate(name, args); if (!this.#grant || !args || typeof args !== 'object' || Array.isArray(args))
     return false; return name === 'observe_shared_browser' ? Object.keys(args).length === 0 : Object.keys(args).sort().join(',') === 'observation,ref,value' && typeof args.observation === 'string' && typeof args.ref === 'string' && typeof args.value === 'string' && args.value.length <= 8000 && args.value.isWellFormed() && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(args.value); }
   async execute(name, args, signal, budget) {
+    name = this.#canonical(name);
+    if (name === null || this.#prepared && [...TOOLS,...FILE_TOOLS].some(t => t.function.name === name)) throw Error('CONTACT_BROWSER_REQUEST_INVALID');
     if(FILE_TOOLS.some(t=>t.function.name===name))return this.#fileExecute(name,args,signal,budget);
     if (!TOOLS.some(t => t.function.name === name))
       return this.#base.execute(name, args, signal, budget);
-    if (!this.validate(name, args))
+    if (!this.#validate(name, args))
       throw Error('CONTACT_BROWSER_REQUEST_INVALID');
     this.#used = true;
     const admit = () => { this.assertCurrent(signal); this.#store.assertTurnAuthority(this.#job.seq); };
@@ -105,6 +120,7 @@ export class BrowserSources {
     // turn a known effect into a hidden failed tool call.
     if (budget && !budget.fits({ action_id: 'browser-' + 'x'.repeat(36), state: 'ACKNOWLEDGED', verdict: 'CONFIRMED_NOT_APPLIED', reason: 'target_changed', recovery: 'ask_for_shorter_value', verification_scope: 'textbox_dom_value', server_persistence: 'not_checked', repeat: false }))
       throw Error('ASSISTANT_SOURCE_LIMIT');
+    if (this.#prepare) return this.#preflight({ kind: 'text', grant: this.#grant, observation, ref: args.ref, value: args.value }, signal, budget);
     this.#observations.clear();
     this.#fills++;
     let id = null, record, reason = null;
@@ -142,7 +158,7 @@ export class BrowserSources {
     return observation;
   }
   async #fileExecute(name,args,signal,budget) {
-    if(!this.validate(name,args))throw Error('CONTACT_BROWSER_REQUEST_INVALID');
+    if(!this.#validate(name,args))throw Error('CONTACT_BROWSER_REQUEST_INVALID');
     this.#used=true;
     const admit=()=>{this.assertCurrent(signal);this.#store.assertTurnAuthority(this.#job.seq);};admit();
     if(name==='read_shared_file') {
@@ -197,6 +213,7 @@ export class BrowserSources {
     if(!safeText(content) || Buffer.byteLength(content)>FILE_LIMIT)throw Error('CONTACT_BROWSER_FILE_INVALID');
     const types={txt:'text/plain',log:'text/plain',csv:'text/csv',tsv:'text/tab-separated-values',json:'application/json',md:'text/markdown'};
     const replacement=fileCopy(args.name,types[args.name.split('.').at(-1).toLowerCase()],Buffer.from(content));
+    if (this.#prepare) return this.#preflight({ kind: 'file', grant: this.#grant, observation, ref: file.ref, original: file.original, replacement, submit: args.submit }, signal, budget);
     this.#files.clear();this.#observations.clear();this.#fills++;
     let id=null,record,result;
     try {
@@ -210,7 +227,28 @@ export class BrowserSources {
     admit();
     return {action_id:id,state:record.action.state,verdict:record.action.reconciliation_verdict,reason:['target_changed','form_validation','submission_not_observed','file_scope','file_unavailable'].includes(result?.reason)?result.reason:null,submitted:result?.submitted===true,verification_scope:'not_checked',repeat:false};
   }
-  async close() { this.#observations.clear();this.#files.clear();this.#fileActions.clear(); await this.#browser.release?.(this.#grant?.epoch); }
+  async #preflight(candidate, signal, budget) {
+    const admit = () => { this.assertCurrent(signal); this.#store.assertTurnAuthority(this.#job.seq); };
+    admit();
+    const c = candidate;
+    const result = c.kind === 'text'
+      ? await this.#browser.checkText(c.grant.epoch, c.observation, c.ref, c.value.length, admit)
+      : await this.#browser.checkFile(c.grant.epoch, c.observation, c.ref, c.original, c.submit, admit);
+    admit();
+    if (result?.ready !== true) {
+      this.#observations.clear(); this.#files.clear();
+      if (result?.applied !== false || !['target_changed','field_limit','file_scope','file_unavailable'].includes(result.reason)) throw Error('CONTACT_BROWSER_RESPONSE_UNKNOWN');
+      return { state: 'not_prepared', reason: result.reason, recovery: result.reason === 'field_limit' ? 'ask_for_shorter_value' : 'observe_current_page' };
+    }
+    if (Date.now() - c.observation.at > 60000) throw Error('CONTACT_BROWSER_OBSERVATION_REQUIRED');
+    return this.#stage(c, budget);
+  }
+  #stage(candidate, budget) {
+    if (budget && !budget.fits({ state: 'awaiting_owner_confirmation', id: 'x'.repeat(36) })) throw Error('ASSISTANT_SOURCE_LIMIT');
+    const result = this.#prepare(structuredClone(candidate));
+    this.#prepared = true; this.#observations.clear(); this.#files.clear(); return result;
+  }
+  async close() { this.#observations.clear();this.#files.clear();this.#fileActions.clear(); if (this.#used && !this.#prepared) await this.#browser.release?.(this.#grant?.epoch); }
   verify(evidence, signal) { return this.#base.verify(evidence, signal); }
   recallEvidence(evidence, signal) { return this.#base.recallEvidence?.(evidence, signal) ?? false; }
 }

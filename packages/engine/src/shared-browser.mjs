@@ -7,7 +7,7 @@ import { existsSync, statSync } from 'node:fs';
 import { tmpdir, release } from 'node:os';
 import { join, win32 } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { fileCapture, fileSnapshot, filePublic, readSelectedFile, replaceSelectedFile, readDownload } from './shared-browser-files.mjs';
+import { fileCapture, fileSnapshot, filePublic, readSelectedFile, checkSelectedFile, replaceSelectedFile, readDownload } from './shared-browser-files.mjs';
 export const BROWSER_FILE_CONSENT = 'shared_browser_selected_files_v1';
 export const BROWSER_CONSENT = 'shared_browser_text_input_v1';
 export function browserCandidates(platform = process.platform, env = process.env) {
@@ -114,11 +114,16 @@ const capture = `function(key, previous, filesAllowed) {
   ${fileSnapshot}
   return { ${filePublic}, url: location.href, title: document.title.slice(0,300), text: text.slice(0,12000), truncated: text.length>12000 || all.length>40 || publicControls.filter(e=>!eligible(e)).length>40, fields: entries.map(x=>({ ref:x.ref, label:label(x.e), value:x.value.slice(0,2000), truncated:x.value.length>2000, type:x.e.tagName.toLowerCase(),max_length:x.e.maxLength<0?null:x.e.maxLength })), context_fields: publicControls.filter(e=>!eligible(e)).slice(0,40).map(e=>({label:label(e),type:e.type,value:e.tagName==='SELECT'?[...e.selectedOptions].map(o=>o.label).join(', ').slice(0,300):['checkbox','radio'].includes(e.type)?e.checked:e.value.slice(0,300)})) };
 }`;
-const fill = `function(key, ref, value) {
+const textPreconditions = `
   const s=globalThis[key], item=s?.entries.find(x=>x.ref===ref), e=item?.e;
   try { if(!s || s.markup!==s.markupOf())return { applied:false, reason:'target_changed' }; } catch { return { applied:false, reason:'target_changed' }; }
   if (s.document!==document || document.baseURI!==s.baseURI || location.href!==s.url || document.title!==s.title || (document.body?.innerText || '')!==s.body || s.renderedText(document.body)!==s.text || !e?.isConnected || !s.eligible(e) || s.collect().length!==s.states.length || s.collect().some((node,i)=>node!==s.states[i].e) || s.states.some(x=>!x.e.isConnected || x.e.form!==x.form || s.controlState(x.e)!==x.state) || s.signature(e)!==item.signature || e.value!==item.value || (e.form || e.parentElement)?.innerText!==item.surrounding) return { applied:false, reason:'target_changed' };
-  if (e.maxLength>=0 && value.length>e.maxLength) return { applied:false, reason:'field_limit' };
+  if (e.maxLength>=0 && length>e.maxLength) return { applied:false, reason:'field_limit' };
+`;
+const checkText = `function(key, ref, length) { ${textPreconditions} return { ready:true }; }`;
+const fill = `function(key, ref, value) {
+  const length=value.length;
+  ${textPreconditions}
   // Invalidate the observation before events may navigate or mutate the page.
   delete globalThis[key];
   const setter=Object.getOwnPropertyDescriptor(e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set;
@@ -260,10 +265,10 @@ export class SharedBrowser extends EventEmitter {
     if (!snapshot) return Promise.resolve();
     return this.command('Runtime.evaluate', { expression: `delete globalThis[${JSON.stringify(snapshot.key)}]`, contextId: snapshot.session.context, returnByValue: true }, snapshot.session.sessionId).catch(() => {});
   }
-  async release(epoch) {
+  async release(epoch, snapshotKey) {
     const snapshot = this.#snapshot;
-    if (snapshot?.epoch === epoch) { this.#snapshot = null; await this.#forget(snapshot); }
-    for(const [key,result] of this.#fileResults)if(result.epoch===epoch){this.#fileResults.delete(key);await this.#forget(result);}
+    if (snapshot?.epoch === epoch && (snapshotKey === undefined || snapshot.key === snapshotKey)) { this.#snapshot = null; await this.#forget(snapshot); }
+    for(const [key,result] of this.#fileResults)if(snapshotKey === undefined && result.epoch===epoch){this.#fileResults.delete(key);await this.#forget(result);}
   }
   unshare() {
     const snapshot = this.#snapshot, session = this.#session, results=[...this.#fileResults.values()]; this.#snapshot = null;this.#fileResults.clear();
@@ -289,6 +294,13 @@ export class SharedBrowser extends EventEmitter {
       if (value.url !== this.#grant.url) throw Error('CONTACT_BROWSER_TARGET_CHANGED');
       return { key, ...value };
     } catch (error) { if (this.#snapshot === snapshot) this.#snapshot = null; await this.#forget(snapshot); throw error; }
+  }
+  async checkText(epoch, observation, ref, length, admit) {
+    this.assert(epoch); return this.#call(checkText, [observation.key, ref, length], () => { this.assert(epoch); admit(); });
+  }
+  async checkFile(epoch, observation, ref, original, submit, admit) {
+    this.assert(epoch); if (!this.#grant.files) throw Error('CONTACT_BROWSER_FILE_PERMISSION_REQUIRED');
+    return this.#call(checkSelectedFile, [observation.key, ref, original, submit], () => { this.assert(epoch); admit(); });
   }
   async fill(epoch, observation, ref, value, admit) {
     this.assert(epoch); return this.#call(fill, [observation.key, ref, value], () => { this.assert(epoch); admit(); });

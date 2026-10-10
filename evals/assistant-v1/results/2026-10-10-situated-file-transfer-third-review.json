@@ -1,0 +1,40 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer": "product_audit",
+  "implementation": "30609ed30c0289610ca7ed96f064bbc1164022ca",
+  "report_sha256": "a81defec153618dd6dbe93117762229cd774daf3a32669b49006d37c9594220e",
+  "scope": "A02/A03 fixed synthetic applications and files; real selected ChatGPT subscription",
+  "results": [
+    {
+      "case": "A02",
+      "variant": 1,
+      "status": "passed",
+      "evidence": "Observed UTF-8 import failure, read UTF-16LE selected file, transcoded without changing cells, imported once and observed exact rendered rows. Answer limits success to visible import, not server persistence."
+    },
+    {
+      "case": "A02",
+      "variant": 2,
+      "status": "passed",
+      "evidence": "Observed delimiter failure, repaired semicolon-separated CSV while preserving embedded comma/semicolon data, imported once and checked exact table. Answer explains the actual change and persistence limit."
+    },
+    {
+      "case": "A03",
+      "variant": 1,
+      "status": "passed",
+      "evidence": "Observed failing viewer, removed trailing JSON comma only, preserved original and unrelated document, opened corrected file with unchanged semantic fields. Answer explains and owns the earlier document error."
+    },
+    {
+      "case": "A03",
+      "variant": 2,
+      "status": "passed",
+      "evidence": "Observed current viewer and prior result, removed code fences only, opened the original semantic content without upload. Answer reports current visible success without persistence claim."
+    }
+  ],
+  "oracle_isolation": "Expected values and case IDs appear only in evaluator-side post-run checks, not model messages.",
+  "limits": [
+    "Host file ledger remains UNCERTAIN with replay fence; independently observed app results do not rewrite the receipt.",
+    "Synthetic apps only; no arbitrary site persistence, physical phone, generic repair or whole-product release acceptance.",
+    "The prior 32-request-cap interruption remains recorded and is not counted as complete."
+  ],
+  "primary_acceptance": "accepted"
+}

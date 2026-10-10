@@ -1,0 +1,111 @@
+{
+  "date": "2026-10-10",
+  "baseline": "4c664bc5222c7f4a3d335645c05b12ead402a28f",
+  "scope": "Synthetic accounts/content for host-boundary checks; actual ContactService, encrypted SQLite, HTTP owner approval, sandboxed Chrome and native Windows Node. Selected-subscription model trials are reported separately below; no physical phone acceptance.",
+  "checks": {
+    "npm_ci_ignore_scripts": {
+      "exit": 0,
+      "vulnerabilities": 0
+    },
+    "npm_check": {
+      "exit": 0,
+      "passed": 1623,
+      "failed": 0,
+      "skipped": 0,
+      "read_broker": "target/debug/tada-read-broker"
+    },
+    "native_windows": {
+      "exit": 0,
+      "passed": 258,
+      "failed": 0,
+      "skipped": 0,
+      "source_bytes_match": true,
+      "scope": "Earlier full browser/UI boundary run; unchanged Chrome and UI paths. Later runtime amendments are checked separately below."
+    },
+    "rust": [
+      "cargo fmt --all -- --check",
+      "cargo clippy --workspace --all-targets --locked -- -D warnings",
+      "cargo test --workspace --locked",
+      "cargo test --locked -p tada-agentd --features process-fixtures -- --nocapture"
+    ],
+    "rust_exit": 0,
+    "browser": [
+      "raw rich-context write rejected",
+      "isolated editor private source denied",
+      "ordinary isolated edit applies once",
+      "exact owner preview: zero autosaves before approval, one after approval, zero extra model calls",
+      "duplicate approval: no additional autosave",
+      "changed target: zero autosaves, confirmed non-application",
+      "text and file preflight detect changed targets before staging, then allow fresh observation without any input/change/submit events"
+    ],
+    "ui": [
+      "actual desktop 1280px and narrow 390px rendered without horizontal overflow",
+      "plain text including script-looking content; invisible formatting characters shown",
+      "authenticated HTTP rejects unreviewed extra value",
+      "saved action result remains on the request after ephemeral preview disappears"
+    ],
+    "regressions": [
+      "Receipt context uses actual serialized byte budget; fifteen effects cannot prevent further conversation. Full journal receipts remain available.",
+      "Invalidated in-flight preview clears after reconciliation; queued newer owner work cannot retain an older preview.",
+      "Applied mismatch is distinct from uncertain dispatch; historical file verification describes download bytes only.",
+      "Default mode receives recent approved effect receipts without enabling historical search.",
+      "History returns complete receipt pages within model budget, using an optional backward-compatible receipt_offset; stable ordering and no loss across pages.",
+      "All enabled local tools plus recent mail list/body reads remain within the existing 14000-byte local context.",
+      "Mandatory effect notes remain visible with Google, mail and related-mail tools in the default 14000-byte context. The latest complete receipts fit 512 serialized bytes; omitted full records remain paged.",
+      "Failed or refused preparations leave no valid-preview claim. Followup notices cannot restore redacted transfer bytes to the next checkpoint.",
+      "Read-only planner discovery can switch to an isolated editor after releasing its snapshot; the editor still receives no planner private context.",
+      "File preflight rechecks current file and submit target after asynchronous original-byte reading; shared validation inserts no await before the actual setter.",
+      "Read-only selected-file bodies and opaque provider continuation are absent from future checkpoints and serialized subscription input after unsharing/restart; visible answers remain.",
+      "Approval headers and JSON body have a bounded 30-second wait. Unknown application is not replayed; fresh server state unlocks a newer preview and late old replies cannot replace it.",
+      "Large connected toolsets select schemas on demand with budget rollback; source authority and existing subscription direct calls are unchanged. Synthetic-model validation, not real local-model quality proof.",
+      "Read-only mail reconciliation preserves pending/same-turn browser preparation; owner send admission, editing and discard still invalidate it.",
+      "Shared-page-only observations also clear subsequent opaque continuation; same-host and restart paths preserve visible answers without replaying expired raw input.",
+      "Warm receipt history updates only the changed action, without decrypting prior file payloads. Transaction rollback invalidates the derived cache; reopening reproduces persisted receipts.",
+      "History pagination fits the final response after public research sources and notes are restored. All 17 complete effect receipts survive bounded pages; failed admission grants no historical-source recall or owner-context read."
+    ],
+    "native_windows_amendment": {
+      "exit": 0,
+      "passed": 85,
+      "failed": 0,
+      "skipped": 0,
+      "source_bytes_match": true,
+      "tests": [
+        "browser-transfers",
+        "mail-confirmation",
+        "tool-selection"
+      ]
+    },
+    "receipt_cache_benchmark": {
+      "scope": "Single local synthetic measurement; 1000 records with 32768-byte originals and replacements. Not end-to-end UI or latency percentile qualification.",
+      "first_index_ms": 468.41,
+      "cached_page_ms": 1.12,
+      "after_1001st_record_ms": 1.39,
+      "previous_revision_after_new_record_ms_approx": 470
+    }
+  },
+  "durability": "Existing v5 browser action formats only; derived per-turn receipts and history retrieval, no original answer rewrite or new database migration. Pending preview not restored and private proposal arguments removed from future checkpoint.",
+  "limits": [
+    "DOM verification is not server persistence; fixture autosave is independent test evidence only.",
+    "Files preserve original and replacement bytes; dispatch is not upload/application qualification.",
+    "Five-minute preview only on requesting device; changed authority, owner work, page preconditions or restart prevent reuse.",
+    "Only fixed A08/A02/A03 synthetic environments are requalified here; no whole-product or market-release acceptance."
+  ],
+  "actual_model": {
+    "implementation": "30609ed30c0289610ca7ed96f064bbc1164022ca",
+    "provider": "selected existing ChatGPT subscription",
+    "model": "gpt-6-astra",
+    "A08": {
+      "observed_requests": 9,
+      "mechanical_variants_passed": 2,
+      "independent_semantic_variants_passed": 2,
+      "report": "../evals/assistant-v1/results/2026-10-10-shared-browser-transfer-second.json"
+    },
+    "A02_A03": {
+      "observed_requests": 36,
+      "mechanical_variants_passed": 4,
+      "report": "../evals/assistant-v1/results/2026-10-10-situated-file-transfer-third.json",
+      "independent_semantic_variants_passed": 4
+    },
+    "prior_runs": "Failed first runs retained; situated second run hit evaluation-only 32-request cap and is not a full pass. Third run uses the harness default 48 cap with unchanged product/fixtures/criteria."
+  }
+}

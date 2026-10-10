@@ -62,13 +62,22 @@ export const readSelectedFile = `async function(key,ref) {
   let binary='';for(const b of bytes)binary+=String.fromCharCode(b);
   return {name:item.file.name,type:item.file.type,data:btoa(binary)};
 }`;
-export const replaceSelectedFile = `async function(key,ref,original,replacement,submitRef,resultKey) {
+// Reuse the exact fixed-script preconditions without inserting an extra await
+// between the final target check and mutation in the replacement function.
+const filePreconditions = `
   const s=globalThis[key], item=s?.fileEntries.find(x=>x.ref===ref), button=submitRef===null?null:s?.submitters.find(x=>x.ref===submitRef&&x.form===item?.form);
   const validButton=()=>!button || s.submitAllowed(button.e,button.form) && s.signature(button.e)===button.signature && button.e.value===button.value && s.renderedText(button.e)===button.text && (button.e.hasAttribute('formaction')?button.e.formAction:button.form.action)===button.action && (button.e.hasAttribute('formmethod')?button.e.formMethod:button.form.method)===button.method && (button.e.hasAttribute('formtarget')?button.e.formTarget:button.form.target)===button.target;
   if(item && !s.fileForm(item.form))return {applied:false,reason:'file_scope'};
   if(!item || submitRef!==null&&!button || !s.current() || !validButton())return {applied:false,reason:'target_changed'};
   let bytes;try{bytes=new Uint8Array(await item.file.arrayBuffer());}catch{return {applied:false,reason:'file_unavailable'};}let binary='';for(const b of bytes)binary+=String.fromCharCode(b);
   if(btoa(binary)!==original.data || item.file.name!==original.name || item.file.type!==original.type || !s.current() || !validButton())return {applied:false,reason:'target_changed'};
+`;
+export const checkSelectedFile = `async function(key,ref,original,submitRef) {
+  ${filePreconditions}
+  return {ready:true};
+}`;
+export const replaceSelectedFile = `async function(key,ref,original,replacement,submitRef,resultKey) {
+  ${filePreconditions}
   const next=Uint8Array.from(atob(replacement.data),c=>c.charCodeAt(0));
   if(next.length>32768)throw Error('FILE_TOO_LARGE');
   const file=new File([next],replacement.name,{type:replacement.type}), transfer=new DataTransfer();transfer.items.add(file);

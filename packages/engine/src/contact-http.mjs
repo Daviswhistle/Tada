@@ -207,6 +207,11 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         const parts=target.pathname.split('/'),file=store.browserFile(device,parts.at(-2),parts.at(-1)),bytes=Buffer.from(file.data,'base64');
         res.writeHead(200,{...headers,'Content-Type':'application/octet-stream','Content-Disposition':`attachment; filename="tada-file.${file.name.split('.').at(-1).toLowerCase()}"; filename*=UTF-8''${encodeURIComponent(file.name).replace(/[!'()*]/gu,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase())}`,'Content-Length':bytes.length,'X-Content-SHA256':file.sha256});res.end(bytes);return;
       }
+      if (req.method === 'POST' && ['/api/browser/transfer/apply','/api/browser/transfer/discard'].includes(target.pathname) && !target.search) {
+        const data = await readBody(req); object(data, ['id','revision','sha256','consent']);
+        const result = target.pathname.endsWith('/apply') ? await service.approveBrowserTransfer(device, data) : service.discardBrowserTransfer(device, data);
+        return send(res, 200, { transfer: result });
+      }
       if (req.method === 'GET' && target.pathname === '/api/browser/tabs' && !target.search) return send(res, 200, { tabs: await service.browserTabs(device) });
       if (req.method === 'POST' && target.pathname === '/api/browser/open' && !target.search) {
         object(await readBody(req), []); return send(res, 200, await service.openBrowser(device));

@@ -9,6 +9,7 @@ if (location.hash) history.replaceState(null, '', location.pathname);
 let channel, nextBefore = null, requestGeneration = 0, rendered = '', pending = null, known = false;
 let turns = new Map();
 let browserBusy = false, browserView = null;
+let browserTransfer = null, renderedTransfer = '', transferBusy = false, transferUnknown = null;
 let documentEditing = false, editorState = null, editorGeneration = 0, editorBusy = false, editorBackups = [], editorDiscard = null;
 let connectionStopped = false, recoveryEnabled = false, recoveryTimer = null, recoveryAt = 0, recoveryDelay = 2000, stateRequest = null;
 function clearRecoveryTimer() { clearTimeout(recoveryTimer); recoveryTimer = null; recoveryAt = 0; }
@@ -88,6 +89,9 @@ const errors = {
   CONTACT_BROWSER_FILE_PERMISSION_REQUIRED: '파일을 처리하려면 공유할 탭에서 선택한 파일 처리도 허용해 주세요.',
   CONTACT_BROWSER_FILE_INVALID: '이 파일은 처리할 수 없어요. 현재는 32KB 이하의 텍스트 파일을 지원하며 원본은 그대로 보존합니다.',
   CONTACT_BROWSER_FILE_ENCODING_REQUIRED: '파일의 글자 인코딩을 확인하지 못했어요. 원본은 그대로 보존했어요.',
+  CONTACT_BROWSER_TRANSFER_STALE: '준비한 내용이나 권한이 바뀌었어요. 현재 화면을 다시 확인하도록 말씀해 주세요. 이전 내용은 적용하지 않습니다.',
+  CONTACT_BROWSER_TRANSFER_EXPIRED: '확인 시간이 지났어요. 현재 화면을 다시 확인하도록 말씀해 주세요. 입력은 다시 실행하지 않습니다.',
+  CONTACT_BROWSER_TRANSFER_BUSY: '확인하신 내용을 적용 중이에요. 결과가 나올 때까지 기다려 주세요.',
   CONTACT_BROWSER_CONSENT_REQUIRED: '공유할 탭과 입력 허용 범위를 확인해 주세요.',
 
   CONTACT_DOCUMENT_INVALID: '문서 제목과 내용을 확인해 주세요. 비어 있거나 너무 긴 문서는 저장할 수 없어요.',
@@ -173,7 +177,7 @@ async function api(path, data, options = {}) {
 }
 function paired(yes, stopConnection = true) {
   $('pairing').hidden = yes; $('conversation').hidden = !yes; $('composer').hidden = !yes; $('logout').hidden = !yes; $('settings-open').hidden = !yes; if (!yes && $('settings').open) $('settings').close(); if (!yes) $('followups').hidden = true;
-  if (!yes) { clearBackup(); mailGeneration++; if ($('mail-editor').open) $('mail-editor').close(); mailRecord = null; mailDirty = false; for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).value = ''; editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
+  if (!yes) { browserTransfer = null; renderedTransfer = ''; clearBackup(); mailGeneration++; if ($('mail-editor').open) $('mail-editor').close(); mailRecord = null; mailDirty = false; for (const name of ['to','cc','bcc','subject','body']) $(`mail-${name}`).value = ''; editorGeneration++; if ($('document-editor').open) $('document-editor').close(); connectionStopped = stopConnection; invalidateFollowups(); recoveryEnabled = false; clearRecoveryTimer(); stateRequest?.abort(); stateRequest = null; $('mobile-token').value = ''; requestGeneration++; $('provider-info').textContent = ''; $('provider-info').hidden = true; $('plan-usage').hidden = true; }
   if (!yes) { channel?.close(); channel = null; $('pair-form').hidden = !code; $('pair-help').textContent = code ? '링크는 한 번만 사용할 수 있습니다. 연결한 기기는 호스트에서 따로 해제할 수 있습니다.' : '컴퓨터에서 Tada를 다시 열면 연결할 수 있어요. 다른 기기에서는 새 연결 링크를 열어 주세요.'; }
 }
 let backupRequest = null, backupUrl = null, backupCodePending = false;
@@ -350,7 +354,9 @@ function renderDesktopNotifications(result) {
 function render() {
   const list = [...turns.values()].filter(t => !t.answer?.quiet && (t.origin !== 'proactive' || t.state === 'answered')).sort((a, b) => a.seq - b.seq);
   const fingerprint = JSON.stringify(list);
-  if (fingerprint === rendered) return;
+  const transferFingerprint = JSON.stringify([browserTransfer, transferBusy, transferUnknown]);
+  if (fingerprint === rendered && transferFingerprint === renderedTransfer) return;
+  renderedTransfer = transferFingerprint;
   const nearEnd = window.innerHeight + window.scrollY >= document.body.scrollHeight - 200;
   const old = JSON.parse(rendered || '[]');
   if (known && document.hidden && globalThis.Notification?.permission === 'granted'
@@ -448,6 +454,13 @@ function render() {
       if (turn.recovery) status.textContent = `백업 당시 상태: ${{queued:'접수됨',running:'진행 중',failed:'실패',interrupted:'중단됨',cancelled:'취소됨'}[turn.state] ?? turn.state} · 복원 후 실행하지 않음`;
       article.append(status);
     }
+    if (browserTransfer?.turn === turn.seq) renderBrowserTransfer(article, browserTransfer);
+    for (const receipt of turn.browser_receipts ?? []) {
+      if (browserTransfer?.turn === turn.seq && browserTransfer.result?.id === receipt.id) continue;
+      const record = element('section', '', 'browser-transfer'); record.setAttribute('aria-label', '저장된 웹사이트 입력 결과');
+      record.append(element('h3', '웹사이트 입력 결과'), element('p', `${receipt.origin} · ${receipt.field || '선택한 입력란'}`, 'muted'));
+      renderBrowserReceipt(record, receipt, receipt.file); article.append(record);
+    }
     fragment.append(article);
   }
   $('messages').replaceChildren(fragment);
@@ -472,6 +485,7 @@ async function refresh(older = false, quiet = false) {
     for (const turn of result.turns) turns.set(turn.seq, turn);
     if (older || nextBefore === null) nextBefore = result.next_before;
     $('older').hidden = nextBefore === null;
+    browserTransfer = result.browser?.transfer ?? null;
     renderDesktopNotifications(result); render();
     renderFollowups(result.followups);
     renderAssistance(result);
@@ -1107,7 +1121,7 @@ function paintMail(record) {
 }
 // Bound both response headers and JSON consumption. Aborting a write only stops
 // waiting in this window; it never claims that the host canceled the operation.
-async function mailRequest(path, data, controller = new AbortController()) {
+async function boundedRequest(path, data, controller = new AbortController()) {
   let timer, onAbort;
   const stopped = new Promise((_, reject) => {
     onAbort = () => reject(Error(connectionLost));
@@ -1119,6 +1133,7 @@ async function mailRequest(path, data, controller = new AbortController()) {
   catch (error) { if (error.authenticationRequired && !controller.signal.aborted) paired(false); throw error; }
   finally { clearTimeout(timer); controller.signal.removeEventListener('abort', onAbort); }
 }
+const mailRequest = boundedRequest;
 async function refreshOpenMail() {
   if (!mailRecord || mailBusy || mailDirty || mailSendUnknown || mailRefresh) return;
   const snapshot = mailRecord, generation = mailGeneration, controller = mailRefresh = new AbortController();
@@ -1182,3 +1197,47 @@ $('mail-connect').onclick = async () => {
   catch (error) { if (generation === mailGeneration) mailError(error.message); }
   finally { if (generation === mailGeneration) { mailBusy = false; await refresh(); updateMailControls(); } }
 };
+
+function renderBrowserTransfer(article, transfer) {
+  const card = element('section', '', 'browser-transfer'); card.setAttribute('aria-label', '웹사이트에 옮길 내용');
+  card.append(element('h3', transfer.state === 'finished' ? '웹사이트 입력 결과' : '이 내용으로 입력할까요?'));
+  card.append(element('strong', transfer.origin), element('p', `${transfer.field || '선택한 입력란'}${transfer.filename ? ' · ' + transfer.filename : ''}`, 'muted'));
+  const invisible = /\p{Cf}/gu;
+  const displayed = transfer.text.replace(invisible, c => `⟦U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4,'0')}⟧`);
+  card.append(element('pre', displayed, 'transfer-preview'));
+  if (displayed !== transfer.text) card.append(element('p', '보이지 않는 문자는 ⟦U+코드⟧로 표시했어요. 실제 내용에는 해당 문자가 포함됩니다.', 'muted'));
+  card.append(element('p', transfer.submit !== null ? `파일을 바꾼 뒤 “${transfer.submit || '선택한 제출 버튼'}” 동작도 실행합니다.` : '입력만으로 사이트에 자동 저장되거나 파일이 전송될 수 있어요.', 'muted'));
+  if (transfer.state === 'finished') {
+    const result = transfer.result;
+    renderBrowserReceipt(card, result, transfer.kind === 'file');
+  } else {
+    card.append(element('p', '확인한 내용 그대로 한 번 적용해요. 새 요청·공유 변경·재시작 또는 5분이 지나면 이 미리보기는 취소됩니다.', 'muted'));
+    if (transferUnknown === transfer.id) card.append(element('p', '요청 결과를 확인하고 있어요. 입력이 이미 실행됐을 수 있어 다시 보내지 않습니다. 연결이 돌아오면 결과를 갱신합니다.', 'status'));
+    const actions = element('div', '', 'document-actions');
+    for (const [action, label] of [['apply', transfer.kind === 'file' ? '이 파일로 바꾸기' : '이 내용으로 입력'], ['discard','취소']]) {
+      const button = element('button', transfer.state === 'applying' && action === 'apply' ? '적용 중…' : label);
+      button.type = 'button'; button.disabled = transferBusy || transferUnknown === transfer.id || transfer.state !== 'ready';
+      button.onclick = async () => {
+        if (transferBusy || transferUnknown === transfer.id || browserTransfer?.id !== transfer.id || browserTransfer.state !== 'ready') return;
+        transferBusy = true; render();
+        try { const result = await boundedRequest(`/api/browser/transfer/${action}`, { id: transfer.id, revision: transfer.revision, sha256: transfer.sha256, consent: 'apply_browser_transfer_v1' }); if (browserTransfer?.id === transfer.id) browserTransfer = result.transfer; }
+        catch (error) { if (!error.code && !error.authenticationRequired) transferUnknown = transfer.id; notice(error.message); }
+        finally { transferBusy = false; await refresh(); render(); }
+      };
+      actions.append(button);
+    }
+    card.append(actions);
+  }
+  article.append(card);
+}
+
+function renderBrowserReceipt(card, result, file) {
+  const text = result?.verdict === 'APPLIED_MISMATCH' ? (file ? '파일 교체는 실행됐지만 내려받은 파일이 요청한 수정본과 달라요. 실제 사이트에서 확인해 주세요. 자동으로 다시 보내지 않았습니다.' : '입력은 적용됐지만 입력란의 값이 요청한 내용과 달라요. 실제 사이트에서 확인해 주세요. 자동으로 다시 보내지 않았습니다.')
+    : result?.state === 'VERIFIED' ? (file ? '내려받은 파일의 내용이 요청한 수정본과 같다는 기록이 있어요. 사이트의 최종 적용 상태는 별도로 확인하지 않았습니다.' : '입력란의 값이 요청한 내용과 같은 것을 확인했어요. 서버 저장 여부는 별도로 확인하지 않았습니다.')
+    : ['UNCERTAIN','ACKNOWLEDGED','DISPATCHING'].includes(result?.state) ? '입력이 실행됐거나 실행됐을 수 있지만 결과를 확정하지 못했어요. 자동으로 다시 보내지 않았습니다. 실제 사이트에서 확인해 주세요.'
+    : '입력하지 않았어요. 화면이나 권한이 달라졌을 수 있습니다. 다시 준비하도록 말씀해 주세요.';
+  card.append(element('p', text, 'status'));
+  if (file && result?.id) for (const [kind, label] of [['original','원본 내려받기'],['replacement','수정본 내려받기']]) {
+    const link = element('a', label); link.href = `/api/browser/files/${encodeURIComponent(result.id)}/${kind}`; link.download = ''; card.append(link);
+  }
+}

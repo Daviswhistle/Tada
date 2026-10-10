@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { SharedBrowser, BROWSER_CONSENT } from '../../packages/engine/src/shared-browser.mjs';
+import { SharedBrowser, BROWSER_CONSENT, BROWSER_FILE_CONSENT } from '../../packages/engine/src/shared-browser.mjs';
 import { ContactStore, contactRoute } from '../../packages/engine/src/contact-store.mjs';
 import { ContactService } from '../../packages/engine/src/contact-service.mjs';
 import { BrowserSources } from '../../packages/engine/src/browser-sources.mjs';
@@ -69,12 +69,38 @@ try {
   assert.equal(receipt.verdict, 'APPLIED_MISMATCH');
   assert.equal(await evaluate('document.querySelector("#title").value'), '사이트에서 변환함');
   store.cancel(active.seq);
+  // Preparation must detect changed targets before showing an approval card.
+  let staged=0;
+  active=job();sources=new BrowserSources(base,store,browser,active,{prepare:()=>{staged++;return {state:'awaiting_owner_confirmation'};}});
+  view=await sources.execute('observe_shared_browser',{},new AbortController().signal);
+  await evaluate('document.querySelector("#title").value="New owner edit"');
+  receipt=await sources.execute('prepare_browser_text_transfer',{observation:view.observation,ref:view.fields[0].ref,value:'Private transfer'},new AbortController().signal);
+  assert.equal(receipt.state,'not_prepared');assert.equal(staged,0);
+  view=await sources.execute('observe_shared_browser',{},new AbortController().signal);
+  receipt=await sources.execute('prepare_browser_text_transfer',{observation:view.observation,ref:view.fields[0].ref,value:'Private transfer'},new AbortController().signal);
+  assert.equal(receipt.state,'awaiting_owner_confirmation');assert.equal(staged,1);
+  assert.equal(await evaluate('document.querySelector("#title").value'),'New owner edit');
+  store.cancel(active.seq);await browser.release(browser.grant.epoch);
+  await evaluate(`document.body.innerHTML='<form method="post"><label>CSV<input id="file" type="file"></label><button type="submit">Import</button></form>';window.fileEvents=0;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.fileEvents++;};document.querySelector('#file').onchange=()=>window.fileEvents++;const dt=new DataTransfer();dt.items.add(new File(['name,value\\noriginal,1'], 'original.csv', {type:'text/csv'}));document.querySelector('#file').files=dt.files;`);
+  await browser.share(device.id,target,BROWSER_FILE_CONSENT,url);
+  active=job();sources=new BrowserSources(base,store,browser,active,{prepare:()=>{staged++;return {state:'awaiting_owner_confirmation'};}});
+  view=await sources.execute('observe_shared_browser',{},new AbortController().signal);
+  let file=await sources.execute('read_shared_file',{observation:view.observation,ref:view.files[0].ref,encoding:'auto'},new AbortController().signal);
+  await evaluate('document.querySelector("button").textContent="Open"');
+  receipt=await sources.execute('prepare_browser_file_transfer',{file:file.file,name:'private.csv',content:'private replacement',edits:[],submit:view.files[0].submitters[0].ref},new AbortController().signal);
+  assert.equal(receipt.state,'not_prepared');assert.equal(staged,1);
+  view=await sources.execute('observe_shared_browser',{},new AbortController().signal);
+  file=await sources.execute('read_shared_file',{observation:view.observation,ref:view.files[0].ref,encoding:'auto'},new AbortController().signal);
+  receipt=await sources.execute('prepare_browser_file_transfer',{file:file.file,name:'private.csv',content:'private replacement',edits:[],submit:view.files[0].submitters[0].ref},new AbortController().signal);
+  assert.equal(receipt.state,'awaiting_owner_confirmation');assert.equal(staged,2);
+  assert.equal(await evaluate('window.fileEvents'),0);assert.equal(await evaluate('document.querySelector("#file").files[0].name'),'original.csv');
+  store.cancel(active.seq);
   const oldEpoch = browser.grant.epoch;
   await browser.command('Page.navigate', { url: url + '?other' }, sessionId);
   await new Promise(r => setTimeout(r, 200));
   assert.equal(browser.grant, null);
   await assert.rejects(browser.observe(oldEpoch, () => { }));
-  console.log(JSON.stringify({ passed: true, sandbox: 'enabled', actual_dom_fill: true, autosave_observed_by_fixture: true, submit: false, owner_edit_preserved: true, mismatch_preserved: true, navigation_invalidates: true, model: 'synthetic', account: 'none' }));
+  console.log(JSON.stringify({ passed: true, sandbox: 'enabled', actual_dom_fill: true, autosave_observed_by_fixture: true, submit: false, owner_edit_preserved: true, mismatch_preserved: true, navigation_invalidates: true, text_file_preflight:true, preflight_events:0, model: 'synthetic', account: 'none' }));
 }
 finally {
   await service?.close();

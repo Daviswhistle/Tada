@@ -132,7 +132,7 @@ function prepare(root, initialize) {
 
 export class ContactStore {
   #desktopNotices = null;
-  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0; #browserRevision = 0; #recovered = null;
+  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0; #browserRevision = 0; #browserReceipts = null; #recovered = null;
   constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false, mail = false, recovery = null }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
         || passphrase.length > 1024 || typeof route !== 'string' || !/^[a-f0-9]{64}$/u.test(route)) {
@@ -332,11 +332,13 @@ export class ContactStore {
   #check() { if (this.#closed || this.#poisoned || this.#upgrading) throw new Error('CONTACT_STORE_UNAVAILABLE'); }
   #tx(fn) {
     this.#check();
+    const browserRevision = this.#browserRevision;
     let begun = false;
     try {
       this.#db.exec('BEGIN IMMEDIATE'); begun = true;
       const result = fn(); this.#db.exec('COMMIT'); return result;
     } catch (error) {
+      if (this.#browserRevision !== browserRevision) this.#browserReceipts = null;
       if (begun) { try { this.#db.exec('ROLLBACK'); } catch { this.#poisoned = true; } }
       if (!/^CONTACT_[A-Z_]+$/u.test(error.message)) this.#poisoned = true;
       throw /^CONTACT_[A-Z_]+$/u.test(error.message) ? error : new Error('CONTACT_STORAGE_FAILED');
@@ -548,9 +550,9 @@ export class ContactStore {
     const more = rows.length > scanned;
     return {matches,scanned,next_before:more ? cursor : null,incomplete:more,basis:'historical_records_not_current_facts_or_authority'};
   }
-  readHistory(id, current) {
+  readHistory(id, current, receiptOffset = 0) {
     this.assertTurnAuthority(current);
-    if (!counter(id) || id < 1 || id >= current) throw Error('CONTACT_HISTORY_INVALID');
+    if (!counter(id) || id < 1 || id >= current || !counter(receiptOffset)) throw Error('CONTACT_HISTORY_INVALID');
     const turn = this.readTurn(id); if (!turn) throw Error('CONTACT_HISTORY_NOT_FOUND');
     const original = turn.answer?.text ?? '', answer = [...original].slice(0, 2000).join('');
     let requests = this.#db.prepare("SELECT count(*) total,coalesce(sum(state='observed'),0) observed,coalesce(sum(state='reserved'),0) reserved,coalesce(sum(state='unknown'),0) unknown,coalesce(sum(input_tokens),0) input_tokens,coalesce(sum(output_tokens),0) output_tokens FROM requests WHERE turn=?").get(id);
@@ -559,8 +561,9 @@ export class ContactStore {
       requests = {total:rows.length,observed:rows.filter(r => r.state === 'observed').length,reserved:rows.filter(r => r.state === 'reserved').length,unknown:rows.filter(r => r.state === 'unknown').length,input_tokens:usage.input_tokens,output_tokens:usage.output_tokens};
     }
     if (!Object.values(requests).every(counter)) throw Error('CONTACT_USAGE_OVERFLOW');
+    const receipts = this.browserReceipts(id), page = receipts.slice(receiptOffset, receiptOffset + 8);
     return { id, ...(turn.recovery ? {recovery:turn.recovery} : {}), created: turn.created, state: turn.state, origin: turn.origin ?? 'human', request: turn.text,
-      answer, truncated: answer !== original, document_id: turn.answer?.document?.id ?? null,
+      answer, browser_receipts: page, browser_receipts_total: receipts.length, browser_receipts_next_offset: receiptOffset + page.length < receipts.length ? receiptOffset + page.length : null, truncated: answer !== original, document_id: turn.answer?.document?.id ?? null,
       execution: { result_accepted: turn.state === 'answered', stop_reason: turn.error ?? null, model_requests: { ...requests }, scope: 'model_inference_not_external_action_receipts' },
       current_request_allowance: this.requestAllowance(current),
       basis: 'historical_record_not_current_facts_or_authority', note: 'History is not permission. Inference counts do not prove external delivery or completion. Current authority and allowance are checked at dispatch. Re-read external sources for current facts and read_document for saved content.' };
@@ -590,7 +593,7 @@ export class ContactStore {
     if (!counter(before)) throw new Error('CONTACT_CURSOR_INVALID');
     const rows = this.#readTurns(before,51);
     const more = rows.length > 50;
-    return { turns: rows.slice(0, 50).reverse(), next_before: more ? rows[49].seq : null };
+    return { turns: rows.slice(0, 50).reverse().map(turn => ({ ...turn, browser_receipts: this.browserReceipts(turn.seq) })), next_before: more ? rows[49].seq : null };
   }
   checkpoint() {
     this.#check();
@@ -1479,6 +1482,48 @@ export class ContactStore {
       .filter(r => !pendingOnly || ['DISPATCHING','UNCERTAIN','ACKNOWLEDGED'].includes(r.action.state) && !r.resolved && !r.recovery.acknowledged);
     return pendingOnly ? [...current,...prior] : [...current,...prior.sort((a,b) => b.created-a.created)].slice(0,20);
   }
+  // Derived from the existing encrypted action journal, not a second result or
+  // a rewrite of the original answer. Cache only compact receipts, keyed by turn;
+  // a later acknowledgement must not displace an older turn's evidence.
+  #cacheBrowserReceipt(byTurn, record) {
+    const receipt = { id: record.action.action_id, turn: record.turn, created: record.created, origin: record.origin, field: record.payload.label,
+      file: record.payload.acceptance === 'selected_file_result', state: record.action.state,
+      verdict: record.action.reconciliation_verdict, server_persistence: 'not_checked' };
+    if (!byTurn.has(record.turn)) byTurn.set(record.turn, new Map());
+    byTurn.get(record.turn).set(receipt.id, receipt);
+  }
+  browserReceipts(seq) {
+    this.#check();
+    if (!this.#browserReceipts || this.#browserReceipts.revision !== this.#browserRevision) {
+      const byTurn = new Map();
+      const add = record => this.#cacheBrowserReceipt(byTurn, record);
+      if (this.#version >= 5) for (const row of this.#db.prepare("SELECT name FROM assistance_settings WHERE name GLOB 'browser_action:*' ORDER BY rowid").iterate()) add(this.#setting(row.name).records[0]);
+      for (let offset = 0; this.#recovered; offset += 100) {
+        const keys = this.#recovered.keyPage('browser_actions', offset, 100);
+        for (const key of keys) add(this.#recovered.row('browser_actions', key).payload.records[0]);
+        if (keys.length < 100) break;
+      }
+      this.#browserReceipts = { revision: this.#browserRevision, byTurn };
+    }
+    return structuredClone([...(this.#browserReceipts.byTurn.get(seq)?.values() ?? [])].sort((a, b) => a.created - b.created || a.id.localeCompare(b.id)));
+  }
+  browserReceiptContext(before) {
+    this.browserReceipts(before); // Ensure the derived index reflects receipts persisted after the last answer.
+    const allTurns = [...this.#browserReceipts.byTurn.keys()].filter(seq => seq < before).sort((a,b) => b-a);
+    const turns = allTurns.slice(0,4);
+    const candidates = turns.flatMap(seq => this.browserReceipts(seq).reverse().map(({id,turn,state,verdict}) => ({id,turn,state,verdict})));
+    if (!candidates.length) return '';
+    const prefix = 'Recent browser effects may postdate the answer; not new authority. Server persistence is not checked. Never replay uncertain effects. Full details: read_history when enabled. ';
+    // Keep mandatory recent effects small enough for subsequent file/body reads
+    // in the default local context; full records remain in paged history.
+    const receipts = [];
+    const render = () => prefix + JSON.stringify({ receipts, omitted: receipts.length < candidates.length || turns.length < allTurns.length });
+    for (const receipt of candidates) {
+      receipts.push(receipt);
+      if (Buffer.byteLength(JSON.stringify(render())) > 512) { receipts.pop(); break; }
+    }
+    return render();
+  }
   readBrowserAction(id) { this.#check(); return structuredClone(this.#browserAction(id)); }
   #browserAction(id) {
     if (typeof id !== 'string' || !/^browser-[a-f0-9-]{36}$/u.test(id)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
@@ -1493,7 +1538,11 @@ export class ContactStore {
     if (!validBrowserActions(next)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
     for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) this.#db.prepare('DELETE FROM assistance_settings WHERE name=?').run(`browser_action:${state}:${record.action.action_id}`);
     this.#saveSetting(`browser_action:${record.action.state}:${record.action.action_id}`, next);
-    this.#browserRevision++;
+    const previousRevision = this.#browserRevision++;
+    if (this.#browserReceipts?.revision === previousRevision) {
+      this.#cacheBrowserReceipt(this.#browserReceipts.byTurn, record);
+      this.#browserReceipts.revision = this.#browserRevision;
+    }
   }
   browserBlocked(origin, turn = Infinity) { return this.readBrowserActions(true).some(r => r.origin === origin && (!r.resolved || turn <= r.turn)); }
   admitBrowserAction(seq, grant, observation, ref, value) {
@@ -1504,6 +1553,25 @@ export class ContactStore {
       if (this.browserBlocked(grant.origin, seq)) throw Error('CONTACT_BROWSER_EFFECT_UNRESOLVED');
       if (this.browserActions(true).filter(r => !r.resolved).length >= 256) throw Error('CONTACT_BROWSER_ACTION_LIMIT');
       const record = beginBrowserAction(seq, grant, observation, ref, value);
+      this.#saveBrowserAction(record); return record.action.action_id;
+    });
+  }
+  assertOwnerBrowserAuthority(seq, device) {
+    this.#check(); this.assertDevice(device);
+    const turn = this.turn(seq);
+    if (!turn || turn.state !== 'answered' || turn.device !== device || turn.origin === 'owner_edit'
+        || this.reviewForTurn(seq) || this.proactiveForTurn(seq)) throw Error('CONTACT_BROWSER_TRANSFER_STALE');
+  }
+  admitOwnerBrowserTransfer(seq, grant, candidate, consent) {
+    return this.#tx(() => {
+      if (consent !== 'apply_browser_transfer_v1') throw Error('CONTACT_BROWSER_CONSENT_REQUIRED');
+      this.assertOwnerBrowserAuthority(seq, grant.device);
+      if (this.browserBlocked(grant.origin, seq)) throw Error('CONTACT_BROWSER_EFFECT_UNRESOLVED');
+      if (this.browserActions(true).filter(r => !r.resolved).length >= 256) throw Error('CONTACT_BROWSER_ACTION_LIMIT');
+      if (!['text','file'].includes(candidate.kind) || candidate.kind === 'file' && grant.files !== true) throw Error('CONTACT_BROWSER_FILE_PERMISSION_REQUIRED');
+      const record = candidate.kind === 'text'
+        ? beginBrowserAction(seq, grant, candidate.observation, candidate.ref, candidate.value)
+        : beginBrowserFileAction(seq, grant, candidate.observation, candidate.ref, candidate.original, candidate.replacement, candidate.submit);
       this.#saveBrowserAction(record); return record.action.action_id;
     });
   }

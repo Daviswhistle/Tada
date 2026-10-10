@@ -245,7 +245,7 @@ test('all enabled local tools leave room for a current-work read and answer with
   e.store.configureProactive(e.device.id, true, 'connected_attention_v2', 'Asia/Seoul');
   const model = { identity: { provider: 'ollama-local' },
     contextBytes(messages, tools) { const bytes = Buffer.byteLength(JSON.stringify({ messages, tools })); largest = Math.max(largest, bytes); return bytes; },
-    async chat() { return { message: ++calls === 1
+    async chat(messages, tools) { if(!tools.some(t=>t.function.name==='list_followups'))return {message:{role:'assistant',content:'',tool_calls:[{function:{name:'select_tools',arguments:{names:['list_followups']}}}]},input_tokens:1,output_tokens:1}; return { message: ++calls === 1
       ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'list_followups', arguments: { status: 'active', offset: 0 } } }] }
       : { role: 'assistant', content: '저장된 할 일이 없어요.' }, input_tokens: 1, output_tokens: 1 }; },
   };
@@ -432,6 +432,7 @@ test('local recent-mail list and body read fit with related mail and personal de
       largest = Math.max(largest, Buffer.byteLength(JSON.stringify({ messages, tools })));
       if (step) assert.equal(JSON.parse(messages.at(-1).content).error, undefined);
       const name = step === 0 ? 'list_recent_emails' : 'read_email';
+      if(step<2&&!tools.some(t=>t.function.name===name))return {message:{role:'assistant',content:'',tool_calls:[{function:{name:'select_tools',arguments:{names:[name]}}}]},input_tokens:1,output_tokens:1};
       return { message: step++ < 2 ? { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: name === 'read_email' ? { id: 'm1' } : {} } }] }
         : { role: 'assistant', content: '미팅 시간을 확인해 달라는 메일이에요. [S2]' }, input_tokens: 1, output_tokens: 1 };
     } };

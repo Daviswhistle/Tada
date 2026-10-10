@@ -72,7 +72,7 @@ test('recovered snapshots use exact/paged lookups, preserve provenance and never
   do{const p=await list(tools,cursor);files.push(...p.files);cursor=p.next_cursor;}while(cursor);
   assert.equal(files.length,12);const r=await read(tools,ids[0],'original');
   assert.equal(r.recovery.quarantined,true);assert.equal(r.recovery.generation,snapshot.source.journal_id);
-  assert.deepEqual(s.browserFile(d.id,ids[0],'original'),e.original);assert.equal(s.browserActions().length,0);
+  assert.deepEqual(s.browserFile(d.id,ids[0],'original'),e.original);assert.equal(s.browserActions().length,0);assert.equal(s.browserReceipts(e.seed.seq).length,12);
   assert.throws(()=>s.finishBrowserFileAction(ids[0],true),/INVALID/);
  }finally{RecoveredRecords.prototype.rows=rows;e.close();}
 });

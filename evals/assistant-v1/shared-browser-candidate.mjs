@@ -22,7 +22,7 @@ export const sharedBrowserFixtures=[
 export async function runSharedBrowser({provider,reportPath,implementation,requestLimit=24}){
   if(!Number.isSafeInteger(requestLimit)||requestLimit<1||requestLimit>48)throw Error('EVAL_REQUEST_LIMIT_INVALID');
   const inspected=await provider.inspect(AbortSignal.timeout(20000));
-  const report={kind:'shared_browser_freshness_candidate',implementation,runtime:Object.fromEntries(Object.entries(inspected).filter(([k])=>['provider','model','model_digest','billing','display_name'].includes(k))),harness_sha256:sha(readFileSync(new URL(import.meta.url))),fixtures_sha256:sha(JSON.stringify(sharedBrowserFixtures)),fixture_version:1,started_at:new Date().toISOString(),fixed_cases:['A08'],variants_per_case:2,synthetic_data_only:true,production_scope_changed:false,physical_devices:false,sandbox:true,product_acceptance:'not_passed',independent_semantic_review:'required',request_limit:requestLimit,model_requests:[],results:[]};
+  const report={kind:'shared_browser_freshness_candidate',implementation,runtime:Object.fromEntries(Object.entries(inspected).filter(([k])=>['provider','model','model_digest','billing','display_name'].includes(k))),harness_sha256:sha(readFileSync(new URL(import.meta.url))),fixtures_sha256:sha(JSON.stringify(sharedBrowserFixtures)),fixture_version:1,owner_actor_version:1,started_at:new Date().toISOString(),fixed_cases:['A08'],variants_per_case:2,synthetic_data_only:true,production_scope_changed:false,physical_devices:false,sandbox:true,product_acceptance:'not_passed',independent_semantic_review:'required',request_limit:requestLimit,model_requests:[],results:[]};
   const save=()=>writeFileSync(reportPath,JSON.stringify(plain(report),null,2)+'\n',{mode:0o600});
   for(const fixture of sharedBrowserFixtures){
     const root=mkdtempSync(join(tmpdir(),'tada-browser-candidate-'));let browser,store,service,site;
@@ -54,6 +54,16 @@ export async function runSharedBrowser({provider,reportPath,implementation,reque
       if(typeof provider.researchPublicWeb==='function')model.researchPublicWeb=(request,previous,signal,beforeDispatch)=>invoke('public_web',{request,previous},()=>provider.researchPublicWeb(request,previous,signal,beforeDispatch));
       service=new ContactService(store,model,base);service.attachBrowser(browser);
       const accepted=service.submit(owner,randomUUID(),fixture.request);await service.idle();const turn=store.turn(accepted.seq);
+      const preview=service.browserStatus(owner).transfer;
+      result.owner_preview=preview ? plain(preview) : null;
+      if(preview){
+        // Evaluator-owned human action after inference. Expected content/targets
+        // never enter product messages, and the excluded account is not approved.
+        if(fixture.variant!==1 || preview.state!=='ready' || preview.origin!==new URL(url).origin || preview.kind!=='text' || preview.text!==fixture.value || preview.field!=='해솔 안내문')throw Error('EVAL_PREVIEW_NOT_APPROVED');
+        const requestsBefore=report.model_requests.length;
+        result.owner_application=plain(await service.approveBrowserTransfer(owner,{id:preview.id,revision:preview.revision,sha256:preview.sha256,consent:'apply_browser_transfer_v1'}));
+        result.approval_extra_model_requests=report.model_requests.length-requestsBefore;
+      }
       result.state=turn.state;result.error=turn.error;result.answer=turn.answer;result.actions=store.browserActions();result.usage=store.usage();
       result.final_page=await evaluate('({text:document.body.innerText,fields:[...document.querySelectorAll("textarea")].map(e=>({id:e.id,value:e.value}))})');
       const observed=result.calls.flatMap(c=>c.messages??[]).filter(m=>m.role==='tool'&&m.tool_name==='observe_shared_browser').map(m=>JSON.parse(m.content));
