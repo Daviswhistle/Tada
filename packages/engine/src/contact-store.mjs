@@ -130,7 +130,7 @@ function prepare(root, initialize) {
 }
 
 export class ContactStore {
-  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0; #recovered = null;
+  #db; #owner; #key; #id; #closed = false; #poisoned = false; #version = 1; #root; #upgrading = false; #historyRevision = 0; #browserRevision = 0; #recovered = null;
   constructor({ directory, passphrase, route, initialize = false, followups = false, reviews = false, assistance = false, mail = false, recovery = null }) {
     if (typeof directory !== 'string' || !directory || typeof passphrase !== 'string' || passphrase.length < 16
         || passphrase.length > 1024 || typeof route !== 'string' || !/^[a-f0-9]{64}$/u.test(route)) {
@@ -1471,6 +1471,7 @@ export class ContactStore {
     if (!validBrowserActions(next)) throw Error('CONTACT_BROWSER_ACTION_INVALID');
     for (const state of ['DISPATCHING', 'VERIFIED', 'UNCERTAIN', 'ACKNOWLEDGED', 'FAILED']) this.#db.prepare('DELETE FROM assistance_settings WHERE name=?').run(`browser_action:${state}:${record.action.action_id}`);
     this.#saveSetting(`browser_action:${record.action.state}:${record.action.action_id}`, next);
+    this.#browserRevision++;
   }
   browserBlocked(origin, turn = Infinity) { return this.readBrowserActions(true).some(r => r.origin === origin && (!r.resolved || turn <= r.turn)); }
   admitBrowserAction(seq, grant, observation, ref, value) {
@@ -1507,13 +1508,60 @@ export class ContactStore {
       this.#saveBrowserAction(record); return structuredClone(record);
     });
   }
+  #recoveredBrowserAction(id) {
+    for (const state of ['DISPATCHING','VERIFIED','UNCERTAIN','ACKNOWLEDGED','FAILED']) {
+      const key = `browser_action:${state}:${id}`, row = this.#recovered?.row('browser_actions', key);
+      if (row) return { ...row.payload.records[0], recovery: this.#recovered.metadata('browser_actions', key) };
+    }
+    return null;
+  }
+  browserHistoryRevision() { this.#check(); return this.#browserRevision; }
+  hasBrowserHistory() {
+    this.#check();
+    return this.#version >= 5 && (!!this.#db.prepare("SELECT 1 FROM assistance_settings WHERE name GLOB 'browser_action:*' LIMIT 1").get()
+      || !!this.#recovered?.keyPage('browser_actions',0,1).length);
+  }
+  savedFileRecord(device, id, before) {
+    this.assertDevice(device);
+    if (!Number.isSafeInteger(before) || before < 1) throw Error('CONTACT_BROWSER_FILE_INVALID');
+    let record;
+    try { record = this.#browserAction(id); } catch (error) {
+      if (error.message !== 'CONTACT_BROWSER_ACTION_INVALID') throw error;
+      record = this.#recoveredBrowserAction(id);
+    }
+    if (record?.payload.acceptance !== 'selected_file_result' || record.turn >= before) throw Error('CONTACT_BROWSER_FILE_INVALID');
+    return structuredClone(record);
+  }
+  savedFilePage(device, before, cursor = null) {
+    this.assertDevice(device);
+    if (!Number.isSafeInteger(before) || before < 1 || cursor !== null && (!cursor || !['current','recovered'].includes(cursor.phase)
+        || !Number.isSafeInteger(cursor.offset) || cursor.offset < 0)) throw Error('CONTACT_BROWSER_FILE_INVALID');
+    if (this.#version < 5) return { records: [], next: null };
+    const phase = cursor?.phase ?? 'current', offset = cursor?.offset ?? Number.MAX_SAFE_INTEGER;
+    const rows = phase === 'current'
+      ? this.#db.prepare("SELECT rowid, name FROM assistance_settings WHERE name GLOB 'browser_action:*' AND rowid < ? ORDER BY rowid DESC LIMIT 101").all(offset)
+      : this.#recovered?.keyPage('browser_actions',offset,101) ?? [];
+    const records = [], positions = []; let scanned = 0;
+    for (const row of rows.slice(0,100)) {
+      const record = phase === 'current' ? this.#setting(row.name).records[0]
+        : { ...this.#recovered.row('browser_actions',row).payload.records[0], recovery:this.#recovered.metadata('browser_actions',row) };
+      scanned++;
+      if (record.turn < before && record.payload.acceptance === 'selected_file_result') {
+        records.push(record); positions.push({phase,offset:phase === 'current' ? row.rowid : offset+scanned});
+      }
+      if (records.length === 10) break;
+    }
+    const next = rows.length > scanned ? { phase, offset:phase === 'current' ? rows[scanned-1].rowid : offset+scanned }
+      : phase === 'current' && this.#recovered?.keyPage('browser_actions',0,1).length ? {phase:'recovered',offset:0} : null;
+    return { records, positions, next };
+  }
   browserFile(device, id, kind) {
     this.assertDevice(device);
     if (!['original','replacement'].includes(kind)) throw Error('CONTACT_BROWSER_FILE_INVALID');
     let record;
     try { record=this.#browserAction(id); } catch(error) {
       if(error.message !== 'CONTACT_BROWSER_ACTION_INVALID')throw error;
-      record=(this.#recovered?.rows('browser_actions')??[]).map(r=>r.payload.records[0]).find(r=>r.action.action_id===id);
+      record=this.#recoveredBrowserAction(id);
     }
     if(record?.payload.acceptance !== 'selected_file_result')throw Error('CONTACT_BROWSER_FILE_INVALID');
     return structuredClone(record.payload[kind]);

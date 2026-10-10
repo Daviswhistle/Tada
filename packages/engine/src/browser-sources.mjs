@@ -165,7 +165,13 @@ export class BrowserSources {
       const observation=this.#fresh(args.observation);
       if(!(observation.downloads??[]).some(d=>d.ref===args.ref))throw Error('CONTACT_BROWSER_OBSERVATION_REQUIRED');
       if(this.#downloads++>=8)throw Error('CONTACT_BROWSER_OBSERVATION_LIMIT');
-      if(budget&&!budget.fits({action_id:args.action_id,state:'UNCERTAIN',verdict:'UNCERTAIN',verification_scope:'selected_file_download_observation',server_persistence:'not_checked',sha256:'x'.repeat(64),download_matches:false,repeat:false}))throw Error('ASSISTANT_SOURCE_LIMIT');
+      // Successful readback consumes this tool capability. Measure that next
+      // request schema, restoring the current capability if admission fails.
+      const actionKey=this.#fileActions.get(args.action_id),observations=this.#observations;
+      this.#fileActions.delete(args.action_id);this.#observations=new Map();
+      try {
+        if(budget&&!budget.fits({action_id:args.action_id,state:'UNCERTAIN',verdict:'UNCERTAIN',verification_scope:'selected_file_download_observation',server_persistence:'not_checked',sha256:'x'.repeat(64),download_matches:false,repeat:false}))throw Error('ASSISTANT_SOURCE_LIMIT');
+      } finally { this.#fileActions.set(args.action_id,actionKey);this.#observations=observations; }
       const result=await this.#browser.download(this.#grant.epoch,observation,args.ref,admit,this.#fileActions.get(args.action_id));admit();
       if(typeof result?.data!=='string' || result.data.length>Math.ceil(FILE_LIMIT/3)*4)throw Error('CONTACT_BROWSER_FILE_INVALID');
       const bytes=Buffer.from(result.data,'base64');if(bytes.length>FILE_LIMIT || bytes.toString('base64')!==result.data)throw Error('CONTACT_BROWSER_FILE_INVALID');

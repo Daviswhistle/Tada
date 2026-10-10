@@ -141,8 +141,13 @@ for(const files of [false,true])test(`Google and continuing use retain ordinary 
     assert.equal(e.store.turn(receipt.seq).state,'answered');assert.equal(calls,1);assert.equal(e.browser.writes,0);
   }finally{await service?.close();e.close();}
 });
-for(const connected of [false,true])test(`default local context supports file workflow with Google/continuing use ${connected}`,async()=>{
+for(const connected of [false,true])for(const historical of [false,true])test(`default local context supports file workflow with Google/continuing use ${connected}, saved history ${historical}`,async()=>{
   const e=fixture({mail:connected});let service;try {
+    if(historical) {
+      const observation=await e.browser.observe(e.browser.grant.epoch,()=>{});
+      const old=e.store.admitBrowserFileAction(e.job.seq,e.browser.grant,observation,'file-1',e.original,fileCopy('past.csv','text/csv',Buffer.from('past')),null);
+      e.store.finishBrowserFileAction(old,false);
+    }
     e.store.cancel(e.job.seq);let step=0,view,file,action;const sizes=[];
     const call=(name,args)=>({message:{role:'assistant',content:'',tool_calls:[{function:{name,arguments:args}}]},input_tokens:1,output_tokens:1});
     if(connected)e.store.configureContinuingUse(e.device.id,true,CONTINUING_CONSENT);

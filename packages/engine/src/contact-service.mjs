@@ -1,5 +1,6 @@
 import { BACKUP_CONSENT, createRecordBackup } from './contact-backup.mjs';
 import { MailSources } from './mail-sources.mjs';
+import { SavedFileSources } from './saved-file-sources.mjs';
 import { BrowserSources } from './browser-sources.mjs';
 import { observeAttention, eventKey, reminderDue, reminderText } from './attention.mjs';
 import { createHash } from 'node:crypto';
@@ -140,7 +141,7 @@ export class ContactService extends EventEmitter {
         const delegation = !review && !proactive ? this.#store.captureFollowupDelegation() : null;
         const interactive = !review && !proactive && this.#browser ? (browserSources = new BrowserSources(google ?? this.#sources, this.#store, this.#browser, job)) : google ?? this.#sources;
         const mailSources = !review && !proactive && this.#store.contactVersion >= 6 ? new MailSources(interactive, this.#store, job, google, (id, signal) => this.reconcileMail(job.device, id, signal)) : null;
-        const interactiveTools = mailSources ?? interactive;
+        const interactiveTools = !review && !proactive ? new SavedFileSources(mailSources ?? interactive, this.#store, job) : mailSources ?? interactive;
         const base = review ? new ReviewSources(this.#sources, this.#store, job, review)
           : this.#store.contactVersion >= 3
           ? new FollowupSources(interactiveTools, this.#store, job, this.#timezone, Date.now, this.localReviews, delegation, signal => preparePersonalRequest({ model: metered, store: this.#store, job, timezone: this.#timezone, epoch: delegation, signal, ownerContext })) : interactiveTools;
@@ -200,6 +201,7 @@ export class ContactService extends EventEmitter {
         const privateGoogleTools = new Set(['list_recent_emails', 'read_email', 'list_upcoming_events', 'search_related_emails', 'read_email_thread', 'read_mail_action', 'prepare_mail', 'list_mail_actions']);
         for (const message of checkpoint.history) {
           if (message.role === 'tool' && message.tool_name === 'observe_shared_browser') message.content = JSON.stringify({ note: 'Shared browser observations expire. Observe the currently shared page again.' });
+          if (message.role === 'tool' && message.tool_name === 'read_saved_file') message.content = JSON.stringify({ note: 'Saved file content is not retained in the checkpoint. Use list_saved_files/read_saved_file when needed.' });
           if (message.role === 'tool' && message.tool_name === 'read_document') {
             const newline = message.content.indexOf('\n');
             const result = JSON.parse(newline < 0 ? message.content : message.content.slice(0, newline));

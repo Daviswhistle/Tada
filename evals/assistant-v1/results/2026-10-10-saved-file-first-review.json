@@ -1,0 +1,36 @@
+{
+  "kind": "independent_semantic_review",
+  "reviewer_role": "situated_acceptance_audit",
+  "report_sha256": "8c23c61f1425c66a5667277c1beaffb0e91d9d314592bc418149a9526210577d",
+  "implementation": "bed6631e914bfdd218c3b004797e2048452bcd33+saved-file-recall",
+  "observed_requests": 9,
+  "unknown_requests": 0,
+  "variants": [
+    {
+      "mode": "restart",
+      "verdict": "passed",
+      "list_calls": 2,
+      "empty_pages": 1,
+      "evidence": [
+        "현재 요청에 따라 빈 첫 페이지의 다음 커서로 원본과 수정본을 찾았다.",
+        "같은 action의 original/replacement를 모두 읽고 세미콜론에서 쉼표로 바뀐 구분자와 보존된 헤더·데이터를 정확히 설명했다.",
+        "원본과 수정본의 정확한 다운로드 링크를 제공했다.",
+        "저장된 사본과 현재 앱 적용 상태를 구분하고 불필요한 질문이나 재실행을 하지 않았다."
+      ]
+    },
+    {
+      "mode": "recovery",
+      "verdict": "passed",
+      "list_calls": 3,
+      "empty_pages": 2,
+      "evidence": [
+        "빈 현재 원장 페이지와 빈 첫 복원 페이지를 커서로 넘긴 후 복원 출처가 quarantined인 파일을 찾았다.",
+        "원본·수정본을 모두 읽고 JSON 마지막 값 뒤 쉼표만 제거됐고 나머지 품목·수량은 보존됐다고 설명했다.",
+        "원본과 수정본의 정확한 다운로드 링크를 제공했다.",
+        "저장된 사본과 현재 기기 상태를 구분하고 불필요한 질문이나 재실행을 하지 않았다."
+      ]
+    }
+  ],
+  "primary_verification": "보고서 SHA, 실제 response tool_calls와 최종 답변을 대조했다. 검수자가 반복된 checkpoint 메시지를 중복 계산해 restart 빈 페이지를 2개라고 쓴 부분을 실제 1개로 정정했다. 통과 결론은 동일하다.",
+  "scope_limit": "두 고정 합성 후속 조회 시나리오의 도구 관측과 답변만 평가한다. 실제 브라우저 다운로드, 물리 기기, 현재 외부 앱 적용, 임의 파일과 전체 제품 수락을 입증하지 않는다."
+}

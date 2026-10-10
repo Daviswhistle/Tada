@@ -134,7 +134,7 @@ export function validateRecoveryGroups(groups) {
 }
 
 export class RecoveredRecords {
-  #groups; #maps; #meta = new Map(); #evidence = new Map(); #nextEvidence = 1;
+  #groups; #maps; #keys; #meta = new Map(); #evidence = new Map(); #nextEvidence = 1;
   constructor(groups) {
     this.#groups = structuredClone(validateRecoveryGroups(groups));
     this.#maps = Object.fromEntries(Object.keys(BACKUP_COLUMNS).map(k => [k, new Map()]));
@@ -146,6 +146,12 @@ export class RecoveredRecords {
       }
       this.#meta.set(`${name}:${key}`, { quarantined: true, snapshot_at: g.created_at, generation: g.source.journal_id });
     }
+  }
+  // Index keys once; paged readers never clone the whole recovered archive.
+  keyPage(name, offset = 0, limit = 101) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 101 || !this.#maps[name]) throw Error('CONTACT_RECOVERY_INVALID');
+    this.#keys ??= Object.fromEntries(Object.entries(this.#maps).map(([key, rows]) => [key, [...rows.keys()].sort()]));
+    return this.#keys[name].slice(offset, offset + limit);
   }
   nextEvidence() { return this.#nextEvidence; }
   hasEvidence(evidence) { return this.#evidence.has(evidence.id) && this.#evidence.get(evidence.id) === evidenceFingerprint(evidence); }

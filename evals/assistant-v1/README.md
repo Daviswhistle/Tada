@@ -158,3 +158,11 @@ The [operation-guidance rerun](results/2026-10-10-situated-file-operation.json) 
 The [current-app-observation run](results/2026-10-10-situated-file-observe.json) used 23 observed requests with no unknown or web calls. [Independent review](results/2026-10-10-situated-file-observe-review.json) and the primary accepted the app-level task criteria in all four variants. Both A02 variants verified the actual received/rendered cells without a download verification call. Both A03 variants opened the corrected selected file in the viewer and preserved the original; A03-1 also saved a linked revised document. Its bare-document reply communicates completion weakly. The old host notice overgeneralized uncertainty despite successful visible operation; subsequent wording separates visible results from automatically unconfirmed final application, without changing the uncertain receipt or replay fence.
 
 Scoped app-level acceptance now covers **A01–A16, 16/16 cases**, in their documented limited variants. This is not full release acceptance or broad file/desktop qualification. Communication caveats, future-use continuity, live device/account qualification and the original release gates remain separate. The three situated runs used 64 observed requests in total, and all failed attempts remain available.
+
+### 저장 파일 후속 조회 — 2026-10-10
+
+[`saved-file-candidate.mjs`](saved-file-candidate.mjs)는 공급자를 주입하는 별도 후속 사용 시험이다. 가져오기만으로 계정에 접근하지 않는다. 재시작·백업 복원한 원장에서 105개의 후속 작업 뒤 원본·수정본을 찾고, 차이를 설명하며 두 인증 다운로드 링크를 제공하는 두 합성 상황을 고정한다. 평가용 정답·환경 mode는 보고서에만 남고 모델 입력에는 일반 사용자 요청과 실제 도구 응답만 제공한다. 요청 상한은 실행 전에 1–32 정수로 검증한다. 불명 공급자 응답이 생기면 재시도하지 않고 중단한다.
+
+[첫 선택 모델 원문](results/2026-10-10-saved-file-first.json): 현재 `gpt-6-astra`, 총 9개 응답 관측·불명 0개, 두 상황의 기계적 판정 통과. 두 요청이 기존 16개 전체 수락을 새로 검증하거나 출시 분모를 늘리는 것은 아니다. 실제 변경 내용과 한계는 [검증 기록](../../docs/qualification-2026-10-10.md#재시작복원-뒤-저장-파일-다시-찾기)에 남긴다.
+
+[독립 의미 검수](results/2026-10-10-saved-file-first-review.json)는 두 사례 모두 통과로 판정했다. 주 세션이 원문 tool_calls와 최종 답변을 대조해 수락했고, 검수 초안의 restart 빈 페이지 수는 실제 1개로 정정했다. 실제 다운로드 성공이나 현재 외부 앱 반영까지 의미 평가가 보증하지 않는다.
