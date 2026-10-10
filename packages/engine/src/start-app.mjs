@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { main, contactOptions } from './contact-cli.mjs';
 import { acquireAppInstance } from './app-instance.mjs';
+import { AppPrivacy } from './app-privacy.mjs';
 import { AppRecords } from './app-records.mjs';
 import { serveSetup } from './app-setup.mjs';
 import { openSystemBrowser } from './system-browser.mjs';
@@ -24,12 +25,12 @@ export async function openAppBrowser(url) {
   if (!/^http:\/\/127\.0\.0\.1:[0-9]+\/#setup=[A-Za-z0-9_-]{43}$/u.test(url)) throw Error('INVALID_APP_URL');
   return openSystemBrowser(url);
 }
-export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance, signal, onReady = () => {}, platform = process.platform, recordsFactory = options => new AppRecords(options), backgroundFactory = (options, config) => platform === 'win32' ? new WindowsBackgroundApp(options, config) : new BackgroundApp(options, config) } = {}) {
+export async function startApp(args = process.argv.slice(2), { open = openAppBrowser, run = main, instance = acquireAppInstance, signal, onReady = () => {}, platform = process.platform, recordsFactory = options => new AppRecords(options), privacyFactory = options => new AppPrivacy(options), backgroundFactory = (options, config) => platform === 'win32' ? new WindowsBackgroundApp(options, config) : new BackgroundApp(options, config) } = {}) {
   if (args.includes('--help') || args.includes('-h')) return main(['--help']);
   if (args.filter(arg => arg === '--background').length > 1) throw Error('CONTACT_OPTIONS_INVALID');
   const backgroundMode = args.includes('--background'); args = args.filter(arg => arg !== '--background');
   if (backgroundMode && args.some(arg => ['--init', '--login', '--upgrade-contact'].includes(arg))) throw Error('CONTACT_BACKGROUND_SETTINGS_INVALID');
-  const launchArgs = value => appArguments(value, { initialize: !backgroundMode });
+  const launchArgs = (value,fresh=false) => appArguments(value, { initialize: !backgroundMode || fresh });
   // Validate before opening a browser. Recompute only initialization on retry.
   const options = contactOptions(launchArgs(args));
   const show = async url => {
@@ -61,12 +62,17 @@ export async function startApp(args = process.argv.slice(2), { open = openAppBro
   let setup, initialized = false;
   try {
     const background = backgroundFactory(options, { background: backgroundMode, handoff: async () => { await close(); } });
-    const records = recordsFactory(options);
-    setup = await serveSetup({ autoStart: false, autoRetry: backgroundMode, records, run: async ui => {
+    const records = recordsFactory(options), privacy=privacyFactory(options);
+    setup = await serveSetup({ autoStart: false, autoRetry: backgroundMode, records, privacy, prepareErase: async()=>{
+      const status=await background.status(true);
+      if(status.error || status.managed && !status.available)throw Error('CONTACT_BACKGROUND_UNAVAILABLE');
+      if(status.available){const result=await background.configure(false,null,()=>{});if(result.enabled)throw Error('CONTACT_BACKGROUND_UNAVAILABLE');}
+    }, run: async ui => {
+      const fresh=privacy.status();const freshId=fresh.phase==='new'?fresh.request:null;
       const storageContext = await records.context();
       ui.recordRestore(storageContext?.restoring === true, storageContext?.expectedLabel ?? null);
-      return run(launchArgs(initialized ? args.filter(arg => arg !== '--init') : args),
-        { ui: { ...ui, initialized: () => { initialized = true; }, ready: source => { ui.ready(source, storageContext?.restoring === true); onReady(); } }, background, storageContext });
+      return run(launchArgs(initialized ? args.filter(arg => arg !== '--init') : args,!!freshId),
+        { ui: { ...ui, initialized: () => { initialized = true; }, ready: source => { ui.signal.throwIfAborted();if(freshId)privacy.completeFresh(freshId);ui.ready(source, storageContext?.restoring === true); onReady(); } }, background, storageContext });
     } });
     await slot.publish(setup.url);
   } catch (error) { await setup?.close(); slot.close(); return showFailure(error); }

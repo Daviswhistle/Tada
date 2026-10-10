@@ -207,12 +207,14 @@ test('a failed confirmation never returns a closed real contact host, even when 
 test('a paired device receives no setup authority and cannot regain access after revocation',async()=>{
  const {ContactStore,contactRoute}=await import('../src/contact-store.mjs');const {ContactService}=await import('../src/contact-service.mjs');const {serveContact}=await import('../src/contact-http.mjs');
  const root=mkdtempSync(join(tmpdir(),'tada-recovery-authority-')),store=new ContactStore({directory:join(root,'data'),passphrase:'SYNTHETIC_AUTHORITY_KEY',route:contactRoute({fixture:'authority'}),initialize:true}),device=store.addDevice('paired browser');
- const service=new ContactService(store,{}, {definitions:[],validate:()=>false,verify:async()=>false,execute:async()=>{throw Error('NO_SOURCE');}});let contact,recovery,confirmed=0;
- const c=await client(async ui=>{recovery=ui.recovery;ui.ready('http://127.0.0.1:9001/#pair=owner-only');await ui.wait();},{records:{available:true,clearPreview(){},canCancel:()=>false,confirm:async()=>{confirmed++;}}});
- const call=path=>new Promise((resolve,reject)=>{const req=request({hostname:'127.0.0.1',port:contact.address.port,path,method:path.endsWith('restore')?'POST':'GET',headers:{Host:'127.0.0.1:0',Origin:'http://127.0.0.1:0',Cookie:'tada_local='+device.token,'Content-Type':'application/json'}},res=>{let text='';res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(text)}));});req.on('error',reject);req.end(path.endsWith('restore')?'{}':undefined);});
+ const service=new ContactService(store,{}, {definitions:[],validate:()=>false,verify:async()=>false,execute:async()=>{throw Error('NO_SOURCE');}});let contact,recovery,privacy,confirmed=0;
+ const c=await client(async ui=>{recovery=ui.recovery;privacy=ui.privacy;ui.ready('http://127.0.0.1:9001/#pair=owner-only');await ui.wait();},{privacy:{available:true,status:()=>({phase:null}),begin:()=>{confirmed++;}},records:{available:true,clearPreview(){},canCancel:()=>false,confirm:async()=>{confirmed++;}}});
+ const call=path=>new Promise((resolve,reject)=>{const req=request({hostname:'127.0.0.1',port:contact.address.port,path,method:(path.endsWith('restore')||path.endsWith('privacy'))?'POST':'GET',headers:{Host:'127.0.0.1:0',Origin:'http://127.0.0.1:0',Cookie:'tada_local='+device.token,'Content-Type':'application/json'}},res=>{let text='';res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(text)}));});req.on('error',reject);req.end((path.endsWith('restore')||path.endsWith('privacy'))?'{}':undefined);});
  try{
-  await c.until('ready');contact=await serveContact({store,service,origin:'http://127.0.0.1:0',port:0,recovery});
+  await c.until('ready');contact=await serveContact({store,service,origin:'http://127.0.0.1:0',port:0,recovery,privacy});
   const result=await call('/api/records/restore');assert.equal(result.status,200);assert.equal(result.body.url,c.origin+'/#recover=1');assert.ok(!JSON.stringify(result).includes(c.token));
+  const eraseLink=await call('/api/records/privacy');assert.equal(eraseLink.status,200);assert.equal(eraseLink.body.url,c.origin+'/#privacy=1');assert.ok(!JSON.stringify(eraseLink).includes(c.token));
+  assert.equal((await fetch(c.origin+'/action',{method:'POST',headers:{Origin:c.origin,Authorization:'Bearer '+device.token,'Content-Type':'application/json'},body:JSON.stringify({action:'erase',value:{id:'fixture',consent:'erase_local_records_and_connections_v1'},revision:'any'})})).status,401);
   assert.equal((await fetch(c.origin+'/state')).status,401);service.revoke(device.id);assert.equal((await call('/api/state')).status,401);
   assert.equal((await fetch(c.origin+'/state',{headers:{Authorization:'Bearer '+device.token}})).status,401);
   assert.equal((await fetch(c.origin+'/action',{method:'POST',headers:{Origin:c.origin,Authorization:'Bearer '+device.token,'Content-Type':'application/json'},body:JSON.stringify({action:'restore',value:{id:'fixture',consent:'restore_records_with_fresh_connections_v1'},revision:'any'})})).status,401);
@@ -259,4 +261,26 @@ test('restore outcome identifiers reject malformed values before confirmation or
  const {RESTORE_CONSENT}=await import('../src/app-records.mjs');let confirmed=0;
  const c=await client(async ui=>{ui.ready('http://127.0.0.1:8787/#pair=fixture');await ui.wait();},{records:{available:true,clearPreview(){},confirm:async()=>{confirmed++;}}});
  try{for(const id of [null,{},[],7,'','a'.repeat(129),'bad\nname'])assert.equal((await c.action(await c.until('ready'),'restore',{id,consent:RESTORE_CONSENT})).status,409);assert.equal(confirmed,0);assert.equal((await c.get()).restore_request,undefined);}finally{await c.host.close();}
+});
+
+test('owner clear drains the running store, stops startup, erases, and starts fresh only on explicit action',async()=>{
+ const {AppPrivacy,ERASE_CONSENT}=await import('../src/app-privacy.mjs');const {ContactStore,contactRoute}=await import('../src/contact-store.mjs');const {randomUUID}=await import('node:crypto');const {existsSync}=await import('node:fs');
+ const root=mkdtempSync(join(tmpdir(),'tada-erase-setup-')),data=join(root,'data');mkdirSync(data+'.app-private',{mode:0o700});let starts=0,closed=0,prepared=0,turns;
+ const privacy=new AppPrivacy({data,provider:'chatgpt'}),passphrase='SYNTHETIC_PRIVACY_UI_KEY',route=contactRoute({fixture:'erase-ui'});
+ const c=await client(async ui=>{const store=new ContactStore({directory:data,passphrase,route,initialize:!existsSync(data)});starts++;if(starts===1)store.submit(store.addDevice('old').id,randomUUID(),'old pending work');turns=store.page().turns.length;try{ui.ready('http://127.0.0.1:9001/');await ui.wait();}finally{store.close();closed++;}}, {privacy,prepareErase:async()=>{assert.equal(closed,1);prepared++;}});
+ try{
+  const ready=await c.until('ready');assert.equal(ready.erase_available,true);assert.equal((await c.action(ready,'erase',{id:randomUUID(),consent:'wrong'})).status,400);assert.equal(closed,0);
+  assert.equal((await c.action(await c.get(),'erase',{id:randomUUID(),consent:ERASE_CONSENT})).status,202);const erased=await c.until('erased');assert.equal(prepared,1);assert.equal(starts,1);assert.equal(erased.erase_phase,'done');assert.equal(erased.restore_available,false);assert.equal(privacy.status().phase,'done');
+  assert.equal((await c.action(erased,'retry')).status,409);await c.action(await c.get(),'start_fresh',true);await c.until('ready');assert.equal(starts,2);assert.equal(turns,0);
+ }finally{await c.host.close();rmSync(root,{recursive:true,force:true});}
+});
+test('interrupted erase blocks runtime on restart and cleanup failure cannot offer an unsafe retry',async()=>{
+ const {AppPrivacy,ERASE_CONSENT}=await import('../src/app-privacy.mjs');const {randomUUID}=await import('node:crypto');const root=mkdtempSync(join(tmpdir(),'tada-erase-restart-')),data=join(root,'data');mkdirSync(data+'.app-private',{mode:0o700});const privacy=new AppPrivacy({data,provider:'chatgpt'});privacy.begin(randomUUID(),ERASE_CONSENT);let starts=0,stopFails=true;
+ const c=await client(async()=>{starts++;},{privacy,prepareErase:async()=>{if(stopFails)throw Error('CONTACT_BACKGROUND_UNAVAILABLE');}});
+ try{const state=await c.until('erase_pending');assert.equal(starts,0);assert.equal((await c.action(state,'retry')).status,409);await c.action(await c.get(),'resume_erase');await turn();const failed=await c.until('erase_pending');assert.match(failed.message,/백그라운드|자동|실행/u);assert.equal(starts,0);stopFails=false;await c.action(await c.get(),'resume_erase');await c.until('erased');assert.equal(starts,0);}finally{await c.host.close();rmSync(root,{recursive:true,force:true});}
+});
+test('uncertain runtime cleanup keeps erase blocked until a clean app restart',async()=>{
+ const {AppPrivacy,ERASE_CONSENT}=await import('../src/app-privacy.mjs');const {randomUUID}=await import('node:crypto');const root=mkdtempSync(join(tmpdir(),'tada-erase-drain-')),data=join(root,'data');mkdirSync(data+'.app-private',{mode:0o700});const privacy=new AppPrivacy({data,provider:'chatgpt'});let prepared=0;
+ const c=await client(async ui=>{ui.ready('http://127.0.0.1:9001/');await ui.wait();throw Error('CONTACT_APP_CLOSE_FAILED');},{privacy,prepareErase:async()=>{prepared++;}});
+ try{await c.action(await c.until('ready'),'erase',{id:randomUUID(),consent:ERASE_CONSENT});const state=await c.until('erase_pending');assert.equal(state.retryable,false);assert.equal(prepared,0);assert.equal((await c.action(state,'resume_erase')).status,409);assert.equal(privacy.status().phase,'requested');}finally{await c.host.close();rmSync(root,{recursive:true,force:true});}
 });

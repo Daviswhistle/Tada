@@ -41,7 +41,7 @@ export function validateContactAddress({ origin, bind = '127.0.0.1', port, tls }
   if (tls && url.protocol !== 'https:') throw new Error('CONTACT_REMOTE_TLS_REQUIRED');
   return url;
 }
-export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, mobile = null, background = null, recovery = null, messaging = () => store.messagingStatus() }) {
+export async function serveContact({ store, service, origin, bind = '127.0.0.1', port, tls, mobile = null, background = null, recovery = null, privacy = null, messaging = () => store.messagingStatus() }) {
   const url = validateContactAddress({ origin, bind, port, tls });
   // Hold one matching UI version for this host's lifetime, including its parser.
   // Updating files on disk cannot mix old HTML with a new client or missing bundle.
@@ -108,6 +108,10 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
       // Preserve an existing connection only after this journal authenticates
       // its legacy token. Other still-running versions may need that cookie.
       if (cookie.legacy) res.setHeader('Set-Cookie', setCookie(cookie.token));
+      if(req.method==='POST' && target.pathname==='/api/records/privacy' && !target.search){
+        const data=await readBody(req);object(data,[]);assertAccepting();store.assertDevice(device);
+        if(!privacy)return send(res,409,{error:'CONTACT_APP_ERASE_UNAVAILABLE'});return send(res,200,{url:privacy()});
+      }
       if (req.method === 'POST' && target.pathname === '/api/records/restore' && !target.search) {
         const data=await readBody(req);object(data,[]);assertAccepting();store.assertDevice(device);
         if (!recovery) return send(res,409,{error:'CONTACT_APP_RECOVERY_UNAVAILABLE'});
@@ -167,7 +171,7 @@ export async function serveContact({ store, service, origin, bind = '127.0.0.1',
         if ([...target.searchParams.keys()].some(key => key !== 'before') || target.searchParams.getAll('before').length > 1) throw new Error('CONTACT_CURSOR_INVALID');
         const before = target.searchParams.has('before') ? Number(target.searchParams.get('before')) : Number.MAX_SAFE_INTEGER;
         const startup = background ? await background.status() : null; store.assertDevice(device);
-        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.historicalUsage(), recovery: store.recoveryStatus(), record_restore_available: !!recovery, continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), browser: service.browserStatus(device), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
+        return send(res, 200, { assistant: store.id, device, document_editing: store.contactVersion >= 5, ...store.page(before), usage: store.historicalUsage(), recovery: store.recoveryStatus(), record_restore_available: !!recovery, record_erase_available: !!privacy, continuing_use: store.useStatus(), messaging: messaging(), followups: { ...store.followupState(), view_revision: sha(`${viewInstance}:${store.changeCount()}`), reviews_available: store.contactVersion >= 4 && service.localReviews }, provider: service.providerStatus, proactive: store.proactiveStatus(), google: service.googleStatus(), browser: service.browserStatus(device), mobile: mobile?.status() ?? null, background: startup, host_stopping: service.stopped });
       }
       if (req.method === 'POST' && target.pathname === '/api/background' && !target.search && background) {
         const data = await readBody(req); object(data, ['enabled', 'consent']);

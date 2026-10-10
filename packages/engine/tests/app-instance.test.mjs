@@ -267,3 +267,35 @@ test('Windows background relaunch exits against the existing owner instead of wa
     await second.close(); await first.close(); await first.reopen(); assert.equal(opened.length, 2); assert.equal(runs, 1);
   } finally { await second?.close(); await first?.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+test('normal app disables its own startup only after drain and before confirmed erasure',async()=>{
+ const {randomUUID}=await import('node:crypto');const {ERASE_CONSENT}=await import('../src/app-privacy.mjs');
+ const root=mkdtempSync(join(tmpdir(),'tada-app-erase-')),data=join(root,'conversation'),os=protector(),events=[];let app;
+ const background={status:async()=>({available:true,enabled:true,error:null}),configure:async(enabled,consent,authorize)=>{authorize();assert.equal(enabled,false);assert.equal(consent,null);assert.deepEqual(events,['closed']);events.push('disabled');return{enabled:false};}};
+ try{
+  app=await startApp(['--data',data],{instance:options=>acquireAppInstance(options,{protector:os}),open:async()=>{},backgroundFactory:()=>background,run:async(_,{ui})=>{mkdirSync(data,{mode:0o700});ui.ready('http://127.0.0.1:9001/');await ui.wait();events.push('closed');}});
+  const url=new URL(app.url),authorization='Bearer '+new URLSearchParams(url.hash.slice(1)).get('setup'),headers={Authorization:authorization};
+  const state=()=>fetch(url.origin+'/state',{headers}).then(r=>r.json());let ready;for(let i=0;i<100;i++){ready=await state();if(ready.stage==='ready')break;await new Promise(r=>setTimeout(r,10));}assert.equal(ready.stage,'ready');
+  const response=await fetch(url.origin+'/action',{method:'POST',headers:{...headers,Origin:url.origin,'Content-Type':'application/json'},body:JSON.stringify({action:'erase',revision:ready.revision,value:{id:randomUUID(),consent:ERASE_CONSENT}})});assert.equal(response.status,202);
+  let done;for(let i=0;i<100;i++){done=await state();if(done.stage==='erased')break;await new Promise(r=>setTimeout(r,10));}assert.equal(done.stage,'erased');assert.deepEqual(events,['closed','disabled']);
+ }finally{await app?.close();rmSync(root,{recursive:true,force:true});}
+});
+
+for(const interrupted of [false,true])test('background owner fresh-start creates new storage and survives onboarding restart: '+interrupted,async()=>{
+ const {randomUUID}=await import('node:crypto');const {AppPrivacy,ERASE_CONSENT}=await import('../src/app-privacy.mjs');const {contactStorageKey}=await import('../src/contact-key.mjs');const {ContactStore,contactRoute}=await import('../src/contact-store.mjs');
+ const root=mkdtempSync(join(tmpdir(),'tada-background-fresh-')),data=join(root,'conversation'),os={...protector(),kind:'windows-dpapi-v1'},route=contactRoute({fixture:'fresh-background'}),initialKey=await contactStorageKey({data,initialize:true,protector:os});
+ const old=new ContactStore({directory:data,passphrase:initialKey,route,initialize:true});old.submit(old.addDevice('old').id,randomUUID(),'old work');old.close();
+ const args=['--background','--provider','ollama','--model','synthetic-model','--data',data],initializations=[];let app,paused=false,newTurns=null;
+ const config={instance:options=>acquireAppInstance(options,{protector:os}),open:async()=>{},backgroundFactory:()=>({status:async()=>({available:true,enabled:true,error:null}),configure:async()=>({enabled:false})}),run:async(raw,{ui})=>{
+  const options=contactOptions(raw);initializations.push(options.initialize);const key=await contactStorageKey({data,initialize:options.initialize,protector:os});
+  if(options.initialize&&interrupted&&!paused){paused=true;await ui.wait();return;}
+  const store=new ContactStore({directory:data,passphrase:key,route,initialize:options.initialize});try{newTurns=store.page().turns.length;if(options.initialize)ui.initialized();ui.ready('http://127.0.0.1:9001/');await ui.wait();}finally{store.close();}
+ }};
+ const connect=app=>{const url=new URL(app.url),headers={Authorization:'Bearer '+new URLSearchParams(url.hash.slice(1)).get('setup')};return{state:()=>fetch(url.origin+'/state',{headers}).then(r=>r.json()),act:(s,action,value)=>fetch(url.origin+'/action',{method:'POST',headers:{...headers,Origin:url.origin,'Content-Type':'application/json'},body:JSON.stringify({action,value,revision:s.revision})})};};
+ const until=async(net,stage)=>{for(let i=0;i<100;i++){const s=await net.state();if(s.stage===stage)return s;await new Promise(r=>setTimeout(r,10));}throw Error('NOT_'+stage);};
+ try{
+  app=await startApp(args,config);let net=connect(app);await net.act(await until(net,'ready'),'erase',{id:randomUUID(),consent:ERASE_CONSENT});await net.act(await until(net,'erased'),'start_fresh',true);
+  if(interrupted){for(let i=0;i<100&&!paused;i++)await new Promise(r=>setTimeout(r,10));assert.equal(paused,true);await app.close();assert.equal(new AppPrivacy({data,provider:'ollama'}).status().phase,'new');app=await startApp(args,config);net=connect(app);}
+  const ready=await until(net,'ready');assert.equal(ready.restore_available,true);assert.equal(newTurns,0);assert.deepEqual(initializations,interrupted?[false,true,true]:[false,true]);assert.equal(new AppPrivacy({data,provider:'ollama'}).status().phase,null);
+ }finally{await app?.close();rmSync(root,{recursive:true,force:true});}
+});

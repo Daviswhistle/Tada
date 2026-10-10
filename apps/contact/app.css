@@ -56,3 +56,5 @@ body:has(#settings[open]){overflow:hidden}
 .setup-recovery .welcome-mark { display: none; }
 .setup-recovery h1 { font-size: clamp(26px, 4vw, 34px); }
 .setup-recovery .lead { margin-bottom: 24px; }
+
+button.danger{color:#8b2d28;border-color:#cfa9a5}button.danger:not(:disabled):hover{background:#f9e8e5}.setup-recovery .backup-option{display:flex;align-items:flex-start;gap:.65rem;margin:1.25rem 0}.setup-recovery .backup-option input{width:auto;flex:0 0 auto;margin-top:.25rem}

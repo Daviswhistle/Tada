@@ -290,7 +290,7 @@ export async function main(args = process.argv.slice(2), { keyProvider = contact
       if (!portableGoogle) throw Error('CONTACT_BACKGROUND_GOOGLE_SETTINGS_REQUIRED');
     }),
       handoff: async () => { await service.stopWhenIdle(); await background.handoff(); } } : null;
-    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, recovery: ui?.recovery ?? null, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
+    host = await serveContact({ store, service, origin: options.origin, bind: options.bind, port: options.port, tls, mobile, background: startup, recovery: ui?.recovery ?? null, privacy: ui?.privacy ?? null, messaging: () => (mobile ? mobile.status() : { enabled: !!telegram, ...(telegram ? telegram.status() : store.messagingStatus()) }) });
     if (ui) {
       service.on('fault', () => ui.fail());
       ui.signal.throwIfAborted();

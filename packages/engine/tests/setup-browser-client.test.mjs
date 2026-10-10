@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import {randomUUID} from 'node:crypto';
 import { readFileSync } from 'node:fs';
 const script = readFileSync(new URL('../../../apps/contact/setup.js', import.meta.url), 'utf8');
 const token = 'a'.repeat(43);
@@ -9,7 +10,7 @@ async function client({ hash = '', local = storage(), session = storage(), statu
   const elements = new Map(), calls = [], events = new Map(); let reloads = 0;
   const get = id => { if (!elements.has(id)) elements.set(id, { hidden: true, textContent: '', value: '', replaceChildren() {} }); return elements.get(id); };
   const navigations=[];const location = { hash, pathname: '/', replace:url=>navigations.push(url), reload: () => { reloads++; } };
-  const context = { URLSearchParams, AbortController, clearTimeout, location, history: { replaceState() { location.hash = ''; } },
+  const context = { crypto:{randomUUID}, URLSearchParams, AbortController, clearTimeout, location, history: { replaceState() { location.hash = ''; } },
     window: { localStorage: local, sessionStorage: session, addEventListener: (name, handler) => events.set(name, handler) },
     document: { getElementById: get, querySelectorAll: () => [], createElement: () => ({}) }, setTimeout() {},
     fetch: async (path, options) => { calls.push({ path, authorization: options.headers.Authorization }); return fetcher ? fetcher(path,options) : { status, ok: status === 200, json: async () => state }; },
@@ -161,4 +162,32 @@ for(const reachedServer of [true,false])test(`lost action response waits for the
  c.get('restore-file').files=[{size:10,arrayBuffer:async()=>new ArrayBuffer(10)}];await c.get('restore-preview').onclick();await c.get('restore-confirm').onclick();await c.poll();
  assert.deepEqual(c.navigations,reachedServer?['http://127.0.0.1:9002/']:[]);assert.equal(c.calls.filter(c=>c.path==='/action').length,1);
  if(!reachedServer){c.render({...old,revision:'late',restore_error:undefined,restore_request:'this-preview',url:'http://127.0.0.1:9002/'});assert.deepEqual(c.navigations,['http://127.0.0.1:9002/']);}
+});
+
+test('privacy handoff stays on the owner confirmation screen and requires its checkbox',async()=>{
+ const c=await client({hash:'#setup='+token+'&privacy=1',state:{stage:'ready',revision:'p',erase_available:true,url:'http://127.0.0.1:9001/'}});
+ assert.equal(c.navigations.length,0);assert.equal(c.get('privacy-panel').hidden,false);assert.equal(c.get('privacy-confirm').disabled,true);await c.get('privacy-confirm').onclick();assert.equal(c.calls.some(c=>c.path==='/action'),false);
+ c.get('privacy-close').onclick();assert.deepEqual(c.navigations,['http://127.0.0.1:9001/']);
+});
+test('unknown erase response never opens the old conversation and fresh start is explicit',async()=>{
+ let requestId,stage='ready';const old={stage:'ready',revision:'initial',erase_available:true,url:'http://127.0.0.1:9001/'};
+ const c=await client({hash:'#setup='+token+'&privacy=1',fetcher:async(path,options)=>{
+  if(path==='/action'){const action=JSON.parse(options.body);if(action.action==='erase'){requestId=action.value.id;throw TypeError('Failed to fetch');}stage='consent';return{ok:true,status:200,json:async()=>({})};}
+  return{ok:true,status:200,json:async()=>stage==='ready'?old:stage==='erased'?{stage,revision:'done',erase_phase:'done',erase_request:requestId}:{stage,revision:'fresh',erase_phase:null,erase_available:true}};
+ }});
+ c.get('privacy-confirmed').checked=true;await c.get('privacy-confirm').onclick();assert.equal(c.navigations.length,0);assert.equal(c.get('privacy-close').hidden,true);await c.poll();assert.equal(c.navigations.length,0);
+ stage='erased';await c.poll();assert.equal(c.get('privacy-fresh').hidden,false);assert.equal(c.get('privacy-panel').hidden,true);assert.equal(c.calls.filter(c=>c.path==='/action').length,1);
+ await c.get('privacy-fresh').onclick();assert.equal(c.get('consent').hidden,false);assert.equal(c.get('privacy-panel').hidden,true);
+});
+test('interrupted deletion cannot expose old conversation, restore, or fresh start before completion',async()=>{
+ const c=await client({hash:'#setup='+token,state:{stage:'erase_pending',revision:'pending',erase_phase:'deleting',retryable:true}});
+ assert.equal(c.get('privacy-resume').hidden,false);assert.equal(c.get('privacy-fresh').hidden,true);assert.equal(c.get('restore-open').hidden,true);assert.equal(c.navigations.length,0);
+ c.render({stage:'erase_pending',revision:'drain-failed',erase_phase:'requested',retryable:false});assert.equal(c.get('privacy-resume').hidden,true);
+});
+
+test('a rejected erase keeps its specific recovery explanation visible through unchanged polling',async()=>{
+ const state={stage:'ready',revision:'r',erase_available:true,url:'http://127.0.0.1:9001/'};
+ const c=await client({hash:'#setup='+token+'&privacy=1',fetcher:async path=>path==='/action'?{ok:false,status:400,json:async()=>({message:'보관 위치에 알 수 없는 파일이 있어 삭제를 멈췄어요.'})}:{ok:true,status:200,json:async()=>state}});
+ c.get('privacy-confirmed').checked=true;await c.get('privacy-confirm').onclick();await c.poll();assert.equal(c.get('privacy-feedback').hidden,false);assert.match(c.get('privacy-feedback').textContent,/알 수 없는 파일/u);assert.equal(c.get('privacy-close').hidden,false);assert.equal(c.navigations.length,0);
+ c.render({stage:'erase_pending',revision:'completed-after-error',erase_phase:'done'});assert.equal(c.get('privacy-resume').hidden,true);assert.equal(c.get('privacy-fresh').hidden,false);
 });

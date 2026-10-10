@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { MAX_BACKUP_BYTES } from './contact-backup.mjs';
+import { ERASE_CONSENT } from './app-privacy.mjs';
 import { RESTORE_CONSENT } from './app-records.mjs';
 import { parseUniqueJson } from './json.mjs';
 
@@ -15,6 +16,15 @@ const assets = new Map([
 const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
   'Content-Security-Policy': "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'" };
 const messages = {
+  CONTACT_APP_ERASE_UNKNOWN_FILES: '보관 위치에 Tada 기록으로 확인할 수 없는 파일이 있어 삭제를 멈췄어요. 그 파일을 다른 곳에 보관한 뒤 다시 시도해 주세요.',
+  CONTACT_APP_ERASE_IN_USE: '기록을 사용 중인 다른 Tada가 있어 삭제를 멈췄어요. 다른 Tada를 종료한 뒤 삭제를 이어가 주세요.',
+  CONTACT_APP_ERASE_CHANGED: '삭제 대상의 상태가 바뀌어 멈췄어요. 남은 파일은 보존돼 있습니다.',
+  CONTACT_APP_ERASE_PRIVATE_PATH_REQUIRED: '기록 보관 위치에 안전하게 접근할 수 없어 삭제를 멈췄어요. 남은 기록은 보존돼 있습니다.',
+  CONTACT_APP_ERASE_INVALID: '삭제 진행 정보를 확인할 수 없어 시작을 멈췄어요. 남은 기록은 보존돼 있습니다.',
+  CONTACT_APP_ERASE_TOO_LARGE: '기록 구조가 현재 처리할 수 있는 범위를 넘어 삭제를 멈췄어요.',
+  CONTACT_APP_ERASE_UNAVAILABLE: '이 실행 방식에서는 기록을 삭제할 수 없어요. 기본 Tada 앱으로 열어 주세요.',
+  CONTACT_APP_ERASE_PENDING: '진행 중인 기록 삭제를 먼저 마쳐 주세요.',
+  CONTACT_APP_ERASE_CONSENT_REQUIRED: '삭제할 범위를 확인하고 기록 삭제를 선택해 주세요.',
   CONTACT_APP_CLOSE_FAILED: '진행 중이던 작업이 모두 종료됐는지 확인하지 못해 기록 전환을 멈췄어요. Tada를 완전히 종료한 뒤 다시 열어 주세요. 기존 기록은 보존돼 있습니다.',
   CONTACT_APP_RECOVERY_SOURCE_IN_USE: '기존 기록을 사용하는 다른 Tada가 열려 있어요. 그 Tada를 종료한 뒤 복원을 다시 시도해 주세요. 기존 기록은 옮기지 않았습니다.',
   CONTACT_APP_RECOVERY_UNAVAILABLE: '이 실행 방식에서는 화면에서 복원할 수 없어요. 기본 Tada 앱으로 열어 주세요.',
@@ -74,16 +84,23 @@ const messages = {
 export function setupError(error) {
   return messages[error?.code] ?? messages[error?.message] ?? (error?.name === 'AbortError' ? messages.CHATGPT_LOGIN_CANCELLED : 'Tada를 여는 중 문제가 생겼어요. 연결을 확인하고 다시 시도해 주세요. 기존 기록은 지우지 않았어요.');
 }
-export async function serveSetup({ run, autoStart = true, autoRetry = false, retryDelays = [5000, 30000, 120000, 300000, 900000], records = null }) {
+const eraseError=error=>error?.message==='CONTACT_BACKGROUND_UNAVAILABLE'?'자동 시작 설정을 확인하거나 해제하지 못해 삭제를 멈췄어요. Tada를 다시 연 뒤 삭제를 이어가 주세요.':messages[error?.message] ?? '삭제를 완료하지 못했어요. 남은 파일은 보존돼 있습니다. 앱을 다시 연 뒤 삭제를 이어가 주세요.';
+
+export async function serveSetup({ run, autoStart = true, autoRetry = false, retryDelays = [5000, 30000, 120000, 300000, 900000], records = null, privacy = null, prepareErase = async () => {} }) {
   if (typeof autoRetry !== 'boolean' || !Array.isArray(retryDelays) || !retryDelays.length || retryDelays.some(ms => !Number.isSafeInteger(ms) || ms < 1)) throw Error('CONTACT_SETUP_OPTIONS_INVALID');
   const secret = randomBytes(32).toString('base64url');
+  let erasePhase=null, eraseRequest=null, freshIntent=false;
   let runtimeView, restoreError=null, restoreRequest=null, origin, state = { stage: 'preparing', revision: randomUUID() }, task, controller, answer, entry, closed = false, retryTimer, attempts = 0, transitioning = false, recoveryTask = null, restoringRun = false, restoreAccount = null, cleanupFailed = false;
   const canCancelRestore = () => { try { return records?.canCancel() === true; } catch { return false; } };
-  const publish = (stage, fields = {}) => { state = { stage, revision: randomUUID(), restore_available: records?.available === true, restoring: restoringRun, restore_account: restoreAccount, ...fields, ...(restoreError?{restore_error:restoreError}:{}), ...(restoreRequest?{restore_request:restoreRequest}:{}) }; };
+  const publish = (stage, fields = {}) => { state = { stage, revision: randomUUID(), restore_available: records?.available === true && !erasePhase && !freshIntent, erase_available: privacy?.available === true && !erasePhase, erase_phase:erasePhase, erase_request:eraseRequest, restoring: restoringRun, restore_account: restoreAccount, ...fields, ...(restoreError?{restore_error:restoreError}:{}), ...(restoreRequest?{restore_request:restoreRequest}:{}) }; };
   const publishRuntime = (stage, fields = {}) => { runtimeView={stage,fields};if(!closed&&!transitioning)publish(stage,fields); };
   const start = (reauthorize = false, upgrade = false) => {
     if (task || closed || transitioning || cleanupFailed) return false;
     clearTimeout(retryTimer); retryTimer = null;
+    try {
+      const status=privacy?.status();freshIntent=status?.phase==='new';erasePhase=freshIntent?null:status?.phase??null;eraseRequest=freshIntent?null:status?.request??null;
+      if(erasePhase){publish(erasePhase==='done'?'erased':'erase_pending');return false;}
+    }catch(error){erasePhase='invalid';publish('error',{message:eraseError(error),retryable:false});return false;}
     controller = new AbortController();
     const signal = controller.signal;
     signal.addEventListener('abort',()=>{entry=null;if(runtimeView?.stage==='ready')publishRuntime('preparing',{message:'진행 중인 작업을 정리하고 있어요.'});},{once:true});
@@ -103,8 +120,9 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
       consent: () => ask('consent'),
       login: url => { signal.throwIfAborted(); interactive = true; publishRuntime('login', { url }); },
       selectModel: models => ask('model', { models }),
-      ready: (source, restored = false) => { signal.throwIfAborted(); attempts = 0; restoringRun = false; restoreAccount = null; entry = typeof source === 'function' ? source : () => source; publishRuntime('ready', { url: entry(), restored }); },
+      ready: (source, restored = false) => { signal.throwIfAborted();freshIntent=false; attempts = 0; restoringRun = false; restoreAccount = null; entry = typeof source === 'function' ? source : () => source; publishRuntime('ready', { url: entry(), restored }); },
       recovery: records?.available ? () => `${origin}/#recover=1` : null,
+      privacy: privacy?.available ? () => `${origin}/#privacy=1` : null,
       wait: () => new Promise(resolve => {
         if (signal.aborted) resolve(); else signal.addEventListener('abort', resolve, { once: true });
       }),
@@ -132,6 +150,7 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
   const server = createServer(async (req, res) => {
     const timer = setTimeout(() => req.destroy(), req.url === '/recovery/preview' ? 30000 : 10000);
     try {
+      if(closed)return send(res,503,{});
       // The conversation and setup use separate loopback ports. Permit their
       // top-level navigation; API access still requires same-origin + capability.
       const localNavigation = req.method === 'GET' && req.url === '/'
@@ -166,6 +185,29 @@ export async function serveSetup({ run, autoStart = true, autoRetry = false, ret
       for await (const chunk of req) { size += chunk.length; if (size > 1024) throw Error(); chunks.push(chunk); }
       const body = parseUniqueJson(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)), 1024);
       if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).sort().join(',') !== 'action,revision,value' || body.revision !== state.revision) return send(res, 409, {});
+      if ((body.action==='erase' || body.action==='resume_erase') && privacy?.available && !cleanupFailed && !transitioning && !recoveryTask) {
+        let admissionError;
+        if(body.action==='erase'){
+          if(!body.value || Object.keys(body.value).sort().join(',')!=='consent,id' || body.value.consent!==ERASE_CONSENT)return send(res,400,{});
+          try{privacy.begin(body.value.id,body.value.consent);}catch(error){if(!privacy.status().phase)throw error;admissionError=error;}
+        }else if(body.value!==null || !erasePhase || ['done','fresh'].includes(erasePhase))return send(res,409,{});
+        const status=privacy.status();erasePhase=status.phase;eraseRequest=status.request;
+        records?.clearPreview();freshIntent=false;transitioning=true;clearTimeout(retryTimer);publish('erasing');
+        recoveryTask=(async()=>{
+          try{
+            controller?.abort(new DOMException('Removing local records','AbortError'));await task;
+            if(cleanupFailed)throw Error('CONTACT_APP_CLOSE_FAILED');if(admissionError)throw admissionError;
+            await prepareErase();const result=privacy.erase();erasePhase=result.phase;restoreError=null;restoreRequest=null;restoringRun=false;restoreAccount=null;
+            if(!closed)publish('erased');
+          }catch(error){try{const pending=privacy.status();erasePhase=pending.phase??'invalid';eraseRequest=pending.request;}catch{erasePhase='invalid';}if(!closed)publish('erase_pending',{message:eraseError(error),retryable:!cleanupFailed&&erasePhase!=='invalid'});}
+          finally{transitioning=false;recoveryTask=null;}
+        })();return send(res,202,{});
+      }
+      if(body.action==='start_fresh' && body.value===true && privacy?.available && ['done','fresh'].includes(erasePhase) && !task && !recoveryTask && !cleanupFailed){
+        try{privacy.fresh();erasePhase=null;eraseRequest=null;restoreError=null;restoreRequest=null;start();return send(res,200,{});}
+        catch(error){erasePhase=privacy.status().phase;publish('erase_pending',{message:eraseError(error)});return send(res,409,{});}
+      }
+      if(erasePhase)return send(res,409,{});
       if (body.action === 'cancel_restore' && body.value === null && state.stage === 'error' && !task && !transitioning && !recoveryTask && !cleanupFailed && canCancelRestore()) { records.cancel();start();return send(res,200,{}); }
       if (body.action === 'restore' && records?.available && !cleanupFailed && !transitioning && !recoveryTask
           && body.value && Object.keys(body.value).sort().join(',')==='consent,id' && typeof body.value.id==='string' && /^[A-Za-z0-9-]{1,128}$/u.test(body.value.id) && body.value.consent===RESTORE_CONSENT) {

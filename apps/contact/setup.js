@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const storageKey = 'tada-setup';
 const validToken = value => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(value);
 const entryOptions = new URLSearchParams(location.hash.slice(1));
+let privacyView=entryOptions.get('privacy')==='1',eraseSubmitted=null,freshSubmitted=false;
 let restoreView = entryOptions.get('recover') === '1', restoreSubmitted = false, sawRestoring = false, restorePreview = null, restoreController = null, restoreGeneration = 0;
 let token = entryOptions.get('setup');
 history.replaceState(null, '', location.pathname);
@@ -24,13 +25,14 @@ function checkAuthorization(response){
   stopped=true;clearRestore();restoreView=false;
   for(const name of ['localStorage','sessionStorage']){try{window[name].removeItem(storageKey);}catch{}}
   const message='이 시작 화면의 연결이 만료됐어요. Tada를 다시 실행하면 저장된 계정으로 이어갈 수 있어요.';
+  privacyView=false;eraseSubmitted=null;freshSubmitted=false;
   render({stage:'error',revision:'unauthorized',message,retryable:false});throw Object.assign(Error(message),{rejected:true});
 }
 async function request(path, body, accepted = () => {}) {
   const response = await fetch(path, { method: body ? 'POST' : 'GET', cache: 'no-store', credentials: 'omit',
     headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
   checkAuthorization(response);
-  if (!response.ok) throw Object.assign(Error('화면 상태가 바뀌었어요. 잠시 후 다시 눌러 주세요.'),{rejected:true});
+  if (!response.ok) {let result;try{result=await response.json();}catch{}throw Object.assign(Error(typeof result?.message==='string'?result.message:'화면 상태가 바뀌었어요. 잠시 후 다시 눌러 주세요.'),{rejected:true});}
   accepted();return response.json();
 }
 const copy = {
@@ -40,11 +42,15 @@ const copy = {
   model: ['연결됐어요', '이제 이야기해 볼까요?', '계정에서 사용할 수 있는 모델을 가져왔어요.'],
   ready: ['준비됐어요', '대화로 이어갈게요.', '다음부터도 같은 대화에서 만나요.'],
   restoring: ['기록 복원', '선택한 기록을 준비하고 있어요.', '진행 중인 작업을 정리하고 있습니다.'],
+  erasing: ['기록 삭제', '기록과 연결을 삭제하고 있어요.', '진행 중인 일을 종료한 뒤 이 Tada의 기록을 지웁니다.'],
+  erase_pending: ['기록 삭제', '삭제를 이어가 주세요.', '이전 비서의 실행은 멈춰 있습니다. 남은 삭제를 완료해 주세요.'],
+  erased: ['삭제 완료', '이 Tada의 기록을 삭제했어요.', '계정 연결과 예약된 작업도 이 컴퓨터에서 제거했습니다.'],
   error: ['잠깐 멈췄어요', '여기서 다시 이어가세요.', ''],
 };
 function render(state) {
   if (current?.revision === state.revision) return;
   current = state;
+  if(freshSubmitted&&!state.erase_phase){freshSubmitted=false;eraseSubmitted=null;privacyView=false;}
   const [step, title, description] = state.stage === 'error' && state.upgrade === true
     ? ['업데이트 준비', '새 기능을 준비했어요.', ''] : copy[state.stage] ?? copy.error;
   $('step').textContent = step; $('title').textContent = title; $('description').textContent = (state.message ?? description)
@@ -75,7 +81,23 @@ function render(state) {
   $('restore-open').hidden=state.restore_available!==true || panel || state.restoring || state.stage==='restoring';
   if(panel && state.stage==='error' && restoreSubmitted && state.restore_request===restoreSubmitted){restoreSubmitted=false;restorePreview=null;$('restore-summary').hidden=true;$('restore-feedback').textContent=state.message ?? '복원을 시작하지 못했어요. 백업 내용을 다시 확인해 주세요.';}
   if(panel) for(const id of ['consent','login','model','ready','error'])$(id).hidden=true;
-  if (state.stage === 'ready') { $('continue').href = state.url; if(!restoreView)location.replace(state.url); }
+  if (state.stage === 'ready') { $('continue').href = state.url; if(!restoreView&&!privacyView)location.replace(state.url); }
+
+  const deleting=!!state.erase_phase || ['erasing','erase_pending','erased'].includes(state.stage);
+  const privacyPanel=privacyView && state.erase_available===true && !deleting;
+  $('privacy-panel').hidden=!privacyPanel;$('privacy-progress').hidden=!deleting;
+  $('privacy-open').hidden=state.erase_available!==true || privacyPanel || restoreView || state.restoring || state.stage==='restoring';
+  $('privacy-close').hidden=!!eraseSubmitted;
+  $('privacy-confirm').disabled=$('privacy-confirmed').checked!==true;
+  $('privacy-resume').hidden=state.stage!=='erase_pending' || state.retryable===false || ['done','fresh'].includes(state.erase_phase);
+  $('privacy-fresh').hidden=!['done','fresh'].includes(state.erase_phase);
+  $('privacy-progress-text').textContent=state.stage==='erased'?'다운로드한 백업과 외부 서비스에 남은 데이터는 삭제하지 않았습니다. 저장 장치의 물리적 복구 불가능성을 보장하는 삭제는 아닙니다.':'';
+  if(privacyPanel || deleting){
+    for(const id of ['consent','login','model','ready','error','restore-panel','restore-open','restore-cancel'])$(id).hidden=true;
+    $('setup-main').className='setup-main setup-recovery';
+    if(privacyPanel){$('step').textContent='내 기록';$('title').textContent='기록과 연결 삭제';$('description').textContent=eraseSubmitted?'삭제 요청의 접수 여부를 확인하고 있어요. 연결되면 진행 상태를 표시합니다.':'삭제할 범위를 확인해 주세요.';}
+  }
+
 
 }
 async function poll() {
@@ -85,14 +107,14 @@ async function poll() {
   catch (error) { if(epoch===stateEpoch&&!busy)feedback(error.message === 'Failed to fetch' ? 'Tada와 연결이 끊겼어요. 앱이 실행 중이면 다시 연결됩니다.' : error.message); }
   if (!stopped) setTimeout(poll, 700);
 }
-async function act(action, value = null) {
+async function act(action, value = null, onFailure = () => {}) {
   if (busy || !current) return;
   busy = true;stateEpoch++;
   const buttons = document.querySelectorAll('button'); buttons.forEach(button => { button.disabled = true; });
   let accepted=false;
   try { await request('/action', { action, value, revision: current.revision },()=>{accepted=true;}); render(await request('/state')); feedback(''); return true; }
-  catch (error) { feedback(error.message==='Failed to fetch'?'요청 결과를 아직 확인하지 못했어요. 연결되면 진행 상태를 다시 확인합니다.':error.message); return accepted||!error.rejected; }
-  finally { busy = false; buttons.forEach(button => { button.disabled = false; }); }
+  catch (error) { onFailure(error);feedback(error.message==='Failed to fetch'?'요청 결과를 아직 확인하지 못했어요. 연결되면 진행 상태를 다시 확인합니다.':error.message); return accepted||!error.rejected; }
+  finally { busy = false; buttons.forEach(button => { button.disabled = false; });$('privacy-confirm').disabled=$('privacy-confirmed').checked!==true; }
 }
 function clearRestore(){$('restore-preview').disabled=false;restoreGeneration++;restoreController?.abort();restoreController=null;restorePreview=null;$('restore-file').value='';$('restore-code').value='';$('restore-summary').hidden=true;$('restore-feedback').textContent='';}
 function rerender(){if(current){const state=current;current=null;render(state);}}
@@ -130,3 +152,16 @@ $('cancel-login').onclick = () => current?.restoring ? cancelRestore('cancel') :
 $('retry').onclick = () => act('retry');
 $('upgrade').onclick = () => act('upgrade', true);
 poll();
+
+$('privacy-open').onclick=()=>{privacyView=true;restoreView=false;clearRestore();rerender();};
+$('privacy-close').onclick=()=>{if(eraseSubmitted)return;privacyView=false;$('privacy-confirmed').checked=false;rerender();};
+$('privacy-confirmed').onchange=()=>{$('privacy-confirm').disabled=$('privacy-confirmed').checked!==true;};
+$('privacy-confirm').onclick=async()=>{
+  if($('privacy-confirmed').checked!==true || busy)return;
+  eraseSubmitted??=crypto.randomUUID();let failure;
+  $('privacy-feedback').hidden=true;
+  if(!await act('erase',{id:eraseSubmitted,consent:'erase_local_records_and_connections_v1'},error=>{failure=error.message;})){eraseSubmitted=null;$('privacy-feedback').textContent=failure??'삭제를 시작하지 못했어요.';$('privacy-feedback').hidden=false;}
+  rerender();
+};
+$('privacy-resume').onclick=()=>act('resume_erase');
+$('privacy-fresh').onclick=async()=>{freshSubmitted=true;if(!await act('start_fresh',true))freshSubmitted=false;rerender();};

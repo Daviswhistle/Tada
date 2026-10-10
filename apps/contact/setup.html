@@ -17,4 +17,12 @@
 <div id="restore-summary" hidden><p id="restore-description"></p><p id="restore-registration" hidden></p><p>복원을 시작하면 현재 작업을 중지합니다. AI 계정을 다시 연결하고, Google·휴대폰 연결과 자동 챙겨보기는 새로 설정합니다. 과거 알림이나 발송을 자동으로 다시 실행하지 않습니다.</p><button id="restore-confirm" class="primary" type="button">이 기록으로 복원</button></div>
 <button id="restore-close" class="text-button" type="button">돌아가기</button>
 </section>
+<button id="privacy-open" class="text-button danger" type="button" hidden>기록과 연결 삭제</button>
+<section id="privacy-panel" class="restore-panel" hidden aria-labelledby="privacy-title"><h2 id="privacy-title">이 Tada의 기록과 연결 삭제</h2>
+<p>이 컴퓨터에 보관한 대화, 문서, 업무, 예약 알림과 계정 연결을 삭제합니다. 복원할 때 보관한 원본과 앱 내부 백업도 포함됩니다.</p>
+<p>진행 중인 일을 종료하고 Tada의 자동 시작을 해제합니다. 삭제한 기록은 되돌릴 수 없습니다. 필요한 내용은 먼저 설정에서 백업해 주세요.</p>
+<p class="setup-note">다운로드해 둔 백업, 브라우저에 남은 사본, Google·ChatGPT 등 외부 서비스의 데이터와 연결 허용은 별도로 관리해야 합니다. 이미 보낸 메시지나 완료한 외부 작업은 취소되지 않습니다.</p>
+<label class="backup-option"><input id="privacy-confirmed" type="checkbox"> 위 범위의 기록과 연결을 삭제하겠습니다.</label>
+<p id="privacy-feedback" role="alert" hidden></p><button id="privacy-confirm" class="danger" type="button" disabled>기록과 연결 삭제</button><button id="privacy-close" class="text-button" type="button">돌아가기</button></section>
+<section id="privacy-progress" hidden><p id="privacy-progress-text" class="setup-note"></p><button id="privacy-resume" class="primary" type="button" hidden>삭제 이어가기</button><button id="privacy-fresh" class="primary" type="button" hidden>새로 시작하기</button></section>
 <p id="feedback" role="alert" hidden></p></main></body></html>
