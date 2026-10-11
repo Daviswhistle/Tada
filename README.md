@@ -1,5 +1,10 @@
 # Tada
 
+> Development ended on 2026-10-11. This project is no longer maintained.
+> The final implementation, history and evaluation records are preserved on
+> `codex/assistant-integration`. No production release was qualified.
+> The setup and product descriptions below document the historical development build.
+
 현재 실행 경로의 [자동 실행과 복구](docs/background-running.md)는 설정에서 같은 비서를 Linux 사용자 서비스로 이어 실행합니다. [Windows 설치본](docs/windows-portable.md)은 시작 메뉴에서 열고, 설정에서 로그인 시 시작을 등록합니다. WSL에서는 Linux 환경이 실행 중이어야 하며 Windows 부팅·절전 중 동작과 실제 휴대폰 수신은 별도 검증 대상입니다.
 
 **Ask. Go live your life. Tada.**

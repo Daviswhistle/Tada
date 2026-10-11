@@ -1,5 +1,13 @@
 # Repository instructions
 
+## Project closure — owner decision, 2026-10-11
+
+The owner ended product development. Preserve the final source history and
+evaluation records for reference. The standing development and automatic-care
+instructions below are historical and no longer authorize further feature work,
+service startup or account reconnection. Those actions require a new explicit
+owner request. Read-only inspection and the authorized shutdown remain in scope.
+
 ## Proactive assistance and phone contact — user correction, 2026-10-08
 
 The user explicitly requires finding and proposing useful work without a new assignment and being reachable from a phone. `docs/proactive-and-mobile.md` records the current v5 implementation: opt-in daily conversation/work/document suggestions on the same selected provider, and on-screen private Telegram setup. Reuse the same journal, model loop and delivery outbox. This standing grant is suggestion-only and does not expand old local review grants or permit new sources/actions. Preserve v1–v4 schema strings; existing journals require explicit backup migration. Do not equate synthetic useful suggestions, a mobile-sized viewport, or a configured adapter with live model/physical-phone acceptance or always-on operation.
